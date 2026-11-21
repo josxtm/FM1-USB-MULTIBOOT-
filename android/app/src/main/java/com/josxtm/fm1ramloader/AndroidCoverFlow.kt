@@ -25,7 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.unit.dp
 
 /** Compact tablet Cover Flow. It only changes selection or opens inspection. */
@@ -53,7 +52,7 @@ internal fun AndroidCoverFlow(
                 },
                 onDragCancel = { dragDistance = 0f },
                 onDrag = { change, amount ->
-                    change.consume()
+                    change.consumePositionChange()
                     dragDistance += amount.x
                 }
             )
