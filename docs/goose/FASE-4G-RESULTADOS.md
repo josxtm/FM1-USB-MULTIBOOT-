@@ -27,6 +27,14 @@ La aplicación muestra `cargada`, `verificación parcial o con advertencias`, `e
 
 FM1CAT v1, `UNVERIFIED`, la separación entre integridad y ejecutabilidad y los bytes originales se mantienen sin cambios.
 
+## Validación CI
+
+- Android/Kotlin, Lint, pruebas unitarias y APK comp14: ✅ [run 44963884435](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44963884435)
+- Diagnóstico RAM/pi32v2, USB/FAT32 y coherencia APP1: ✅ [run 44963887644](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44963887644)
+- Simulador Cover Flow: ✅ [run 44963890621](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44963890621)
+- Checks de PR Android y diagnóstico: ✅ [Android](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44963883061) · [diagnóstico](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44963883025)
+- `make test` local USB/FAT32: ✅
+
 ## Seguridad
 
 RAM continúa limitada a simulación; XIP carece de evidencia; Flash, lectura ambigua, escritura, borrado, `0x25`, `0x30`, ejecución APP1 y USB Host físico permanecen bloqueados. La única consulta física continúa siendo MIDI `0x12`. DARK-1, el m-bootloader y `[0x00000,0x04000)` no se modifican.
