@@ -6,13 +6,18 @@
 #include "usbio.h"
 #include "glyphs.h"
 
-#define PAGES 3u
+#define PAGES 4u
 #define PREVIEW 80u
 extern u8 diag_bss_start[], diag_bss_end[];
 static struct usb_device reader;
 static struct fat32 filesystem;
 static struct fat_dir directory;
 static struct fat_file file;
+static struct fat_file sd_index;
+static u8 index_preview[128];
+static u32 index_preview_size;
+static int index_header_ok;
+static enum diag_result index_result;
 static u8 preview[PREVIEW];
 static u8 pixels[240 * 2] __attribute__((aligned(4)));
 static u32 file_index, preview_size, blocks;
@@ -91,7 +96,9 @@ static void scan(void)
     reader = (struct usb_device){0};
     blocks = file_index = preview_size = 0;
     filesystem.sectors_per_cluster = 0;
-    disk_result = filesystem_result = file_result = DIAG_UNSUPPORTED;
+    disk_result = filesystem_result = file_result = index_result = DIAG_UNSUPPORTED;
+    index_preview_size = 0;
+    index_header_ok = 0;
     header("BUSCANDO LECTOR");
     line(3, C_YELLOW, "ESPERA USB");
     usb_result = husb_wait_attach(2500) ? usb_enumerate(&reader) : DIAG_TIMEOUT;
@@ -102,6 +109,21 @@ static void scan(void)
     if (filesystem_result != DIAG_OK) return;
     fat32_root(&filesystem, &directory);
     read_file();
+    index_result = fat32_open_fm1_index(&filesystem, &sd_index);
+    if (index_result == DIAG_OK) {
+        index_result = fat32_read_prefix(&filesystem, &sd_index, index_preview,
+                                         sizeof index_preview, &index_preview_size);
+        if (index_result == DIAG_OK) {
+            static const char header[] =
+                "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n";
+            u32 match = 1, n = 0;
+            while (header[n]) {
+                if (n >= index_preview_size || index_preview[n] != (u8)header[n]) match = 0;
+                ++n;
+            }
+            index_header_ok = match;
+        }
+    }
 }
 
 static void draw(u32 page)
@@ -125,7 +147,7 @@ static void draw(u32 page)
         line(6, C_WHITE, diag_error(filesystem_result));
         number(8, "BLOQUES: ", blocks, 0);
         number(9, "SECT/CL: ", filesystem.sectors_per_cluster, 0);
-    } else {
+    } else if (page == 2) {
         header("ARCHIVOS RAIZ");
         line(3, file_result == DIAG_OK ? C_GREEN : C_YELLOW, diag_error(file_result));
         if (file_result == DIAG_OK) {
@@ -143,6 +165,19 @@ static void draw(u32 page)
             }
         }
         line(13, C_YELLOW, "PLAY: SIG ARCHIVO");
+    } else {
+        header("FM1 / INDEX.CSV");
+        line(3, index_result == DIAG_OK ? C_GREEN : C_YELLOW, diag_error(index_result));
+        if (index_result == DIAG_OK) {
+            number(5, "INDEX B: ", sd_index.size, 0);
+            line(7, index_header_ok ? C_GREEN : C_YELLOW,
+                 index_header_ok ? "FM1CAT V1 DETECTADO" : "FORMATO NO VALIDO");
+            line(9, C_WHITE, "MUESTRA SOLO 128B");
+            line(10, C_WHITE, "NO VALIDA FIRMWARE");
+        } else {
+            line(7, C_WHITE, "REVISA FM1/INDEX");
+        }
+        line(12, C_YELLOW, "NO ARRANCA FIRMWARE");
     }
     line(14, C_YELLOW, "OCT-/+ PAG  REC FIN");
 }

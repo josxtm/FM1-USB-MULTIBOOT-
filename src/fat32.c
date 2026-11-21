@@ -154,3 +154,57 @@ enum diag_result fat32_read_prefix(struct fat32 *fs, const struct fat_file *file
     *written = count;
     return DIAG_OK;
 }
+
+
+/*
+ * Locate Android FM1 Manager's INDEX.CSV in the FM1 directory.
+ * Read-only and deliberately restricted to two fixed FAT 8.3 components.
+ * No dynamic allocation, LFN, arbitrary paths or executable images.
+ */
+static enum diag_result find_short_entry(struct fat32 *fs, u32 parent,
+                                         const char short_name_11[11], int directory,
+                                         struct fat_file *out)
+{
+    u32 cluster = parent, transitions = 0;
+    u8 sector = 0;
+    if (!valid_cluster(fs, parent)) return DIAG_FAT;
+    for (u32 visited = 0; visited < DIRECTORY_SECTORS; ++visited) {
+        if (sector == fs->sectors_per_cluster) {
+            if (transitions >= DIRECTORY_TRANSITIONS) return DIAG_LIMIT;
+            enum diag_result next = next_cluster(fs, &cluster);
+            if (next != DIAG_OK) return next == DIAG_END ? DIAG_END : next;
+            ++transitions;
+            sector = 0;
+        }
+        enum diag_result result = data_sector(fs, cluster, sector++);
+        if (result != DIAG_OK) return result;
+        for (u32 entry = 0; entry < ENTRIES_PER_SECTOR; ++entry) {
+            const u8 *p = fs->sector + 32u * entry;
+            if (!p[0]) return DIAG_END;
+            if (p[0] == 0xe5 || p[11] == 0x0fu || (p[11] & (0x08u | 0x06u)))
+                continue; /* deleted, long-name, volume, hidden or system */
+            if (!!(p[11] & 0x10u) != !!directory) continue;
+            u32 i;
+            for (i = 0; i < 11 && p[i] == (u8)short_name_11[i]; ++i) {}
+            if (i != 11) continue;
+            const u32 found = ((u32)(ld16(p + 20) & 0x0fffu) << 16) | ld16(p + 26);
+            const u32 size = ld32(p + 28);
+            if (!valid_cluster(fs, found) || (!directory && !size)) return DIAG_FAT;
+            out->cluster = found;
+            out->size = size;
+            short_name(out->name, p);
+            return DIAG_OK;
+        }
+    }
+    return DIAG_LIMIT;
+}
+
+enum diag_result fat32_open_fm1_index(struct fat32 *fs, struct fat_file *index)
+{
+    struct fat_file folder;
+    enum diag_result r = find_short_entry(fs, fs->root, "FM1        ", 1, &folder);
+    if (r != DIAG_OK) return r;
+    r = find_short_entry(fs, folder.cluster, "INDEX   CSV", 0, index);
+    if (r != DIAG_OK) return r;
+    return index->size <= 24576u ? DIAG_OK : DIAG_LIMIT;
+}

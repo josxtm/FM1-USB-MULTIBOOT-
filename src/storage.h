@@ -40,6 +40,8 @@ struct fat_dir { u32 cluster, transitions; u8 sector, entry, end; };
 
 enum diag_result fat32_mount(struct fat32 *fs, struct block_device disk);
 void fat32_root(const struct fat32 *fs, struct fat_dir *dir);
+/* Only FM1/INDEX.CSV, read-only; no generic path traversal. */
+enum diag_result fat32_open_fm1_index(struct fat32 *fs, struct fat_file *index);
 enum diag_result fat32_next(struct fat32 *fs, struct fat_dir *dir, struct fat_file *file);
 enum diag_result fat32_read_prefix(struct fat32 *fs, const struct fat_file *file,
                                    u8 *output, u32 capacity, u32 *written);

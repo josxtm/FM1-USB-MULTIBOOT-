@@ -13,11 +13,15 @@ static unsigned bot_failed, have_data, inject_timeout, invalid_csw, pending_atte
 static enum husb_res next_control;
 static u32 block_size = 512, volume_lba = 2048;
 static u32 disk_end = 62521344;
-static int damaged_fat, short_partition;
+static int damaged_fat, short_partition, missing_fm1, invalid_fm1_cluster, oversized_index;
 
 #define RESERVED 32u
 #define FAT_SIZE 8000u
 #define FAT_DATA (RESERVED + 2u * FAT_SIZE)
+static const char index_contents[] =
+    "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n"
+    "FELUCCA|FELUCCA|1.8.2|FELUCCA.FWS|123|"
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|UNVERIFIED\n";
 
 void delay_us(u32 us) { assert(us == 10000 || us == 200000); }
 int husb_attached(void) { return attached != 0; }
@@ -100,6 +104,8 @@ static void sector(u8 *out, u32 lba)
         st16(out + 510, 0xaa55);
     } else if (lba == volume_lba + RESERVED) {
         st32(out + 12, damaged_fat ? 3 : 6); /* file deliberately fragmented */
+        st32(out + 16, 0x0fffffff); /* FM1 directory */
+        st32(out + 20, 0x0fffffff); /* INDEX.CSV */
         st32(out + 24, 0x0fffffff);
     } else if (lba == volume_lba + FAT_DATA) {
         out[0] = 0xe5;
@@ -110,9 +116,21 @@ static void sector(u8 *out, u32 lba)
         memcpy(out + 96, "TEST    TXT", 11);
         st16(out + 96 + 26, 3);
         st32(out + 96 + 28, 700);
+        if (!missing_fm1) {
+            memcpy(out + 128, "FM1        ", 11);
+            out[128 + 11] = 0x10;
+            st16(out + 128 + 26, invalid_fm1_cluster ? 1 : 4);
+        }
     } else if (lba == volume_lba + FAT_DATA + 1) {
         memset(out, 'A', 512);
         memcpy(out, "FM1 READ ONLY", 13);
+    } else if (lba == volume_lba + FAT_DATA + 2) {
+        memcpy(out, "INDEX   CSV", 11);
+        out[11] = 0x20;
+        st16(out + 26, 5);
+        st32(out + 28, oversized_index ? 24577 : (u32)(sizeof index_contents - 1));
+    } else if (lba == volume_lba + FAT_DATA + 3) {
+        memcpy(out, index_contents, sizeof index_contents - 1);
     } else if (lba == volume_lba + FAT_DATA + 4) {
         memset(out, 'B', 512);
     } else {
@@ -149,7 +167,7 @@ int main(void)
 {
     struct usb_device reader;
     struct fat32 fs;
-    struct fat_file file;
+    struct fat_file file, index;
     struct fat_dir dir;
     u32 blocks, length;
     u8 output[1024];
@@ -186,6 +204,21 @@ int main(void)
         fat32_root(&fs, &dir);
         assert(fat32_next(&fs, &dir, &file) == DIAG_OK);
         assert(strcmp(file.name, "TEST.TXT") == 0 && file.size == 700);
+        assert(fat32_open_fm1_index(&fs, &index) == DIAG_OK);
+        assert(strcmp(index.name, "INDEX.CSV") == 0 &&
+               index.size == sizeof index_contents - 1);
+        assert(fat32_read_prefix(&fs, &index, output, sizeof output, &length) == DIAG_OK);
+        assert(length == sizeof index_contents - 1);
+        assert(memcmp(output, "FM1CAT|1\n", 9) == 0);
+        missing_fm1 = 1;
+        assert(fat32_open_fm1_index(&fs, &index) == DIAG_END);
+        missing_fm1 = 0;
+        invalid_fm1_cluster = 1;
+        assert(fat32_open_fm1_index(&fs, &index) == DIAG_FAT);
+        invalid_fm1_cluster = 0;
+        oversized_index = 1;
+        assert(fat32_open_fm1_index(&fs, &index) == DIAG_LIMIT);
+        oversized_index = 0;
         assert(fat32_next(&fs, &dir, &file) == DIAG_END);
         assert(fat32_read_prefix(&fs, &file, output, sizeof output, &length) == DIAG_OK && length == 700);
         assert(memcmp(output, "FM1 READ ONLY", 13) == 0 && output[511] == 'A' && output[512] == 'B');
