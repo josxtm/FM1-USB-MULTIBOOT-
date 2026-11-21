@@ -7,9 +7,11 @@ import java.nio.ByteOrder
 /** This is the only transport type accepted by the RAM upload path in this APK. */
 internal class SimulatedRom(
     private val fragmentSize: Int = 173,
-    private val fault: Fault? = null
+    private val fault: Fault? = null,
+    private val resident: Resident = Resident.CLEAN_ROM
 ) : BulkWire {
     internal enum class Fault { TIMEOUT_ON_WRITE, DETACH_ON_WRITE, INVALID_STATUS, DETACH_ON_JUMP, BAD_JUMP_ECHO }
+    internal enum class Resident { CLEAN_ROM, MFLR, OTHER, PROBE_REFUSED, PROBE_TIMEOUT }
 
     init { require(fragmentSize in 1..AppSlot.BLOCK_BYTES) }
 
@@ -24,6 +26,7 @@ internal class SimulatedRom(
     var jumps = 0
         private set
     val commands = mutableListOf<Int>()
+    val knownCleanFixture get() = resident == Resident.CLEAN_ROM
 
     override fun write(bytes: ByteArray, offset: Int, length: Int): Int {
         val pending = block
@@ -61,6 +64,17 @@ internal class SimulatedRom(
                 "WL82    ".toByteArray().copyInto(this, 8)
                 "UBOOT1.00       ".toByteArray().copyInto(this, 16)
             }
+            MFLR_IDENTIFY -> {
+                if (!command.contentEquals(RomProtocol.wrapper(RomProtocol.identifyResidentCdb(), tag, 16, true)))
+                    throw UsbProblem(UsbFailure.POLICY)
+                reply = when (resident) {
+                    Resident.CLEAN_ROM, Resident.PROBE_REFUSED -> null
+                    Resident.PROBE_TIMEOUT -> throw UsbProblem(UsbFailure.TIMEOUT)
+                    Resident.OTHER -> ByteArray(16)
+                    Resident.MFLR -> ByteBuffer.allocate(16).putShort(MFLR_IDENTIFY.toShort())
+                        .put("MFLR234".toByteArray()).put(0).putInt(0x01c28000).array()
+                }
+            }
             RomProtocol.RAM_WRITE -> {
                 val address = ByteBuffer.wrap(command, 17, 4).int.toLong() and 0xffffffffL
                 if (!AppSlot.contains(address, size) || size > AppSlot.BLOCK_BYTES) throw UsbProblem(UsbFailure.POLICY)
@@ -97,8 +111,9 @@ internal class SimulatedRom(
             return data.size
         }
         val echoedTag = if (opcode == RomProtocol.RAM_WRITE && fault == Fault.INVALID_STATUS) tag + 1 else tag
+        val refused = opcode == MFLR_IDENTIFY && (resident == Resident.CLEAN_ROM || resident == Resident.PROBE_REFUSED)
         ByteBuffer.wrap(buffer).order(ByteOrder.LITTLE_ENDIAN)
-            .putInt(RomProtocol.CSW).putInt(echoedTag).putInt(0).put(0)
+            .putInt(RomProtocol.CSW).putInt(echoedTag).putInt(if (refused) 16 else 0).put(if (refused) 1 else 0)
         cbw = null
         return 13
     }
@@ -110,6 +125,9 @@ internal class RamSimulation(private val wire: SimulatedRom = SimulatedRom()) {
     fun run(app: ApprovedApp, progress: (Int, Int) -> Unit, log: (String) -> Unit): SimulationResult {
         val bot = BotSession(wire)
         log("SIM · INQUIRY 0x12 · ${bot.inquiry()}")
+        checkSimulatedResident(bot, wire.knownCleanFixture, log)
+        if (!AppSlot.contains(AppSlot.START, app.size)) throw UsbProblem(UsbFailure.POLICY)
+        log("SIM · imagen 0x${hex(AppSlot.START)}–0x${hex(AppSlot.START + app.size - 1)} · APP1 aprobado")
         for (offset in 0 until app.size step AppSlot.BLOCK_BYTES) {
             val address = AppSlot.START + offset
             val data = RomProtocol.transform(app.chunk(offset))
@@ -130,6 +148,7 @@ internal class RamSimulation(private val wire: SimulatedRom = SimulatedRom()) {
             throw failure
         }
         log("SIM · 0xFB08 · eco y CSW válidos")
+        log("SIM · el retorno físico a DARK-1 y la integridad de Flash requieren verificación independiente")
         return SimulationResult.START_ACKNOWLEDGED
     }
 }

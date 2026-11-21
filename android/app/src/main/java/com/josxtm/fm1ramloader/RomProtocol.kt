@@ -73,6 +73,8 @@ internal object RomProtocol {
     fun jumpCdb(): ByteArray = vendorCdb().putShort(RAM_JUMP.toShort())
         .putInt(AppSlot.START.toInt()).putShort(1).array()
 
+    fun identifyResidentCdb(): ByteArray = vendorCdb().putShort(MFLR_IDENTIFY.toShort()).array()
+
     private fun vendorCdb(): ByteBuffer = ByteBuffer.wrap(ByteArray(16) { 0xff.toByte() })
 }
 

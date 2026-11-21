@@ -31,7 +31,7 @@ class RomProtocolTest {
             val changed = valid.copyOf().apply { this[index] = (this[index].toInt() xor 1).toByte() }
             assertFalse(RomProtocol.inquiryOnly(changed))
         }
-        for (code in listOf(0xfb00, 0xfb01, 0xfb04, 0xfb06, 0xfb08, 0x2a00)) {
+        for (code in listOf(0xfb00, 0xfb01, 0xfb04, 0xfb06, 0xfb08, 0xfc40, 0x2a00)) {
             val cdb = bytes(hex(code.toLong(), 4))
             assertFalse(RomProtocol.inquiryOnly(RomProtocol.wrapper(cdb, 1, 36, true)))
         }
@@ -67,7 +67,7 @@ class RomProtocolTest {
         assertEquals(512, progress.first())
         assertEquals(8956, progress.last())
         assertEquals(1, wire.jumps)
-        assertEquals(listOf(0x12) + List(18) { 0xfb06 } + 0xfb08, wire.commands)
+        assertEquals(listOf(0x12, 0xfc40) + List(18) { 0xfb06 } + 0xfb08, wire.commands)
     }
 
     @Test fun transferFaultsPreventJump() {
