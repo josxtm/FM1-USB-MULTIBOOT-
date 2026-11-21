@@ -36,9 +36,10 @@ internal fun AndroidCoverFlow(
     if (items.isEmpty()) return
     var dragDistance by remember { mutableFloatStateOf(0f) }
     val animatedDrag by animateFloatAsState(dragDistance, label = "cover-flow-drag")
-    val center = items[selected]
-    val previous = items[(selected - 1 + items.size) % items.size]
-    val next = items[(selected + 1) % items.size]
+    val safeSelected = selected.coerceIn(0, items.lastIndex)
+    val center = items[safeSelected]
+    val previous = items[(safeSelected - 1 + items.size) % items.size]
+    val next = items[(safeSelected + 1) % items.size]
     val dragModifier = Modifier
         .fillMaxWidth()
         .pointerInput(items.size, selected) {
@@ -57,15 +58,34 @@ internal fun AndroidCoverFlow(
             )
         }
     Row(modifier = dragModifier.height(220.dp), horizontalArrangement = Arrangement.Center) {
-        CoverCard(previous, Modifier.width(170.dp).graphicsLayer {
-            alpha = 0.55f; scaleX = 0.82f; scaleY = 0.82f; translationX = animatedDrag - 12f
-        })
-        CoverCard(center, Modifier.width(260.dp).graphicsLayer {
-            translationX = animatedDrag; scaleX = 1f; scaleY = 1f
-        }, prominent = true)
-        CoverCard(next, Modifier.width(170.dp).graphicsLayer {
-            alpha = 0.55f; scaleX = 0.82f; scaleY = 0.82f; translationX = animatedDrag + 12f
-        })
+        when (items.size) {
+            1 -> CoverCard(center, Modifier.width(300.dp).graphicsLayer {
+                translationX = animatedDrag
+            }, prominent = true)
+            2 -> {
+                val adjacent = items[if (safeSelected == 0) 1 else 0]
+                CoverCard(center, Modifier.width(260.dp).graphicsLayer {
+                    translationX = animatedDrag
+                }, prominent = true)
+                CoverCard(adjacent, Modifier.width(170.dp).graphicsLayer {
+                    alpha = 0.55f; scaleX = 0.82f; scaleY = 0.82f
+                    translationX = animatedDrag + 12f
+                })
+            }
+            else -> {
+                CoverCard(previous, Modifier.width(170.dp).graphicsLayer {
+                    alpha = 0.55f; scaleX = 0.82f; scaleY = 0.82f
+                    translationX = animatedDrag - 12f
+                })
+                CoverCard(center, Modifier.width(260.dp).graphicsLayer {
+                    translationX = animatedDrag
+                }, prominent = true)
+                CoverCard(next, Modifier.width(170.dp).graphicsLayer {
+                    alpha = 0.55f; scaleX = 0.82f; scaleY = 0.82f
+                    translationX = animatedDrag + 12f
+                })
+            }
+        }
     }
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = onPrevious, modifier = Modifier.weight(1f)) { Text("‹ Anterior") }

@@ -54,6 +54,8 @@ class SdLibraryActivity : ComponentActivity() {
     private var libraryState by mutableStateOf(CoverFlowState.NO_CARD)
     private var librarySelection by mutableStateOf(0)
     private var selectedAssessment by mutableStateOf<FirmwareAssessment?>(null)
+    private var libraryStatus by mutableStateOf("Sin tarjeta")
+    private val preferences by lazy { getPreferences(MODE_PRIVATE) }
 
     private val pickFirmware = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -75,6 +77,7 @@ class SdLibraryActivity : ComponentActivity() {
                 return@registerForActivityResult
             }
             selectedFolder = uri
+            preferences.edit().putString(KEY_FOLDER_URI, uri.toString()).apply()
             folderName = tree.name ?: "FM1"
             runCatching {
                 contentResolver.takePersistableUriPermission(
@@ -130,9 +133,9 @@ class SdLibraryActivity : ComponentActivity() {
                             enabled = !busy && selectedFolder != null, modifier = Modifier.fillMaxWidth()) {
                             Text("Abrir / recargar FM1/INDEX.CSV")
                         }
-                        Text("Cover Flow Android · estado: $libraryState")
-                        if (libraryItems.isNotEmpty()) {
-                            val item = libraryItems[librarySelection]
+                        Text("Cover Flow Android · estado: $libraryState · $libraryStatus")
+                        val item = libraryItems.getOrNull(librarySelection)
+                        if (item != null) {
                             AndroidCoverFlow(
                                 items = libraryItems, selected = librarySelection,
                                 onPrevious = ::previousLibrary, onNext = ::nextLibrary,
@@ -160,6 +163,21 @@ class SdLibraryActivity : ComponentActivity() {
                 }
             }
         }
+        restorePersistedFolder()
+    }
+
+    private fun restorePersistedFolder() {
+        val value = preferences.getString(KEY_FOLDER_URI, null) ?: return
+        val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return
+        val tree = DocumentFile.fromTreeUri(this, uri)
+        if (tree?.isDirectory == true && tree.name?.equals("FM1", ignoreCase = true) == true) {
+            selectedFolder = uri
+            folderName = tree.name ?: "FM1"
+            loadCatalog(uri)
+        } else {
+            libraryState = CoverFlowState.NO_CARD
+            libraryStatus = "La carpeta FM1 ya no está disponible; selecciónala de nuevo."
+        }
     }
 
     private fun loadCatalog(treeUri: Uri) {
@@ -175,14 +193,20 @@ class SdLibraryActivity : ComponentActivity() {
                 val entries = FirmwareCatalog.decode(text)
                 val fw = root.findFile("FW")
                 entries.map { entry ->
-                    val file = fw?.findFile(entry.fileName)
-                    val assessment = if (file == null) {
+                    runCatching {
+                        val file = fw?.findFile(entry.fileName)
+                        if (file == null) {
+                            entry.assess().let { base ->
+                                base.copy(warnings = base.warnings + "Archivo ausente en FM1/FW")
+                            }
+                        } else FirmwareAssetVerifier.verify(entry,
+                            requireNotNull(contentResolver.openInputStream(file.uri)))
+                    }.getOrElse { failure ->
                         entry.assess().let { base ->
-                            base.copy(warnings = base.warnings + "Archivo ausente en FM1/FW")
+                            base.copy(warnings = base.warnings +
+                                "No se pudo verificar ${entry.fileName}: ${failure.message ?: failure.javaClass.simpleName}")
                         }
-                    } else FirmwareAssetVerifier.verify(entry,
-                        requireNotNull(contentResolver.openInputStream(file.uri)))
-                    LibraryItem(entry, assessment)
+                    }.let { LibraryItem(entry, it) }
                 }
             }
             runOnUiThread {
@@ -190,8 +214,15 @@ class SdLibraryActivity : ComponentActivity() {
                 result.fold(
                     onSuccess = { items ->
                         libraryItems = items
-                        coverFlow.attachCatalog(items.map { it.entry }, items.map { it.assessment })
-                        librarySelection = 0
+                        coverFlow.attachCatalog(items.map { it.entry }, items.map { it.assessment },
+                            preferences.getString(KEY_SELECTED_ID, null))
+                        librarySelection = coverFlow.selected.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+                        libraryStatus = when {
+                            items.isEmpty() -> "Catálogo vacío"
+                            items.any { !it.assessment.integrityVerified } -> "Biblioteca cargada · verificación parcial o con advertencias"
+                            else -> "Biblioteca cargada · entradas verificadas"
+                        }
+                        preferences.edit().putString(KEY_SELECTED_ID, items.getOrNull(librarySelection)?.entry?.id).apply()
                         selectedAssessment = null
                         libraryState = coverFlow.state
                         status = "Catálogo leído: ${items.size} firmware(s). PLAY solo inspecciona."
@@ -199,6 +230,7 @@ class SdLibraryActivity : ComponentActivity() {
                     onFailure = {
                         libraryItems = emptyList()
                         libraryState = CoverFlowState.ERROR
+                        libraryStatus = "Error de catálogo · reintento disponible"
                         coverFlow.fail(it.message ?: "Error de lectura")
                         status = "Error leyendo FM1/INDEX.CSV: ${it.message ?: it.javaClass.simpleName}"
                     }
@@ -210,6 +242,7 @@ class SdLibraryActivity : ComponentActivity() {
     private fun nextLibrary() {
         coverFlow.next()
         librarySelection = coverFlow.selected
+        preferences.edit().putString(KEY_SELECTED_ID, coverFlow.entries.getOrNull(librarySelection)?.id).apply()
         libraryState = coverFlow.state
         selectedAssessment = null
     }
@@ -217,6 +250,7 @@ class SdLibraryActivity : ComponentActivity() {
     private fun previousLibrary() {
         coverFlow.previous()
         librarySelection = coverFlow.selected
+        preferences.edit().putString(KEY_SELECTED_ID, coverFlow.entries.getOrNull(librarySelection)?.id).apply()
         libraryState = coverFlow.state
         selectedAssessment = null
     }
@@ -408,5 +442,10 @@ class SdLibraryActivity : ComponentActivity() {
     override fun onDestroy() {
         worker.shutdownNow()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val KEY_FOLDER_URI = "fm1.folder.uri"
+        const val KEY_SELECTED_ID = "fm1.selected.id"
     }
 }

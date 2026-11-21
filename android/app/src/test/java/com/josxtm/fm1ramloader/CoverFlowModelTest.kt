@@ -34,6 +34,16 @@ class CoverFlowModelTest {
         model.next()
         model.attachCatalog(listOf(entry("TWO"), entry("THREE")))
         assertEquals("TWO", model.entries[model.selected].id)
+        model.attachCatalog(listOf(entry("THREE")))
+        assertEquals("THREE", model.entries[model.selected].id)
+    }
+
+    @Test fun preferredSelectionRestoresAfterActivityRecreation() {
+        val model = CoverFlowModel()
+        model.attachCatalog(listOf(entry("ONE"), entry("TWO"), entry("THREE")), preferredId = "THREE")
+        assertEquals(2, model.selected)
+        model.attachCatalog((1..64).map { entry("F${it.toString().padStart(2, '0')}") }, preferredId = "F64")
+        assertEquals("F64", model.entries[model.selected].id)
     }
 
     @Test fun inspectionUsesActualLibraryAssessment() {

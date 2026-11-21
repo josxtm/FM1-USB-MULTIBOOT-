@@ -15,11 +15,11 @@ internal class CoverFlowModel {
     private var assessments: List<FirmwareAssessment> = emptyList()
 
     /** Attach catalog metadata and, when available, assessments of the actual SAF files. */
-    fun attachCatalog(catalog: List<FirmwareEntry>, verifiedAssessments: List<FirmwareAssessment> = emptyList()) {
+    fun attachCatalog(catalog: List<FirmwareEntry>, verifiedAssessments: List<FirmwareAssessment> = emptyList(), preferredId: String? = null) {
         require(verifiedAssessments.isEmpty() || verifiedAssessments.size == catalog.size) {
             "El número de evaluaciones no coincide con el catálogo"
         }
-        val previousId = entries.getOrNull(selected)?.id
+        val previousId = preferredId ?: entries.getOrNull(selected)?.id
         entries = catalog
         assessments = verifiedAssessments
         selected = previousId?.let { id -> catalog.indexOfFirst { it.id == id }.takeIf { it >= 0 } } ?: 0
