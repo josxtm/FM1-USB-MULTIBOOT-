@@ -156,7 +156,7 @@ internal class AndroidUsb(private val context: Context, private val log: (String
                 if (token != generation) return@post
                 result.fold(
                     onSuccess = { identity ->
-                        panel = panel.copy(state = "ROM identificada · consulta cerrada", identity = identity, busy = false)
+                        panel = panel.copy(state = "Firma USB de ROM · consulta cerrada", identity = identity, busy = false)
                         log("USB · INQUIRY + CSW válidos · $identity")
                     },
                     onFailure = { error ->

@@ -15,6 +15,6 @@
 
 ## Pendientes para un futuro modo físico
 
-Quedan por validar en una unidad autorizada la identidad de placa frente a otros AC791N, la transición MIDI a ROM y su nuevo permiso, la reclamación de la interfaz y el comportamiento de la ROM bajo desconexión. Haría falta verificar de forma independiente la integridad de la Flash antes y después, el retorno a DARK-1, el encendido del diagnóstico en LCD y el comportamiento eléctrico al cambiar el rol USB. La app mantiene el modo físico bloqueado mientras estas comprobaciones están pendientes.
+Quedan por validar en una unidad autorizada la identidad de placa frente a otros AC791N, la transición MIDI a ROM y su nuevo permiso, la reclamación de la interfaz y el comportamiento de la ROM bajo desconexión. Antes de una carga física también es necesario descartar que un cargador residente ocupe la ventana RAM. Haría falta verificar de forma independiente la integridad de la Flash antes y después, el retorno a DARK-1, el encendido del diagnóstico en LCD y el comportamiento eléctrico al cambiar el rol USB. La app mantiene el modo físico bloqueado mientras estas comprobaciones están pendientes.
 
 La huella fijada identifica el artefacto aprobado para evaluación en esta fase. El ensayo de hardware y la revisión de seguridad son requisitos distintos.
