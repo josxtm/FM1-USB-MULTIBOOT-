@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
                 validate = ::validate,
                 simulate = ::simulate,
                 export = { saveLog.launch("fm1-ram-loader.log.txt") },
-                openLibrary = { startActivity(Intent(this, SdLibraryActivity::class.java)) }
+                openLibrary = { startActivity(Intent(this, SdLibraryActivity::class.java)) },\n                openMidi = { startActivity(Intent(this, MbootMidiActivity::class.java)) }
             )
         }
     }
