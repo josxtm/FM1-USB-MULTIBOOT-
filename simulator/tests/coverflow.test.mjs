@@ -88,7 +88,34 @@ test("deslizamiento horizontal y teclas controlan la selección", () => {
   key({ key: "ArrowLeft", preventDefault() {} });
   assert.equal(app.element("name").textContent, "DARK-1");
   key({ key: "Enter", preventDefault() {} });
-  assert.match(app.element("status").textContent, /demostración/i);
+  assert.match(app.element("status").textContent, /selección visual/i);
   key({ key: "Escape", preventDefault() {} });
   assert.match(app.element("status").textContent, /Menú/);
+});
+
+test("INDEX.CSV real valida y reemplaza catálogo de muestra sin habilitar arranque", async () => {
+  const app = setup();
+  const valid = "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n" +
+    "NEWFW|MI NUEVO FW|2.0|NEWFW.BIN|324|" + "a".repeat(64) + "|UNVERIFIED\n";
+  app.element("catalogInput").fire("change", {
+    target: { files: [{ size: valid.length, text: async () => valid }] }
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.element("name").textContent, "MI NUEVO FW");
+  assert.equal(app.element("version").textContent, "2.0");
+  assert.equal(app.element("compat").textContent, "UNVERIFIED");
+  app.element("play").fire("click");
+  assert.match(app.element("status").textContent, /No se carga ni modifica/i);
+});
+
+test("INDEX.CSV malicioso se rechaza sin cambiar el catálogo", async () => {
+  const app = setup();
+  const invalid = "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n" +
+    "BAD|ABC|1|../X.BIN|10|" + "b".repeat(64) + "|UNVERIFIED\n";
+  app.element("catalogInput").fire("change", {
+    target: { files: [{ size: invalid.length, text: async () => invalid }] }
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.element("name").textContent, "DARK-1");
+  assert.match(app.element("status").textContent, /rechazado/i);
 });

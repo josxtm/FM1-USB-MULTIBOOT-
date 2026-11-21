@@ -59,7 +59,8 @@ internal fun LoaderScreen(
     progress: Float, busy: Boolean, lines: List<String>, detect: () -> Unit, selectUsb: (Int) -> Unit,
     connect: () -> Unit, connectExclusive: (Int) -> Unit, disconnect: () -> Unit,
     selectFile: () -> Unit, useReference: () -> Unit,
-    validate: () -> Unit, simulate: () -> Unit, export: () -> Unit
+    validate: () -> Unit, simulate: () -> Unit, export: () -> Unit,
+    openLibrary: () -> Unit
 ) {
     MaterialTheme(colorScheme = palette) {
         Surface(color = ink, modifier = Modifier.fillMaxSize()) {
@@ -70,6 +71,7 @@ internal fun LoaderScreen(
                     Text("FM1 RAM LOADER", color = teal, fontFamily = FontFamily.Monospace,
                         fontSize = 31.sp, fontWeight = FontWeight.Bold)
                     Text("Simulación · carga física bloqueada", color = muted, fontSize = 17.sp)
+                    OutlinedButton(openLibrary) { Text("MicroSD · Biblioteca y exportación de firmwares") }
                     if (wide) {
                         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             DevicePane(Modifier.weight(1f), usb, detect, selectUsb, connect, connectExclusive, disconnect)

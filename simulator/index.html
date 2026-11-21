@@ -33,6 +33,7 @@
   .stat span:last-child{font-weight:650;text-align:right}
   .note{border:1px solid #395b56;background:#102521;padding:11px 12px;border-radius:10px;font-size:12px;color:#d3eee6;margin-top:14px}
   .danger{color:#ffd6a4;background:#2b2015;border-color:#806642}
+  .filepick{border:1px dashed #507377;border-radius:9px;padding:10px;font-size:12px;width:100%;max-width:100%;margin-bottom:12px;background:#18272e;color:#e8f4f4}
   .legend{font-size:12px;margin-top:18px;color:#a8bbc1}
   .legend strong{color:#e3efef}
   @media(max-width:680px){.layout{grid-template-columns:1fr}.device{margin:0 auto;width:100%}main{padding:16px 12px}}
@@ -60,6 +61,9 @@
   <section>
     <div class="panel">
       <h2>Ficha del firmware</h2>
+      <label for="catalogInput">Importar catálogo INDEX.CSV desde la microSD</label>
+      <input id="catalogInput" class="filepick" type="file" accept=".csv,text/plain">
+      <p style="font-size:12px;margin-top:0">Solo lee los nombres del catálogo. No comprueba los binarios ni inicia firmware.</p>
       <div class="stat"><span>Seleccionado</span><span id="name">DARK-1</span></div>
       <div class="stat"><span>Versión</span><span id="version">Ejemplo</span></div>
       <div class="stat"><span>Fuente</span><span id="source">Catálogo simulado</span></div>
@@ -74,7 +78,7 @@
 <script>
 "use strict";
 (function(){
-  const catalog=[
+  let catalog=[
     {id:"dark1",name:"DARK-1",version:"Ejemplo",description:"FM synthesis",colors:["#103c44","#31d9b4"],shape:0},
     {id:"original",name:"ORIGINAL",version:"Ejemplo",description:"Factory synth",colors:["#303a70","#9aaffe"],shape:1},
     {id:"felucca",name:"FELUCCA",version:"Ejemplo",description:"Custom firmware",colors:["#632a50","#ed7fb7"],shape:2},
@@ -86,14 +90,14 @@
   const version=document.getElementById("version");
   const status=document.getElementById("status");
   let current=0,position=0,mode="browse",last=performance.now(),pointerStart=null;
-  const count=catalog.length;
+  let count=catalog.length, imported=false;
   const wrap=(n)=>((n%count)+count)%count;
   const nearest=(n,ref)=>{const target=wrap(n);const shifts=[target-count,target,target+count];return shifts.reduce((a,b)=>Math.abs(b-ref)<Math.abs(a-ref)?b:a)};
   function updateInfo(){
     const f=catalog[current];
     name.textContent=f.name;version.textContent=f.version;
-    document.getElementById("source").textContent="Catálogo simulado";
-    document.getElementById("compat").textContent="No verificada";
+    document.getElementById("source").textContent=imported?"INDEX.CSV importado":"Catálogo simulado";
+    document.getElementById("compat").textContent=imported?"UNVERIFIED":"No verificada";
   }
   function setStatus(text,warning){
     status.textContent=text;status.classList.toggle("danger",!!warning);
@@ -104,7 +108,7 @@
   }
   function confirm(){
     mode="detail";
-    setStatus(catalog[current].name+": demostración de selección. No se carga ni modifica ningún firmware.",true);
+    setStatus(catalog[current].name+": selección visual solamente. No se carga ni modifica ningún firmware.",true);
   }
   function back(){
     mode="browse";setStatus("Menú de selección. Pulsa OCT +/- para navegar.",false);
@@ -193,6 +197,38 @@
     if(e.key==="ArrowRight")go(1);
     if(e.key==="Enter")confirm();
     if(e.key==="Escape")back();
+  });
+  function parseCatalog(text){
+    if(text.length>24576)throw new Error("Catálogo demasiado grande");
+    const lines=text.replace(/\r/g,"").trimEnd().split("\n");
+    if(lines[0]!=="FM1CAT|1"||lines[1]!=="ID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT")throw new Error("Versión FM1CAT incompatible");
+    const rows=lines.slice(2);if(!rows.length||rows.length>64)throw new Error("El catálogo debe tener entre 1 y 64 entradas");
+    const seen=new Set();
+    return rows.map((row,i)=>{
+      const p=row.split("|");
+      if(p.length!==7)throw new Error("Fila "+(i+1)+" incorrecta");
+      const [id,label,version,file,size,sha,compat]=p;
+      if(!/^[A-Z0-9_]{1,8}$/.test(id)||seen.has(id))throw new Error("ID duplicado o inválido");
+      seen.add(id);
+      if(!/^[A-Za-z0-9 _.-]{1,24}$/.test(label)||!/^[A-Za-z0-9._-]{1,16}$/.test(version))throw new Error("Etiqueta o versión inválida");
+      if(file!==id+".BIN"&&file!==id+".FWS")throw new Error("Nombre 8.3 no válido");
+      if(!/^[0-9]{1,8}$/.test(size)||Number(size)<=0||Number(size)>4194304||!/^[a-f0-9]{64}$/.test(sha))throw new Error("Tamaño o huella inválidos");
+      if(compat!=="UNVERIFIED")throw new Error("Compatibilidad sin verificar");
+      const colors=[["#103c44","#31d9b4"],["#303a70","#9aaffe"],["#632a50","#ed7fb7"],["#49301e","#f6b75b"]];
+      return {id,name:label,version,description:file,colors:colors[i%4],shape:i%4};
+    });
+  }
+  document.getElementById("catalogInput").addEventListener("change",async e=>{
+    const file=e.target.files&&e.target.files[0];
+    if(!file)return;
+    try {
+      if(file.size>24576)throw new Error("Archivo mayor que 24 KiB");
+      const parsed=parseCatalog(await file.text());
+      catalog=parsed;count=parsed.length;current=0;position=0;mode="browse";imported=true;
+      updateInfo();setStatus("Catálogo importado: "+count+" entradas. Los binarios NO se han inspeccionado y no se ejecutan.",false);
+    } catch(error){
+      setStatus("INDEX.CSV rechazado: "+error.message,true);
+    }
   });
   const zone=document.getElementById("touchRegion");
   zone.addEventListener("pointerdown",e=>{pointerStart={x:e.clientX,y:e.clientY}});
