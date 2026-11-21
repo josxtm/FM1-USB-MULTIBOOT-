@@ -53,6 +53,10 @@ SAF exporta bytes sin transformarlos, relee SHA-256, evita sobrescritura y gener
 - `android/.../MbootIdentityProtocolTest.kt`: regresión de mutación de opcode y checksum no protector.
 - `docs/goose/FASE-3B-4A-AUDITORIA.md` y `docs/goose/RAM-APP1-VALIDACION.md`.
 
+## Actualización FASE 4A
+
+Se añadió un emulador independiente del transporte físico y cobertura de padding no canónico, truncamiento, bytes adicionales, inicios simultáneos, límites de memoria, timeout y desconexión lógica. La aplicación se incrementa a comp7; los resultados detallados están en `docs/goose/FASE-4A-RESULTADOS.md`.
+
 ## Resultado y siguiente paso
 
 Software seguro para identificación `0x12`, catálogo y simulación: **implementado/verificable en software**. MIDI físico, APP1 físico, USB Host físico y multiboot: **pendiente de validación**. La siguiente fase requiere primero preservar/exportar una copia íntegra verificable, caracterizar USB-C/VBUS/CC y obtener autorización explícita para una prueba RAM limitada; no autoriza Flash ni sustitución de DARK-1.

@@ -26,6 +26,10 @@ El script reproducible es `scripts/validate.py`; `make` también compara el bina
 - Paquete truncado, reordenado, duplicado, timeout y desconexión durante una simulación.
 - Nunca convertir un resultado de validación en autorización de `0x25`/`0x30`.
 
+## Cobertura FASE 4A
+
+La APK conserva el rechazo previo a cualquier carga y las pruebas de `ApprovedApp` cubren tráiler, placa, formato, CRC, hash, tamaño, rango exclusivo y copia inmutable. Las simulaciones de transporte MIDI ahora cubren fragmentación, timeout y desconexión sin habilitar `0x25`/`0x30`.
+
 ## Estado
 
 - **Verificado en software:** límites, formato, CRC, hash fijado y simulaciones existentes.

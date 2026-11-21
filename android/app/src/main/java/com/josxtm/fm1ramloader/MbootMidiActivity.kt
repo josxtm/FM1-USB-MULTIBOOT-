@@ -34,7 +34,7 @@ import java.io.Closeable
 
 /**
  * Hardware command surface is intentionally read-only: exactly one static SysEx 0x12.
- * No generic command sender, backup or RAM execution in comp6.
+ * No generic command sender, backup or RAM execution in comp7.
  */
 class MbootMidiActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
