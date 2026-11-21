@@ -23,9 +23,10 @@ jobs:
         shell: bash
         run: make all | tee build/build-validation.txt
       - name: Check Android APP1 matches generated artifact
-        run: python3 scripts/check_app1_consistency.py \
-          build/fm1-usb-diagnostics-ram-experimental.bin \
-          android/app/src/main/assets/fm1-usb-diagnostics-ram-experimental.bin
+        run: |
+          python3 scripts/check_app1_consistency.py \
+            build/fm1-usb-diagnostics-ram-experimental.bin \
+            android/app/src/main/assets/fm1-usb-diagnostics-ram-experimental.bin
       - uses: actions/upload-artifact@v4
         with:
           name: fm1-usb-diagnostics-ram-prototype
