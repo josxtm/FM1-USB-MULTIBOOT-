@@ -10,6 +10,24 @@ La cuarta página del LCD se denomina `FM1 / INDEX.CSV`: informa de si el ficher
 
 La prueba automatizada crea un FAT32 artificial en RAM con FM1/INDEX.CSV y verifica hallazgo, vista preliminar, falta de carpeta, cluster inválido y exceso de tamaño del índice. Estas son pruebas de software; no evidencian acceso al lector USB-C del usuario.
 
+## Recuperación m-bootloader: verificación física del usuario
+
+El usuario ha instalado m-bootloader con M-Flasher y ha comprobado **en su FM1 real**:
+
+- Mantener PLAY al encender abre el menú de recuperación.
+- Elegir Boot app vuelve a arrancar DARK-1 normalmente.
+- Según el informe de instalación, el bootloader se grabó en los **cuatro primeros sectores** de Flash.
+
+La Flash Puya de 1 MiB usa sectores de 4 KiB. Para el diseño y las comprobaciones de seguridad, la región de arranque es **[0x00000, 0x04000)** (16.384 bytes), y la región de aplicación estándar comienza en **0x04000**. El área de arranque también puede contener cabeceras, configuración y datos relevantes para arrancar: no es un simple espacio de programa libre.
+
+**Regla obligatoria para cualquier instalador futuro:** ninguna operación de borrado o escritura de firmware de aplicación debe tocar, solaparse ni incluir parcialmente [0x00000, 0x04000). Si un paquete incluye esa región, rechazarlo por defecto; un cambio de bootloader debe ser una operación separada y autorizada, diseñada y verificada específicamente. Mantener también fuera de las operaciones ordinarias los datos de fábrica y zonas protegidas.
+
+El menú de recuperación y el retorno a DARK-1 están probados físicamente. **NO** se ha probado todavía una restauración completa después de un fallo, ni se ha verificado una restauración autónoma desde la tablet Android 16. No atribuir al bootloader una garantía absoluta frente a daños del propio sector de arranque, problemas eléctricos o imágenes incorrectas.
+
+Antes de cargar un diagnóstico en RAM sigue siendo obligatorio identificar el estado del cargador residente y comprobar las reservas RAM: instalar m-bootloader no demuestra que la dirección de carga esté libre.
+
+Fuentes de contraste de mapa: https://sbegueria.github.io/fm1-dev-wiki/Flash-Storage.html y https://sbegueria.github.io/fm1-dev-wiki/Recovery.html
+
 ## Bloqueos previos a probar en la unidad real
 
 1. La comp5 Android **no carga APP1 físicamente**. Solo identifica `WL82 / UBOOT1.00` y simula comandos. La prueba de USB Host del FM1 requiere un mecanismo RAM físicamente validado, que NO se habilita aquí.
