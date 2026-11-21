@@ -22,15 +22,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -51,7 +57,8 @@ private val palette = darkColorScheme(primary = teal, onPrimary = ink, surface =
 internal fun LoaderScreen(
     usb: UsbPanel, image: Inspection?, fileSize: Int?, imageState: String, operation: String,
     progress: Float, busy: Boolean, lines: List<String>, detect: () -> Unit, selectUsb: (Int) -> Unit,
-    connect: () -> Unit, disconnect: () -> Unit, selectFile: () -> Unit, useReference: () -> Unit,
+    connect: () -> Unit, connectExclusive: (Int) -> Unit, disconnect: () -> Unit,
+    selectFile: () -> Unit, useReference: () -> Unit,
     validate: () -> Unit, simulate: () -> Unit, export: () -> Unit
 ) {
     MaterialTheme(colorScheme = palette) {
@@ -65,12 +72,12 @@ internal fun LoaderScreen(
                     Text("Simulación · carga física bloqueada", color = muted, fontSize = 17.sp)
                     if (wide) {
                         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            DevicePane(Modifier.weight(1f), usb, detect, selectUsb, connect, disconnect)
+                            DevicePane(Modifier.weight(1f), usb, detect, selectUsb, connect, connectExclusive, disconnect)
                             ImagePane(Modifier.weight(1.13f), image, fileSize, imageState, busy, selectFile, useReference, validate)
                             OperationPane(Modifier.weight(0.9f), operation, progress, image?.approved != null && !busy, simulate)
                         }
                     } else {
-                        DevicePane(Modifier.fillMaxWidth(), usb, detect, selectUsb, connect, disconnect)
+                        DevicePane(Modifier.fillMaxWidth(), usb, detect, selectUsb, connect, connectExclusive, disconnect)
                         ImagePane(Modifier.fillMaxWidth(), image, fileSize, imageState, busy, selectFile, useReference, validate)
                         OperationPane(Modifier.fillMaxWidth(), operation, progress, image?.approved != null && !busy, simulate)
                     }
@@ -84,11 +91,11 @@ internal fun LoaderScreen(
 @Composable
 private fun DevicePane(
     modifier: Modifier, usb: UsbPanel, detect: () -> Unit, select: (Int) -> Unit,
-    connect: () -> Unit, disconnect: () -> Unit
+    connect: () -> Unit, connectExclusive: (Int) -> Unit, disconnect: () -> Unit
 ) = Panel("Dispositivo", modifier) {
     Text(usb.state, color = teal)
     val device = usb.selected
-    Value("Modo", device?.mode?.label ?: "—")
+    Value("Modo", device?.mode?.label ?: if (device != null) "ROM candidata" else "—")
     Value("VID:PID", device?.ids ?: "—")
     Value("Permiso", usb.permission)
     Value("Identidad", usb.identity ?: "Sin confirmar")
@@ -97,13 +104,27 @@ private fun DevicePane(
         Column {
             usb.devices.forEachIndexed { index, candidate ->
                 FilterChip(usb.selection == candidate.id, { select(candidate.id) },
-                    label = { Text("${index + 1}. ${candidate.mode?.label} ${candidate.ids}") },
+                    label = { Text("${index + 1}. ${candidate.mode?.label ?: "ROM candidata"} ${candidate.ids}") },
                     enabled = !usb.busy)
             }
         }
     }
     OutlinedButton(detect, enabled = !usb.busy, modifier = Modifier.fillMaxWidth()) { Text("Detectar FM1") }
     Button(connect, enabled = device != null && !usb.busy, modifier = Modifier.fillMaxWidth()) { Text("Conectar") }
+    usb.exclusiveAttempt?.let { attempt ->
+        var confirm by remember(attempt) { mutableStateOf(false) }
+        OutlinedButton({ confirm = true }, enabled = !usb.busy, modifier = Modifier.fillMaxWidth()) {
+            Text("Reintentar con acceso exclusivo")
+        }
+        if (confirm) AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("Consulta USB exclusiva") },
+            text = { Text("Android puede desvincular temporalmente el controlador de almacenamiento. " +
+                "Continúa solo si el FM‑1 está en ROM y su almacenamiento no está montado ni en uso.") },
+            confirmButton = { TextButton({ confirm = false; connectExclusive(attempt) }) { Text("Consultar una vez") } },
+            dismissButton = { TextButton({ confirm = false }) { Text("Cancelar") } }
+        )
+    }
     OutlinedButton(disconnect, enabled = device != null, modifier = Modifier.fillMaxWidth()) { Text("Desconectar") }
 }
 

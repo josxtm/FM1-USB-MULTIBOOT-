@@ -31,4 +31,25 @@ class UsbPolicyTest {
         assertFalse(UsbPolicy.permissionMatches(11, 11, false, true))
         assertFalse(UsbPolicy.permissionMatches(11, 11, true, false))
     }
+
+    @Test fun selectsExactlyOneValidBulkInAndOut() {
+        val input = UsbPipe(0x81, true, 64)
+        val output = UsbPipe(0x02, true, 64)
+        val interrupt = UsbPipe(0x83, false, 16)
+        assertEquals(BulkPair(input, output), UsbPolicy.bulkPair(listOf(output, interrupt, input)))
+        assertNull(UsbPolicy.bulkPair(listOf(input, interrupt)))
+        assertNull(UsbPolicy.bulkPair(listOf(input, input.copy(address = 0x82), output)))
+        assertNull(UsbPolicy.bulkPair(listOf(input, output.copy(address = 0))))
+        assertNull(UsbPolicy.bulkPair(listOf(input.copy(packetSize = 0), output)))
+    }
+
+    @Test fun exclusiveProfileRequiresOneConfigurationOneInterfaceAndOnlyTwoBulkPipes() {
+        val device = DeviceDescriptor(1, 0x4c4a, 0x8057, listOf(rom))
+        val pipes = listOf(UsbPipe(0x81, true, 64), UsbPipe(0x02, true, 64))
+        assertTrue(UsbPolicy.canOfferExclusive(device, 1, pipes))
+        assertFalse(UsbPolicy.canOfferExclusive(device, 2, pipes))
+        assertFalse(UsbPolicy.canOfferExclusive(device.copy(interfaces = listOf(rom, midi)), 1, pipes))
+        assertFalse(UsbPolicy.canOfferExclusive(device, 1, pipes + UsbPipe(0x83, false, 16)))
+        assertFalse(UsbPolicy.canOfferExclusive(device.copy(pid = 1), 1, pipes))
+    }
 }

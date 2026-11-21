@@ -13,7 +13,7 @@ internal enum class UsbFailure(val label: String) {
     POLICY("Operación fuera del perfil permitido")
 }
 
-internal class UsbProblem(val reason: UsbFailure) : Exception(reason.label)
+internal class UsbProblem(val reason: UsbFailure, detail: String = reason.label) : Exception(detail)
 
 internal interface BulkWire {
     val inPacketSize: Int
@@ -79,8 +79,8 @@ internal object RomProtocol {
 internal fun le32(bytes: ByteArray, index: Int): Int =
     ByteBuffer.wrap(bytes, index, 4).order(ByteOrder.LITTLE_ENDIAN).int
 
-internal class BotSession(private val wire: BulkWire) {
-    private var tag = 0
+internal class BotSession(private val wire: BulkWire, initialTag: Int = 0) {
+    private var tag = initialTag
 
     fun inquiry(): String = RomProtocol.parseInquiry(command(RomProtocol.inquiryCdb(), readSize = 36))
 
@@ -89,7 +89,7 @@ internal class BotSession(private val wire: BulkWire) {
             (payload.isEmpty() || readSize == 0))
         val transfer = ++tag
         val cbw = RomProtocol.wrapper(cdb, transfer, maxOf(payload.size, readSize), readSize > 0)
-        if (wire.write(cbw, 0, cbw.size) != cbw.size) throw UsbProblem(UsbFailure.TRANSFER)
+        if (wire.write(cbw, 0, cbw.size) != cbw.size) throw UsbProblem(UsbFailure.TRANSFER, "CBW incompleto")
 
         var sent = 0
         while (sent < payload.size) {
@@ -104,9 +104,9 @@ internal class BotSession(private val wire: BulkWire) {
             val length = wire.read(data)
             if (length == 13 && le32(data, 0) == RomProtocol.CSW) {
                 checkStatus(data, length, transfer)
-                throw UsbProblem(UsbFailure.TRANSFER)
+                throw UsbProblem(UsbFailure.TRANSFER, "CSW recibido antes de los datos")
             }
-            if (length != readSize) throw UsbProblem(UsbFailure.TRANSFER)
+            if (length != readSize) throw UsbProblem(UsbFailure.TRANSFER, "Datos IN de $length B, esperados $readSize B")
         }
 
         val status = ByteArray(maxOf(wire.inPacketSize, 13))
@@ -115,9 +115,12 @@ internal class BotSession(private val wire: BulkWire) {
     }
 
     private fun checkStatus(bytes: ByteArray, length: Int, expectedTag: Int) {
-        if (length != 13 || le32(bytes, 0) != RomProtocol.CSW || le32(bytes, 4) != expectedTag)
-            throw UsbProblem(UsbFailure.RESPONSE)
+        if (length != 13) throw UsbProblem(UsbFailure.RESPONSE, "CSW de $length B, esperados 13 B")
+        if (le32(bytes, 0) != RomProtocol.CSW) throw UsbProblem(UsbFailure.RESPONSE, "Firma CSW incorrecta")
+        if (le32(bytes, 4) != expectedTag) throw UsbProblem(UsbFailure.RESPONSE, "Etiqueta CSW distinta de la consulta")
         if (bytes[12] == 1.toByte()) throw UsbProblem(UsbFailure.REFUSED)
-        if (bytes[12] != 0.toByte() || le32(bytes, 8) != 0) throw UsbProblem(UsbFailure.RESPONSE)
+        val code = bytes[12].toInt() and 255
+        val residue = Integer.toUnsignedLong(le32(bytes, 8))
+        if (code != 0 || residue != 0L) throw UsbProblem(UsbFailure.RESPONSE, "CSW con estado $code y residuo $residue")
     }
 }

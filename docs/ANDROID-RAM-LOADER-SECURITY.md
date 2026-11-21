@@ -11,9 +11,12 @@
 | Archivo | Importación acotada mediante el selector de documentos. Solo se aprueba el SHA‑256 `810bb3673ef2fc75964724e07d42bb751d1e3e5e49056cdaccad40c3764ea246` de la Fase 1 con APP1 v1, placa 1, longitud par y CRC16 válido. Una imagen modificada con CRC reparado sigue rechazada. |
 | Direcciones | Rango `[0x01C30000, 0x01C7FD80)`, entrada fija y bloques de hasta 512 B. Los límites se comprueban con aritmética sin desbordamiento y el último bloque conserva su tamaño real. |
 | Permiso y ciclo de vida | El dispositivo tiene que coincidir con la solicitud y con `UsbManager.hasPermission`. Cambios de dispositivo cancelan la sesión lógica. Las transferencias de consulta usan tiempo de espera y se cierra la interfaz al terminar. |
+| Acceso exclusivo comp3 | Requiere el fallo anterior de la reclamación normal, confirmación para la misma conexión, perfil ROM estricto, permiso vigente y ausencia de volúmenes extraíbles activos visibles para la app. La consulta real sigue limitada a un único CBW de INQUIRY. |
 | Registro | Se exporta por el selector de Android. Incluye hora, VID/PID, códigos de operación, rangos de RAM, tamaños y resultados. Excluye claves, números de serie, datos de Flash, rutas de archivos y contenido de APP1. La APK carece de permiso de red. |
 
 ## Pendientes para un futuro modo físico
+
+El listado de volúmenes que Android entrega a la app no permite ver toda la actividad del kernel ni confirmar que la interfaz pertenece al FM‑1. `claimInterface(true)` puede interrumpir el acceso de Android al almacenamiento asociado. Si el intento falla después de desvincular el controlador o `releaseInterface()` devuelve `false`, la app no puede garantizar que el sistema lo vuelva a vincular. El descriptor USB válido y la confirmación explícita limitan el intento a la consulta. La prueba en la tablet y su ROM física sigue pendiente.
 
 Quedan por validar en una unidad autorizada la identidad de placa frente a otros AC791N, la transición MIDI a ROM y su nuevo permiso, la reclamación de la interfaz y el comportamiento de la ROM bajo desconexión. Antes de una carga física también es necesario descartar que un cargador residente ocupe la ventana RAM. Haría falta verificar de forma independiente la integridad de la Flash antes y después, el retorno a DARK-1, el encendido del diagnóstico en LCD y el comportamiento eléctrico al cambiar el rol USB. La app mantiene el modo físico bloqueado mientras estas comprobaciones están pendientes.
 

@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
                 detect = usb::refresh,
                 selectUsb = usb::select,
                 connect = usb::connect,
+                connectExclusive = usb::connectExclusive,
                 disconnect = usb::disconnect,
                 selectFile = { filePicker.launch(arrayOf("*/*")) },
                 useReference = { choose { assets.open(AppSlot.DIAGNOSTIC) } },
