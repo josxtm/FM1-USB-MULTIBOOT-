@@ -1,6 +1,7 @@
 package com.josxtm.fm1ramloader
 
 import android.net.Uri
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -58,7 +59,8 @@ class MainActivity : ComponentActivity() {
                 useReference = { choose { assets.open(AppSlot.DIAGNOSTIC) } },
                 validate = ::validate,
                 simulate = ::simulate,
-                export = { saveLog.launch("fm1-ram-loader.log.txt") }
+                export = { saveLog.launch("fm1-ram-loader.log.txt") },
+                openLibrary = { startActivity(Intent(this, SdLibraryActivity::class.java)) }
             )
         }
     }
