@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1218">
+<title>FM1 MULTIBOOT OS · Cover Flow Simulator</title>
+<style>
+  :root{color-scheme:dark;--bg:#0b1218;--panel:#151f29;--edge:#2e4852;--muted:#9bb0b8;--aqua:#6af8d5;--ink:#f2faf9}
+  *{box-sizing:border-box}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 50% 15%,#20313a 0%,#101922 40%,#070d13 100%);font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink)}
+  main{max-width:900px;margin:0 auto;padding:20px 16px 30px}
+  h1{font-size:clamp(21px,4vw,31px);margin:0;font-weight:750;letter-spacing:.01em}p{color:var(--muted)}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+  .tag{display:inline-flex;gap:7px;align-items:center;font-size:11px;font-weight:750;letter-spacing:.12em;color:var(--aqua);margin-bottom:8px}
+  .tag:before{content:"";display:block;width:7px;height:7px;border-radius:50%;background:var(--aqua);box-shadow:0 0 12px var(--aqua)}
+  .badge{font-size:11px;padding:6px 10px;border:1px solid #5c775d;border-radius:30px;color:#c8e1b9;background:#18291d}
+  .layout{display:grid;grid-template-columns:minmax(280px,1.1fr) minmax(245px,.9fr);gap:24px;margin-top:22px}
+  .device{padding:22px 18px 18px;max-width:470px;background:linear-gradient(135deg,#3b4850,#161e23 40%,#252b30);border:1px solid #54616a;border-radius:26px;box-shadow:0 22px 60px #0009,inset 0 2px 1px #ffffff20}
+  .device-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;font-size:11px;letter-spacing:.18em;font-weight:800;color:#cbd8d8}
+  .device-top span:last-child{color:#889ca2;font-size:9px}
+  .screen-holder{margin:0 auto;position:relative;width:min(100%,360px);aspect-ratio:1;border:8px solid #06090d;border-radius:14px;background:#050a10;box-shadow:0 0 0 1px #7c9197,inset 0 0 12px #000;overflow:hidden;touch-action:pan-y}
+  canvas{width:100%;height:100%;display:block;image-rendering:auto;touch-action:pan-y}
+  .controls{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:9px;margin-top:16px}
+  button{border:1px solid #536771;border-bottom-color:#0b1115;border-radius:12px;color:#e9f5f4;background:linear-gradient(#2e3a41,#1b242b);padding:13px 8px;font-size:13px;font-weight:750;cursor:pointer;touch-action:manipulation;box-shadow:0 3px 0 #0b1015}
+  button:hover,button:focus-visible{outline:2px solid var(--aqua);outline-offset:2px}
+  button:active{transform:translateY(2px);box-shadow:0 1px 0 #0b1015}
+  button.primary{color:#061b1a;background:linear-gradient(#96ffdf,#43bea8);border-color:#8bffe0}
+  .help{font-size:11px;text-align:center;margin:12px 0 0;color:#aabec5}
+  .panel{background:#121c26;border:1px solid var(--edge);border-radius:18px;padding:18px}
+  .panel h2{font-size:17px;margin:0 0 12px}.panel p{font-size:13px}
+  .stat{display:flex;justify-content:space-between;gap:9px;border-top:1px solid #2a3e47;padding:10px 0;font-size:13px}
+  .stat span:first-child{color:var(--muted)}
+  .stat span:last-child{font-weight:650;text-align:right}
+  .note{border:1px solid #395b56;background:#102521;padding:11px 12px;border-radius:10px;font-size:12px;color:#d3eee6;margin-top:14px}
+  .danger{color:#ffd6a4;background:#2b2015;border-color:#806642}
+  .legend{font-size:12px;margin-top:18px;color:#a8bbc1}
+  .legend strong{color:#e3efef}
+  @media(max-width:680px){.layout{grid-template-columns:1fr}.device{margin:0 auto;width:100%}main{padding:16px 12px}}
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><div class="tag">FM1 / LAB / UI PROTOTYPE</div><h1>FM1 MULTIBOOT OS</h1><p style="margin:7px 0 0">Simulador Cover Flow · objetivo TFT 240 × 240</p></div>
+  <div class="badge">SOLO DEMOSTRACIÓN · SIN USB</div>
+</header>
+<div class="layout">
+  <section class="device" aria-label="FM1 virtual">
+    <div class="device-top"><span>M-VAVE / FM1</span><span>SIMULADOR · v0.1</span></div>
+    <div class="screen-holder" id="touchRegion"><canvas id="lcd" width="240" height="240" aria-label="Vista simulada del menú del FM1">Se requiere Canvas.</canvas></div>
+    <div class="controls">
+      <button id="prev" type="button" aria-label="Firmware anterior">OCT −</button>
+      <button id="next" type="button" aria-label="Firmware siguiente">OCT +</button>
+      <button id="play" class="primary" type="button">PLAY</button>
+      <button id="back" type="button">REC</button>
+    </div>
+    <p class="help">← / → seleccionar · Intro confirmar · Esc volver · deslizar sobre la pantalla</p>
+  </section>
+  <section>
+    <div class="panel">
+      <h2>Ficha del firmware</h2>
+      <div class="stat"><span>Seleccionado</span><span id="name">DARK-1</span></div>
+      <div class="stat"><span>Versión</span><span id="version">Ejemplo</span></div>
+      <div class="stat"><span>Fuente</span><span id="source">Catálogo simulado</span></div>
+      <div class="stat"><span>Compatibilidad</span><span id="compat">No verificada</span></div>
+      <div class="stat"><span>Arranque</span><span>Deshabilitado</span></div>
+      <div id="status" class="note" role="status" aria-live="polite">Este prototipo NO instala ni ejecuta firmwares.</div>
+    </div>
+    <p class="legend"><strong>Objetivo real:</strong> un menú de arranque propio que lea el catálogo desde la microSD externa y permita escoger el firmware antes de iniciar el sintetizador. Esta página usa únicamente datos de muestra y no se conecta al FM1.</p>
+  </section>
+</div>
+</main>
+<script>
+"use strict";
+(function(){
+  const catalog=[
+    {id:"dark1",name:"DARK-1",version:"Ejemplo",description:"FM synthesis",colors:["#103c44","#31d9b4"],shape:0},
+    {id:"original",name:"ORIGINAL",version:"Ejemplo",description:"Factory synth",colors:["#303a70","#9aaffe"],shape:1},
+    {id:"felucca",name:"FELUCCA",version:"Ejemplo",description:"Custom firmware",colors:["#632a50","#ed7fb7"],shape:2},
+    {id:"sloop",name:"SLOOP",version:"Ejemplo",description:"Creative loop",colors:["#49301e","#f6b75b"],shape:3}
+  ];
+  const canvas=document.getElementById("lcd");
+  const ctx=canvas.getContext("2d",{alpha:false});
+  const name=document.getElementById("name");
+  const version=document.getElementById("version");
+  const status=document.getElementById("status");
+  let current=0,position=0,mode="browse",last=performance.now(),pointerStart=null;
+  const count=catalog.length;
+  const wrap=(n)=>((n%count)+count)%count;
+  const nearest=(n,ref)=>{const target=wrap(n);const shifts=[target-count,target,target+count];return shifts.reduce((a,b)=>Math.abs(b-ref)<Math.abs(a-ref)?b:a)};
+  function updateInfo(){
+    const f=catalog[current];
+    name.textContent=f.name;version.textContent=f.version;
+    document.getElementById("source").textContent="Catálogo simulado";
+    document.getElementById("compat").textContent="No verificada";
+  }
+  function setStatus(text,warning){
+    status.textContent=text;status.classList.toggle("danger",!!warning);
+  }
+  function go(step){
+    if(mode!=="browse"){mode="browse";setStatus("Selección de firmwares. La ejecución real sigue deshabilitada.",false)}
+    current=wrap(current+step);updateInfo();
+  }
+  function confirm(){
+    mode="detail";
+    setStatus(catalog[current].name+": demostración de selección. No se carga ni modifica ningún firmware.",true);
+  }
+  function back(){
+    mode="browse";setStatus("Menú de selección. Pulsa OCT +/- para navegar.",false);
+  }
+  function round(x,y,w,h,r,fill,stroke){
+    ctx.beginPath();ctx.roundRect(x,y,w,h,r);
+    if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.stroke()}
+  }
+  function drawArt(f,w,h){
+    const grd=ctx.createLinearGradient(0,0,w,h);
+    grd.addColorStop(0,f.colors[0]);grd.addColorStop(1,"#07131d");
+    round(0,0,w,h,7,grd,"#ffffff35");
+    ctx.save();
+    ctx.beginPath();ctx.roundRect(0,0,w,h,7);ctx.clip();
+    ctx.strokeStyle=f.colors[1];ctx.lineWidth=2.6;ctx.shadowBlur=12;ctx.shadowColor=f.colors[1];
+    if(f.shape===0){
+      for(let j=0;j<4;j++){ctx.beginPath();for(let x=0;x<w;x+=2){const y=h*.44+Math.sin(x*.085+j*.75)*14+Math.cos(x*.029+j)*7; if(x===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)}ctx.globalAlpha=.25+j*.19;ctx.stroke()}
+    }else if(f.shape===1){
+      for(let j=0;j<6;j++){ctx.beginPath();ctx.arc(w*.52,h*.43,9+j*10,.5,Math.PI*1.8);ctx.globalAlpha=.85-j*.1;ctx.stroke()}
+    }else if(f.shape===2){
+      for(let j=0;j<9;j++){ctx.beginPath();ctx.moveTo(0,j*16);ctx.lineTo(w,j*16-43);ctx.globalAlpha=.2+j*.07;ctx.stroke()}
+    }else {
+      for(let j=0;j<6;j++){ctx.beginPath();ctx.arc(w*.50,h*.42,10+j*9,0,Math.PI*2);ctx.globalAlpha=.9-j*.12;ctx.stroke()}
+    }
+    ctx.restore();ctx.globalAlpha=1;ctx.shadowBlur=0;
+    const fade=ctx.createLinearGradient(0,h*.58,0,h);
+    fade.addColorStop(0,"#06111c00");fade.addColorStop(1,"#050b14f7");
+    ctx.fillStyle=fade;ctx.fillRect(0,h*.5,w,h*.5);
+    ctx.textAlign="center";
+    ctx.fillStyle="#f0fbfa";ctx.font="bold "+(f.name.length>8?12:15)+"px system-ui";
+    ctx.fillText(f.name,w/2,h-20);
+    ctx.font="6px system-ui";ctx.fillStyle="#d4e9e8";ctx.fillText("FM1 / FIRMWARE",w/2,h-9);
+  }
+  function drawCard(index,x,y,w,h,skew,alpha){
+    const f=catalog[wrap(index)];
+    ctx.save();ctx.globalAlpha=alpha;
+    ctx.translate(x,y);ctx.transform(1,0,skew,1,0,0);
+    ctx.shadowColor="#000a";ctx.shadowBlur=8;ctx.shadowOffsetY=4;
+    drawArt(f,w,h);ctx.restore();
+  }
+  function draw(now){
+    const dt=Math.min(40,now-last);last=now;
+    if(window.matchMedia("(prefers-reduced-motion: reduce)").matches) position=nearest(current,position);
+    else{
+      const target=nearest(current,position);
+      position+=(target-position)*Math.min(.36,dt*.014);
+      if(Math.abs(position-target)<.001)position=target;
+    }
+    const bg=ctx.createLinearGradient(0,0,240,240);
+    bg.addColorStop(0,"#111e2a");bg.addColorStop(1,"#050b12");
+    ctx.fillStyle=bg;ctx.fillRect(0,0,240,240);
+    ctx.fillStyle="#6af8d5";ctx.font="bold 9px system-ui";ctx.textAlign="left";
+    ctx.fillText("FM1 / MULTIBOOT",12,18);
+    ctx.textAlign="right";ctx.fillStyle="#93abb4";ctx.font="8px system-ui";
+    ctx.fillText((current+1)+" / "+count,228,18);
+    ctx.strokeStyle="#2b5157";ctx.beginPath();ctx.moveTo(11,26);ctx.lineTo(229,26);ctx.stroke();
+    const base=Math.round(position);
+    const cards=[];
+    for(let d=-2;d<=2;d++){
+      const index=base+d;const dist=index-position;
+      if(Math.abs(dist)>2.25)continue;
+      const abs=Math.abs(dist),scale=Math.max(.59,1-abs*.25);
+      const w=104*scale,h=129*scale;
+      const x=120+dist*81-w/2;
+      const y=38+(129-h)/2+abs*5;
+      cards.push({index,dist,abs,w,h,x,y});
+    }
+    cards.sort((a,b)=>b.abs-a.abs);
+    for(const c of cards)drawCard(c.index,c.x,c.y,c.w,c.h,c.dist===0?0:(c.dist<0?.10:-.10),Math.max(.3,1-c.abs*.20));
+    round(13,178,214,30,6,"#0a2427","#35666c");
+    ctx.fillStyle="#68eacf";ctx.textAlign="center";ctx.font="bold 10px system-ui";
+    ctx.fillText(mode==="detail"?"SELECCIÓN DEMO":"PLAY / VER DETALLE",120,190);
+    ctx.fillStyle="#b3cbd0";ctx.font="8px system-ui";
+    ctx.fillText(mode==="detail"?"NO HAY ARRANQUE REAL":"OCT -   /   OCT +",120,201);
+    ctx.textAlign="center";ctx.fillStyle="#7f9ba4";ctx.font="7px system-ui";
+    ctx.fillText("SIMULADOR · FLASH INTACTA",120,227);
+    requestAnimationFrame(draw);
+  }
+  document.getElementById("prev").addEventListener("click",()=>go(-1));
+  document.getElementById("next").addEventListener("click",()=>go(1));
+  document.getElementById("play").addEventListener("click",confirm);
+  document.getElementById("back").addEventListener("click",back);
+  window.addEventListener("keydown",e=>{
+    if(["ArrowLeft","ArrowRight","Enter","Escape"].includes(e.key))e.preventDefault();
+    if(e.key==="ArrowLeft")go(-1);
+    if(e.key==="ArrowRight")go(1);
+    if(e.key==="Enter")confirm();
+    if(e.key==="Escape")back();
+  });
+  const zone=document.getElementById("touchRegion");
+  zone.addEventListener("pointerdown",e=>{pointerStart={x:e.clientX,y:e.clientY}});
+  zone.addEventListener("pointerup",e=>{
+    if(!pointerStart)return;
+    const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
+    if(Math.abs(dx)>25&&Math.abs(dx)>Math.abs(dy))go(dx<0?1:-1);
+    pointerStart=null;
+  });
+  zone.addEventListener("pointercancel",()=>{pointerStart=null});
+  updateInfo();requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
