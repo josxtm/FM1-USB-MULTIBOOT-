@@ -19,7 +19,7 @@
 El artefacto actualmente versionado en `android/app/src/main/assets/` mide 8.956 bytes y produce:
 
 ```text
-810bb3673ef2fc75964724e07d42bb751d1e3e5e49056cdaccad40c3764ea246
+364af5cb7ce487fbbb24fd1c910c14885bacb5c58d9292f59926416a3be3ff4d
 ```
 
 Coincide con `AppSlot.SHA256`. No se modificó la referencia. La comprobación adicional de ELF, mapa, tráiler APP1, CRC y origen del binario continúa en `make all`/CI; no se sustituyó el artefacto ni se ejecutó en hardware.

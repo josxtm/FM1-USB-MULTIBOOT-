@@ -34,7 +34,7 @@ import java.io.Closeable
 
 /**
  * Hardware command surface is intentionally read-only: exactly one static SysEx 0x12.
- * No generic command sender, backup or RAM execution in comp9.
+ * No generic command sender, backup or RAM execution in comp10.
  */
 class MbootMidiActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -50,8 +50,17 @@ class MbootMidiActivity : ComponentActivity() {
     )
     private lateinit var manager: MidiManager
     private var device: MidiDevice? = null
+    private var midiInfo: MidiDeviceInfo? = null
     private var input: MidiInputPort? = null
     private var output: MidiOutputPort? = null
+
+    private val midiCallback = object : MidiManager.DeviceCallback() {
+        override fun onDeviceRemoved(info: MidiDeviceInfo) {
+            if (midiInfo?.id == info.id) {
+                runOnUiThread { queryController.disconnected() }
+            }
+        }
+    }
     private var status by mutableStateOf("Sin consultar")
     private var identity by mutableStateOf<MbootIdentityProtocol.Identity?>(null)
     private var running by mutableStateOf(false)
@@ -59,6 +68,7 @@ class MbootMidiActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         manager = getSystemService(MidiManager::class.java)
+        manager.registerDeviceCallback(midiCallback, handler)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF65E8CD))) {
                 Surface(Modifier.fillMaxSize()) {
@@ -110,6 +120,7 @@ class MbootMidiActivity : ComponentActivity() {
             return
         }
         val info = candidates.single()
+        midiInfo = info
         val token = queryController.start()
         pendingFailure = null
         running = true
@@ -189,6 +200,7 @@ class MbootMidiActivity : ComponentActivity() {
         input = null
         output = null
         device = null
+        midiInfo = null
     }
 
     private fun stop() {
@@ -196,6 +208,7 @@ class MbootMidiActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        manager.unregisterDeviceCallback(midiCallback)
         stop()
         super.onDestroy()
     }
