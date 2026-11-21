@@ -24,7 +24,7 @@
 - Nuevo `MbootIdentityEmulator`, totalmente separado del transporte USB físico. Solo acepta la consulta fija `0x12`.
 - Escenarios simulados: respuesta válida, JEDEC incorrecto, versión incompatible, checksum erróneo, payload corrupto, timeout y desconexión.
 - Pruebas adversariales mantienen bloqueados los comandos de Flash y carga RAM.
-- Incremento de APK a comp7 y actualización del workflow para publicar APK, SHA-256, XML de tests y reporte Lint como artefactos.
+- Incremento de APK a comp8 y actualización del workflow para publicar APK, SHA-256, XML de tests y reporte Lint como artefactos.
 
 ## Pruebas
 

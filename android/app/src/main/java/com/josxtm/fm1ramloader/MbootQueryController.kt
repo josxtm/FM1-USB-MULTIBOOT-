@@ -13,7 +13,7 @@ internal class MbootQueryController(
     private val timer: MbootQueryTimer,
     private val onFinished: (Result) -> Unit
 ) {
-    enum class Result { RESPONSE, TIMEOUT, CANCELLED, DISCONNECTED }
+    enum class Result { RESPONSE, TIMEOUT, CANCELLED, DISCONNECTED, ERROR }
 
     private var generation = 0
     private var active = false
@@ -27,7 +27,11 @@ internal class MbootQueryController(
         return token
     }
 
+    fun isActive(token: Int): Boolean = active && token == generation
+
     fun response(token: Int): Boolean = finish(token, Result.RESPONSE)
+
+    fun error(token: Int): Boolean = finish(token, Result.ERROR)
 
     fun cancel() {
         if (active) finish(generation, Result.CANCELLED)

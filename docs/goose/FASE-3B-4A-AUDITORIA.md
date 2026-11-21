@@ -55,7 +55,7 @@ SAF exporta bytes sin transformarlos, relee SHA-256, evita sobrescritura y gener
 
 ## Actualización FASE 4A
 
-Se añadió un emulador independiente del transporte físico y cobertura de padding no canónico, truncamiento, bytes adicionales, inicios simultáneos, límites de memoria, timeout y desconexión lógica. La aplicación se incrementa a comp7; los resultados detallados están en `docs/goose/FASE-4A-RESULTADOS.md`.
+Se añadió un emulador independiente del transporte físico y cobertura de padding no canónico, truncamiento, bytes adicionales, inicios simultáneos, límites de memoria, timeout y desconexión lógica. La aplicación evolucionó posteriormente a comp8; los resultados detallados están en `docs/goose/FASE-4A-RESULTADOS.md`.
 
 ## Resultado y siguiente paso
 

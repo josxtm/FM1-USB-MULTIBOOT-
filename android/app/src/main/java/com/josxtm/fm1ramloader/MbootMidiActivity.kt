@@ -34,15 +34,24 @@ import java.io.Closeable
 
 /**
  * Hardware command surface is intentionally read-only: exactly one static SysEx 0x12.
- * No generic command sender, backup or RAM execution in comp8.
+ * No generic command sender, backup or RAM execution in comp9.
  */
 class MbootMidiActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
+    private var pendingFailure: String? = null
+    private val queryController = MbootQueryController(
+        object : MbootQueryTimer {
+            override fun schedule(delayMs: Long, task: () -> Unit): MbootQueryCancellation {
+                handler.postDelayed(task, delayMs)
+                return MbootQueryCancellation { handler.removeCallbacks(task) }
+            }
+        },
+        onFinished = { result -> finishQuery(result) }
+    )
     private lateinit var manager: MidiManager
     private var device: MidiDevice? = null
     private var input: MidiInputPort? = null
     private var output: MidiOutputPort? = null
-    private var generation = 0
     private var status by mutableStateOf("Sin consultar")
     private var identity by mutableStateOf<MbootIdentityProtocol.Identity?>(null)
     private var running by mutableStateOf(false)
@@ -56,7 +65,7 @@ class MbootMidiActivity : ComponentActivity() {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("FM1 · M-BOOTLOADER MIDI", style = MaterialTheme.typography.headlineMedium)
-                        Text("Comp7 · Identificación 0x12 de solo lectura. Nunca borra ni escribe Flash.")
+                        Text("Comp9 · Identificación 0x12 de solo lectura. Nunca borra ni escribe Flash.")
                         Text("1. Desconecta el cargador. 2. Enciende el FM1 manteniendo PLAY. " +
                             "3. En su menú selecciona MIDI MODE. 4. Conecta la tablet por USB-C. " +
                             "5. Pulsa Consultar.")
@@ -66,7 +75,7 @@ class MbootMidiActivity : ComponentActivity() {
                             Text("Protocolo v1 · Carga RAM anunciada: " +
                                 if (info.ramApps) "SÍ (no probada)" else "NO")
                             Text("Compatibilidad m-bootloader 2.x: " +
-                                if (info.compatible) "compatible por versión (no autoriza carga)" else "incompatible")
+                                if (info.compatible) "compatible preliminar por protocolo (no autoriza carga)" else "incompatible")
                             Text("Identificación verificada por estructura, no autenticación criptográfica.")
                         }
                         Button(onClick = ::identify, enabled = !running, modifier = Modifier.fillMaxWidth()) {
@@ -100,12 +109,13 @@ class MbootMidiActivity : ComponentActivity() {
                 "Entra en MIDI MODE y deja solo un FM1 conectado."
             return
         }
-        val token = ++generation
         val info = candidates.single()
+        val token = queryController.start()
+        pendingFailure = null
         running = true
-        status = "Abriendo el dispositivo USB-MIDI…"
+        status = "Abriendo el dispositivo USB-MIDI · consulta 0x12 de solo lectura…"
         manager.openDevice(info, { opened ->
-            if (token != generation || isDestroyed) {
+            if (!queryController.isActive(token) || isDestroyed) {
                 runCatching { opened?.close() }
                 return@openDevice
             }
@@ -123,12 +133,11 @@ class MbootMidiActivity : ComponentActivity() {
                     } else {
                         result.getOrNull()?.let { frame ->
                             runOnUiThread {
-                                if (token != generation) return@runOnUiThread
+                                if (!queryController.isActive(token)) return@runOnUiThread
                                 val parsed = runCatching { MbootIdentityProtocol.decodeFrame(frame) }
                                 if (parsed.isSuccess) {
                                     identity = parsed.getOrThrow()
-                                    status = "Consulta completada · ${identity?.version} · SIN escritura Flash"
-                                    closeConnection()
+                                    queryController.response(token)
                                 } else fail(token, "Respuesta incompatible: ${parsed.exceptionOrNull()?.message}")
                             }
                         }
@@ -151,20 +160,29 @@ class MbootMidiActivity : ComponentActivity() {
                 return@openDevice
             }
         }, handler)
-        handler.postDelayed({
-            if (token == generation && running) fail(token, "Tiempo agotado: sin identidad 0x12")
-        }, 8000)
     }
 
     private fun fail(token: Int, reason: String) {
-        if (token != generation) return
-        status = reason
+        if (!queryController.isActive(token)) return
+        pendingFailure = reason
+        queryController.error(token)
+    }
+
+    private fun finishQuery(result: MbootQueryController.Result) {
+        status = when (result) {
+            MbootQueryController.Result.RESPONSE ->
+                "Consulta completada · ${identity?.version} · SIN escritura Flash"
+            MbootQueryController.Result.TIMEOUT -> "Tiempo agotado: sin identidad 0x12; conexión cerrada"
+            MbootQueryController.Result.CANCELLED -> "Consulta cancelada; conexión MIDI cerrada"
+            MbootQueryController.Result.DISCONNECTED -> "Dispositivo MIDI desconectado; sesión cerrada"
+            MbootQueryController.Result.ERROR -> pendingFailure ?: "Error MIDI; conexión cerrada"
+        }
+        pendingFailure = null
         closeConnection()
     }
 
     private fun closeConnection() {
         running = false
-        generation++
         runCatching { input?.close() }
         runCatching { output?.close() }
         runCatching { device?.close() }
@@ -174,8 +192,7 @@ class MbootMidiActivity : ComponentActivity() {
     }
 
     private fun stop() {
-        if (running) status = "Consulta cancelada"
-        closeConnection()
+        if (running) queryController.cancel() else closeConnection()
     }
 
     override fun onDestroy() {
