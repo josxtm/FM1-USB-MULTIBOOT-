@@ -29,14 +29,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import java.time.OffsetDateTime
+import java.time.Instant
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import java.io.Closeable
 
 /**
  * Hardware command surface is intentionally read-only: exactly one static SysEx 0x12.
- * No generic command sender, backup or RAM execution in comp11.
+ * No generic command sender, backup or RAM execution in comp12.
  */
 class MbootMidiActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -131,7 +131,7 @@ class MbootMidiActivity : ComponentActivity() {
     }
 
     private fun record(message: String) {
-        val time = OffsetDateTime.now().toString().replace(Regex("\\+.*$"), "Z")
+        val time = Instant.now().toString()
         history = (history + DiagnosticEvent(time, message)).takeLast(32)
     }
 

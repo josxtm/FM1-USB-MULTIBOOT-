@@ -12,9 +12,15 @@ internal class CoverFlowModel {
         private set
     var error: String? = null
         private set
+    private var assessments: List<FirmwareAssessment> = emptyList()
 
-    fun attachCatalog(catalog: List<FirmwareEntry>) {
+    /** Attach catalog metadata and, when available, assessments of the actual SAF files. */
+    fun attachCatalog(catalog: List<FirmwareEntry>, verifiedAssessments: List<FirmwareAssessment> = emptyList()) {
+        require(verifiedAssessments.isEmpty() || verifiedAssessments.size == catalog.size) {
+            "El número de evaluaciones no coincide con el catálogo"
+        }
         entries = catalog
+        assessments = verifiedAssessments
         selected = 0
         error = null
         state = if (catalog.isEmpty()) CoverFlowState.EMPTY else CoverFlowState.BROWSE
@@ -39,7 +45,7 @@ internal class CoverFlowModel {
     fun inspect(): FirmwareAssessment? {
         if (state != CoverFlowState.BROWSE || entries.isEmpty()) return null
         state = CoverFlowState.INSPECT
-        return entries[selected].assess()
+        return assessments.getOrNull(selected) ?: entries[selected].assess()
     }
 
     fun back() {

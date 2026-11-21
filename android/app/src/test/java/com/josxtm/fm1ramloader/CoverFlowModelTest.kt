@@ -28,6 +28,17 @@ class CoverFlowModelTest {
         assertEquals(0, model.selected)
     }
 
+    @Test fun inspectionUsesActualLibraryAssessment() {
+        val content = "firmware".toByteArray()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(content)
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
+        val item = FirmwareEntry("TEST", "Test", "1", "TEST.BIN", content.size.toLong(), hash)
+        val assessment = FirmwareAssetVerifier.verify(item, content.inputStream())
+        val model = CoverFlowModel()
+        model.attachCatalog(listOf(item), listOf(assessment))
+        assertTrue(model.inspect()!!.integrityVerified)
+    }
+
     @Test fun readErrorIsVisibleAndBackReturnsToBrowse() {
         val model = CoverFlowModel()
         model.attachCatalog(listOf(entry("ONE")))

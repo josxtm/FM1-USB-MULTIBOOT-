@@ -32,6 +32,8 @@ import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 
+internal data class LibraryItem(val entry: FirmwareEntry, val assessment: FirmwareAssessment)
+
 /**
  * Android Storage Access Framework only: the tablet manages a user-selected FM1 folder
  * on the microSD. No permission to access raw block devices or to program synthesizer Flash.
@@ -47,6 +49,11 @@ class SdLibraryActivity : ComponentActivity() {
     private var versionText by mutableStateOf("1.0")
     private var status by mutableStateOf("Importa un archivo .bin o .fwsc y selecciona la carpeta FM1 de tu microSD.")
     private var busy by mutableStateOf(false)
+    private val coverFlow = CoverFlowModel()
+    private var libraryItems by mutableStateOf(listOf<LibraryItem>())
+    private var libraryState by mutableStateOf(CoverFlowState.NO_CARD)
+    private var librarySelection by mutableStateOf(0)
+    private var selectedAssessment by mutableStateOf<FirmwareAssessment?>(null)
 
     private val pickFirmware = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -74,7 +81,8 @@ class SdLibraryActivity : ComponentActivity() {
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
             }
-            status = "Destino FM1 seleccionado. No se escribirán otros directorios."
+            status = "Destino FM1 seleccionado. Leyendo FM1/INDEX.CSV…"
+            loadCatalog(uri)
         }
     }
 
@@ -118,6 +126,25 @@ class SdLibraryActivity : ComponentActivity() {
                             enabled = !busy, modifier = Modifier.fillMaxWidth()
                         ) { Text("2. Seleccionar carpeta FM1 de la microSD") }
                         Text("Destino: " + folderName)
+                        OutlinedButton(onClick = { selectedFolder?.let(::loadCatalog) },
+                            enabled = !busy && selectedFolder != null, modifier = Modifier.fillMaxWidth()) {
+                            Text("Abrir / recargar FM1/INDEX.CSV")
+                        }
+                        Text("Cover Flow Android · estado: $libraryState")
+                        if (libraryItems.isNotEmpty()) {
+                            val item = libraryItems[librarySelection]
+                            Text("${item.entry.label} · ${item.entry.version} · ${item.entry.size} bytes")
+                            Text("Integridad: " + if (item.assessment.integrityVerified) "VERIFICADA" else "NO VERIFICADA")
+                            Text("Compatibilidad: ${item.assessment.compatibility} · Ejecución: ${item.assessment.execution}")
+                            OutlinedButton(onClick = ::previousLibrary, enabled = libraryItems.size > 1,
+                                modifier = Modifier.fillMaxWidth()) { Text("Cover Flow · anterior") }
+                            OutlinedButton(onClick = ::nextLibrary, enabled = libraryItems.size > 1,
+                                modifier = Modifier.fillMaxWidth()) { Text("Cover Flow · siguiente") }
+                            Button(onClick = ::inspectLibrary, modifier = Modifier.fillMaxWidth()) {
+                                Text("PLAY · inspeccionar (sin ejecutar)")
+                            }
+                            selectedAssessment?.warnings?.take(3)?.forEach { Text("Aviso: $it") }
+                        }
                         Button(
                             onClick = ::exportFirmware,
                             enabled = !busy && selectedFirmware != null && selectedFolder != null,
@@ -135,6 +162,71 @@ class SdLibraryActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun loadCatalog(treeUri: Uri) {
+        if (busy) return
+        busy = true
+        worker.execute {
+            val result = runCatching {
+                val root = requireNotNull(DocumentFile.fromTreeUri(this, treeUri)) { "FM1 inaccesible" }
+                val index = requireNotNull(root.findFile(FirmwareCatalog.INDEX)) { "Falta FM1/INDEX.CSV" }
+                val text = requireNotNull(contentResolver.openInputStream(index.uri)).use {
+                    readLimited(it, FirmwareCatalog.MAX_BYTES).toString(Charsets.UTF_8)
+                }
+                val entries = FirmwareCatalog.decode(text)
+                val fw = root.findFile("FW")
+                entries.map { entry ->
+                    val file = fw?.findFile(entry.fileName)
+                    val assessment = if (file == null) {
+                        entry.assess().let { base ->
+                            base.copy(warnings = base.warnings + "Archivo ausente en FM1/FW")
+                        }
+                    } else FirmwareAssetVerifier.verify(entry,
+                        requireNotNull(contentResolver.openInputStream(file.uri)))
+                    LibraryItem(entry, assessment)
+                }
+            }
+            runOnUiThread {
+                busy = false
+                result.fold(
+                    onSuccess = { items ->
+                        libraryItems = items
+                        coverFlow.attachCatalog(items.map { it.entry }, items.map { it.assessment })
+                        librarySelection = 0
+                        selectedAssessment = null
+                        libraryState = coverFlow.state
+                        status = "Catálogo leído: ${items.size} firmware(s). PLAY solo inspecciona."
+                    },
+                    onFailure = {
+                        libraryItems = emptyList()
+                        libraryState = CoverFlowState.ERROR
+                        coverFlow.fail(it.message ?: "Error de lectura")
+                        status = "Error leyendo FM1/INDEX.CSV: ${it.message ?: it.javaClass.simpleName}"
+                    }
+                )
+            }
+        }
+    }
+
+    private fun nextLibrary() {
+        coverFlow.next()
+        librarySelection = coverFlow.selected
+        libraryState = coverFlow.state
+        selectedAssessment = null
+    }
+
+    private fun previousLibrary() {
+        coverFlow.previous()
+        librarySelection = coverFlow.selected
+        libraryState = coverFlow.state
+        selectedAssessment = null
+    }
+
+    private fun inspectLibrary() {
+        selectedAssessment = coverFlow.inspect()
+        libraryState = coverFlow.state
+        status = "Inspección de ${libraryItems.getOrNull(librarySelection)?.entry?.id ?: "firmware"}; no se ejecuta."
     }
 
     private fun displayName(uri: Uri): String {
