@@ -60,7 +60,7 @@ internal fun LoaderScreen(
     connect: () -> Unit, connectExclusive: (Int) -> Unit, disconnect: () -> Unit,
     selectFile: () -> Unit, useReference: () -> Unit,
     validate: () -> Unit, simulate: () -> Unit, export: () -> Unit,
-    openLibrary: () -> Unit
+    openLibrary: () -> Unit, openMidi: () -> Unit
 ) {
     MaterialTheme(colorScheme = palette) {
         Surface(color = ink, modifier = Modifier.fillMaxSize()) {
@@ -71,7 +71,7 @@ internal fun LoaderScreen(
                     Text("FM1 RAM LOADER", color = teal, fontFamily = FontFamily.Monospace,
                         fontSize = 31.sp, fontWeight = FontWeight.Bold)
                     Text("Simulación · carga física bloqueada", color = muted, fontSize = 17.sp)
-                    OutlinedButton(openLibrary) { Text("MicroSD · Biblioteca y exportación de firmwares") }
+                    OutlinedButton(openLibrary) { Text("MicroSD · Biblioteca y exportación de firmwares") }\n                    OutlinedButton(openMidi) { Text("M-BOOTLOADER 2.4 · Identificar por USB-MIDI (solo lectura)") }
                     if (wide) {
                         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             DevicePane(Modifier.weight(1f), usb, detect, selectUsb, connect, connectExclusive, disconnect)
