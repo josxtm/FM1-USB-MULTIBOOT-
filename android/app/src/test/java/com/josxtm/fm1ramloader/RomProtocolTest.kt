@@ -63,11 +63,11 @@ class RomProtocolTest {
             progress.add(sent)
         }, {})
         assertEquals(SimulationResult.START_ACKNOWLEDGED, result)
-        assertEquals(18, progress.size)
+        assertEquals(20, progress.size)
         assertEquals(512, progress.first())
         assertEquals(9788, progress.last())
         assertEquals(1, wire.jumps)
-        assertEquals(listOf(0x12, 0xfc40) + List(18) { 0xfb06 } + 0xfb08, wire.commands)
+        assertEquals(listOf(0x12, 0xfc40) + List(20) { 0xfb06 } + 0xfb08, wire.commands)
     }
 
     @Test fun transferFaultsPreventJump() {
