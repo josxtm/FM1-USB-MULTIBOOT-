@@ -4,6 +4,7 @@
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules"
         android:supportsRtl="true">
+        <activity android:name=".SdLibraryActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true"
             android:screenOrientation="sensorLandscape">
             <intent-filter>
