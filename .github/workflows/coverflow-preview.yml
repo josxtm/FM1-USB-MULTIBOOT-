@@ -1,0 +1,37 @@
+name: FM1 Cover Flow prototype
+on:
+  push:
+    branches: [feat/fm1-coverflow-architecture]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverflow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test UI state machine (no hardware)
+        run: node --test tests/coverflow.test.cjs
+      - name: Check simulator sources
+        shell: bash
+        run: |
+          test -s simulator/index.html
+          test -s simulator/core.js
+          grep -q 'FM1 MULTIBOOT OS' simulator/index.html
+      - name: Package offline prototype for Android tablet
+        uses: actions/upload-artifact@v4
+        with:
+          name: FM1_CoverFlow_Prototype_A1
+          path: |
+            simulator/index.html
+            simulator/core.js
+            simulator/README.md
+          if-no-files-found: error
+          retention-days: 30
