@@ -10,8 +10,8 @@ android {
         applicationId 'com.josxtm.fm1ramloader'
         minSdk 30
         targetSdk 35
-        versionCode 12
-        versionName '1.0-comp12'
+        versionCode 13
+        versionName '1.0-comp13'
     }
     buildFeatures { compose true }
     compileOptions {

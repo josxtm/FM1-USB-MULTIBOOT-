@@ -19,9 +19,10 @@ internal class CoverFlowModel {
         require(verifiedAssessments.isEmpty() || verifiedAssessments.size == catalog.size) {
             "El número de evaluaciones no coincide con el catálogo"
         }
+        val previousId = entries.getOrNull(selected)?.id
         entries = catalog
         assessments = verifiedAssessments
-        selected = 0
+        selected = previousId?.let { id -> catalog.indexOfFirst { it.id == id }.takeIf { it >= 0 } } ?: 0
         error = null
         state = if (catalog.isEmpty()) CoverFlowState.EMPTY else CoverFlowState.BROWSE
     }

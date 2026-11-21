@@ -28,6 +28,14 @@ class CoverFlowModelTest {
         assertEquals(0, model.selected)
     }
 
+    @Test fun reloadPreservesSelectedFirmwareWhenStillPresent() {
+        val model = CoverFlowModel()
+        model.attachCatalog(listOf(entry("ONE"), entry("TWO")))
+        model.next()
+        model.attachCatalog(listOf(entry("TWO"), entry("THREE")))
+        assertEquals("TWO", model.entries[model.selected].id)
+    }
+
     @Test fun inspectionUsesActualLibraryAssessment() {
         val content = "firmware".toByteArray()
         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(content)

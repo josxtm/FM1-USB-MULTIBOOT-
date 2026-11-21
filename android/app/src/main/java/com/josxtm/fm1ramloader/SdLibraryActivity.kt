@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -21,9 +24,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -133,17 +133,15 @@ class SdLibraryActivity : ComponentActivity() {
                         Text("Cover Flow Android · estado: $libraryState")
                         if (libraryItems.isNotEmpty()) {
                             val item = libraryItems[librarySelection]
-                            Text("${item.entry.label} · ${item.entry.version} · ${item.entry.size} bytes")
+                            AndroidCoverFlow(
+                                items = libraryItems, selected = librarySelection,
+                                onPrevious = ::previousLibrary, onNext = ::nextLibrary,
+                                onInspect = ::inspectLibrary
+                            )
+                            Text("Formato: ${item.assessment.format} · ${item.entry.size} bytes")
                             Text("Integridad: " + if (item.assessment.integrityVerified) "VERIFICADA" else "NO VERIFICADA")
                             Text("Compatibilidad: ${item.assessment.compatibility} · Ejecución: ${item.assessment.execution}")
-                            OutlinedButton(onClick = ::previousLibrary, enabled = libraryItems.size > 1,
-                                modifier = Modifier.fillMaxWidth()) { Text("Cover Flow · anterior") }
-                            OutlinedButton(onClick = ::nextLibrary, enabled = libraryItems.size > 1,
-                                modifier = Modifier.fillMaxWidth()) { Text("Cover Flow · siguiente") }
-                            Button(onClick = ::inspectLibrary, modifier = Modifier.fillMaxWidth()) {
-                                Text("PLAY · inspeccionar (sin ejecutar)")
-                            }
-                            selectedAssessment?.warnings?.take(3)?.forEach { Text("Aviso: $it") }
+                            selectedAssessment?.warnings?.take(4)?.forEach { Text("Aviso: $it") }
                         }
                         Button(
                             onClick = ::exportFirmware,
@@ -259,8 +257,13 @@ class SdLibraryActivity : ComponentActivity() {
             runOnUiThread {
                 busy = false
                 status = result.fold(
-                    onSuccess = { "Exportación verificada: " + it.id + " · " + it.size +
-                        " bytes · SHA-256 " + it.sha256.take(16) + "... · COMPATIBILIDAD NO VERIFICADA" },
+                    onSuccess = {
+                        val message = "Exportación verificada: ${it.id} · ${it.size} bytes · " +
+                            "SHA-256 ${it.sha256.take(16)}... · COMPATIBILIDAD NO VERIFICADA"
+                        // INDEX.CSV and the SAF-backed assessments are reloaded after commit.
+                        loadCatalog(folder)
+                        message + " · Cover Flow actualizado"
+                    },
                     onFailure = { "Exportación detenida: " + (it.message ?: it.javaClass.simpleName) +
                         ". Revisa FW, INDEX.NEW e INDEX.BAK en FM1 antes de repetir." }
                 )
