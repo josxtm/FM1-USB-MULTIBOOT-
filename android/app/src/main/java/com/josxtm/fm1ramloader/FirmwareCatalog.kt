@@ -32,7 +32,7 @@ internal object FirmwareCatalog {
         require(idRegex.matches(entry.id)) { "ID 8.3 no válido" }
         require(textRegex.matches(entry.label)) { "Nombre fuera del formato ASCII" }
         require(versionRegex.matches(entry.version)) { "Versión no válida" }
-        require(entry.fileName == entry.id + ".BIN") { "Ruta de firmware no válida" }
+        require(entry.fileName == entry.id + ".BIN" || entry.fileName == entry.id + ".FWS") { "Ruta de firmware no válida" }
         require(entry.size in 1..MAX_IMAGE_BYTES) { "Tamaño no permitido" }
         require(hashRegex.matches(entry.sha256)) { "SHA-256 incorrecto" }
         require(entry.compatibility == "UNVERIFIED") { "Compatibilidad no certificada" }
