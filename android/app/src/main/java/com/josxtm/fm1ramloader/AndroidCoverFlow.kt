@@ -52,7 +52,6 @@ internal fun AndroidCoverFlow(
                 },
                 onDragCancel = { dragDistance = 0f },
                 onDrag = { change, amount ->
-                    change.consumePositionChange()
                     dragDistance += amount.x
                 }
             )
