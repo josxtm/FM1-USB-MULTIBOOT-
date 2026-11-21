@@ -12,7 +12,7 @@ La prueba automatizada crea un FAT32 artificial en RAM con FM1/INDEX.CSV y verif
 
 ## Recuperación m-bootloader: verificación física del usuario
 
-El usuario ha instalado m-bootloader con M-Flasher y ha comprobado **en su FM1 real**:
+El usuario ha instalado m-bootloader con M-Flasher. Fotografía física de la pantalla confirma **FM-1 M-BOOTLOADER 2.4-395E6CC** y las siguientes cadenas de pantalla:\n\n- `APP OK` — imagen de aplicación reconocida, longitud `581564 B`.\n- `UPDATE NONE` — no aparece ninguna actualización pendiente.\n- `FLASH 856014 1024K` — ID JEDEC y capacidad nominal mostrados.\n- Menú: `BOOT APP`, `DOWNLOAD MODE`, `MIDI MODE`. La opción MIDI existe visualmente, **pero no acredita por sí sola compatibilidad de una carga APP1 ni su seguridad**.\n\nTambién ha comprobado **en su FM1 real**:
 
 - Mantener PLAY al encender abre el menú de recuperación.
 - Elegir Boot app vuelve a arrancar DARK-1 normalmente.
