@@ -1,6 +1,6 @@
 package com.josxtm.fm1ramloader
 
-internal internal enum class ExecutionMethod { RAM, XIP, FLASH, UNKNOWN }
+internal enum class ExecutionMethod { RAM, XIP, FLASH, UNKNOWN }
 internal enum class RamPlanStatus { APPROVED_FOR_SOFTWARE_SIMULATION, REJECTED, NOT_EVIDENCED }
 
 internal data class RamPlan(
