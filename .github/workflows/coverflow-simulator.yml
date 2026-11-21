@@ -1,0 +1,23 @@
+name: Cover Flow simulator
+on:
+  push:
+    branches:
+      - feat/fm1-coverflow-prototype
+  pull_request:
+    paths:
+      - 'simulator/**'
+      - 'docs/FM1-MULTIBOOT-ARCHITECTURE.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  simulator-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Cover Flow UI smoke tests
+        run: node --test simulator/tests/coverflow.test.mjs
