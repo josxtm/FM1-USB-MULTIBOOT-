@@ -26,6 +26,15 @@ Cada archivo presente se lee de nuevo desde SAF y se compara por tamaño y SHA-2
 - Contenido válido, corrupto, hash incorrecto y ausente.
 - Catálogos FM1CAT v1 múltiples y vacíos.
 
+## Validación CI
+
+- Android/Kotlin, Lint, pruebas unitarias, compilación y APK comp13: ✅ [run 44962954196](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44962954196)
+- Checks de PR Android posteriores al commit final: ✅ [run 44962957715](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44962957715)
+- Diagnóstico RAM/pi32v2, USB/FAT32 y coherencia APP1: ✅ [run 44962957742](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44962957742)
+- Simulador Cover Flow: ✅ [run 44962346975](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44962346975)
+
+La primera ejecución de comp13 detectó una API de consumo de gestos no disponible en la versión Compose del proyecto; se corrigió eliminando esa llamada y se repitió la validación hasta obtener éxito. No se oculta ese fallo histórico.
+
 ## Seguridad
 
 RAM continúa limitada a simulación; XIP carece de evidencia; Flash, lectura ambigua, escritura, borrado, `0x25`, `0x30`, ejecución APP1 y USB Host físico permanecen bloqueados. La única consulta física continúa siendo MIDI `0x12`. DARK-1, el m-bootloader y `[0x00000,0x04000)` no se modifican.
