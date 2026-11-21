@@ -24,7 +24,6 @@ class MbootIdentityEmulatorTest {
     @Test fun malformedScenariosNeverDecodeAsIdentity() {
         listOf(
             MbootIdentityEmulator.Scenario.WRONG_JEDEC,
-            MbootIdentityEmulator.Scenario.INCOMPATIBLE_VERSION,
             MbootIdentityEmulator.Scenario.BAD_CHECKSUM,
             MbootIdentityEmulator.Scenario.CORRUPT_PAYLOAD
         ).forEach { scenario ->
@@ -34,6 +33,14 @@ class MbootIdentityEmulatorTest {
                 MbootIdentityProtocol.decodeFrame(frame)
             }
         }
+    }
+
+    @Test fun incompatibleVersionIsExplicitlyReportedNotAcceptedByPadding() {
+        val frame = requireNotNull(MbootIdentityEmulator(MbootIdentityEmulator.Scenario.INCOMPATIBLE_VERSION)
+            .exchange(MbootIdentityProtocol.identityQuery()).frame)
+        val identity = MbootIdentityProtocol.decodeFrame(frame)
+        assertEquals("1.0", identity.version)
+        assertFalse(identity.compatible)
     }
 
     @Test fun timeoutAndDisconnectHaveNoFrame() {

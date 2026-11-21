@@ -2,8 +2,15 @@
 
 **Rama:** `goose/fase3b-4a-preflight`  
 **PR:** #8 (Draft)  
-**Build Android:** `1.0-comp7`, `versionCode 7`  
+**Build Android:** `1.0-comp8`, `versionCode 8`
 **Fecha:** 2026-11-21
+
+## Actualización comp8
+
+- Corregida la etiqueta visible residual `Comp6` en `MbootMidiActivity`.
+- La compatibilidad de versión se define explícitamente como m-bootloader `2.x` con minor numérico; una respuesta `1.0` se parsea, pero queda marcada como incompatible. Ya no depende de bytes nulos de relleno.
+- Añadido `MbootQueryController`, independiente de Android, con reloj/timer inyectable para probar timeout, cancelación, desconexión y respuestas obsoletas.
+- Añadida `AppTransferSimulation` para transferencias fragmentadas, cancelación y errores sin USB ni comandos `0x25`/`0x30`.
 
 ## Implementado
 

@@ -42,6 +42,7 @@ class MbootIdentityProtocolTest {
         assertEquals(0x856014L, identity.jedec)
         assertTrue(identity.ramApps)
         assertEquals(1, identity.kind)
+        assertTrue(identity.compatible)
     }
 
     @Test fun rejectsCommandsOtherThanIdentityAndMalformedPayloads() {

@@ -10,9 +10,12 @@ import java.io.ByteArrayOutputStream
 internal object MbootIdentityProtocol {
     const val QUERY = 0x12
     private const val MAX_SYSEX_BYTES = 192
+    private val compatibleVersion = Regex("2\\.[0-9]+(?:[-.][A-Za-z0-9._-]+)?")
 
     data class Identity(val version: String, val capacity: Long, val jedec: Long,
                         val ramApps: Boolean, val kind: Int) {
+        /** Compatibility means m-bootloader 2.x with a numeric minor version. */
+        val compatible: Boolean get() = compatibleVersion.matches(version)
         val summary: String
             get() = "m-bootloader $version · Flash ${capacity / 1024} KiB · JEDEC 0x${jedec.toString(16).uppercase()}"
     }

@@ -34,7 +34,7 @@ import java.io.Closeable
 
 /**
  * Hardware command surface is intentionally read-only: exactly one static SysEx 0x12.
- * No generic command sender, backup or RAM execution in comp7.
+ * No generic command sender, backup or RAM execution in comp8.
  */
 class MbootMidiActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -56,7 +56,7 @@ class MbootMidiActivity : ComponentActivity() {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("FM1 · M-BOOTLOADER MIDI", style = MaterialTheme.typography.headlineMedium)
-                        Text("Comp6 · Identificación 0x12 de solo lectura. Nunca borra ni escribe Flash.")
+                        Text("Comp7 · Identificación 0x12 de solo lectura. Nunca borra ni escribe Flash.")
                         Text("1. Desconecta el cargador. 2. Enciende el FM1 manteniendo PLAY. " +
                             "3. En su menú selecciona MIDI MODE. 4. Conecta la tablet por USB-C. " +
                             "5. Pulsa Consultar.")
@@ -65,6 +65,8 @@ class MbootMidiActivity : ComponentActivity() {
                             Text(info.summary)
                             Text("Protocolo v1 · Carga RAM anunciada: " +
                                 if (info.ramApps) "SÍ (no probada)" else "NO")
+                            Text("Compatibilidad m-bootloader 2.x: " +
+                                if (info.compatible) "compatible por versión (no autoriza carga)" else "incompatible")
                             Text("Identificación verificada por estructura, no autenticación criptográfica.")
                         }
                         Button(onClick = ::identify, enabled = !running, modifier = Modifier.fillMaxWidth()) {

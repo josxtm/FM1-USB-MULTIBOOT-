@@ -29,15 +29,14 @@ internal class MbootIdentityEmulator(
     }
 
     private fun frame(): ByteArray {
-        val body = ByteArray(29 + version.length)
+        val reportedVersion = if (scenario == Scenario.INCOMPATIBLE_VERSION) "1.0" else version
+        val body = ByteArray(29 + reportedVersion.length)
         "MBOOT".toByteArray(Charsets.US_ASCII).copyInto(body)
         body[5] = 1
         body[6] = 1
         body[7] = 1
         put32(body, 10, 1_048_576)
         put32(body, 14, if (scenario == Scenario.WRONG_JEDEC) 0x123456 else 0x856014)
-        val reportedVersion = if (scenario == Scenario.INCOMPATIBLE_VERSION) "1.0" else version
-        require(reportedVersion.length == version.length || scenario == Scenario.INCOMPATIBLE_VERSION)
         reportedVersion.toByteArray(Charsets.US_ASCII).copyInto(body, 28)
         body[body.lastIndex] = 0
 

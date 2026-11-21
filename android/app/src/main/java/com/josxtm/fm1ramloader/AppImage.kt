@@ -38,7 +38,8 @@ internal data class Inspection(
 
 internal class ApprovedApp private constructor(private val data: ByteArray) {
     val size: Int get() = data.size
-    fun chunk(offset: Int): ByteArray = data.copyOfRange(offset, minOf(offset + AppSlot.BLOCK_BYTES, data.size))
+    fun chunk(offset: Int, limit: Int = AppSlot.BLOCK_BYTES): ByteArray =
+        data.copyOfRange(offset, minOf(offset + limit, data.size))
 
     companion object {
         fun inspect(source: ByteArray): Inspection {
