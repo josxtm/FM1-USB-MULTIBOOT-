@@ -18,6 +18,12 @@ La pantalla usa un canvas lógico de 240 × 240 px y se amplía en la tablet sin
 
 Las portadas son gráficos procedurales originales de ejemplo. Los nombres DARK-1, ORIGINAL, FELUCCA y SLOOP son **marcadores de catálogo**, no descargas ni certificados de compatibilidad. La carátula central y las dos laterales simulan el efecto Cover Flow; la perspectiva aún no está portada a la pantalla del sintetizador.
 
+## Cargar el catálogo de la microSD
+
+Cuando exportes firmwares desde **FM1 RAM Loader comp5** desde Android, abre el simulador y usa **Importar catálogo INDEX.CSV**. Elige el archivo INDEX.CSV dentro de la carpeta FM1 de la microSD.
+
+El simulador mostrará los nombres y versiones **reales registrados**; no lee ni verifica los archivos .BIN/.FWS, y PLAY sigue sin ejecutar firmware. El formato FM1CAT v1 está documentado en docs/FM1CAT-v1.md.
+
 ## Pruebas automáticas
 
 En cualquier equipo con Node.js 20 o superior, ejecutar desde la raíz del repositorio:
