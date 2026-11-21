@@ -187,8 +187,18 @@ class SdLibraryActivity : ComponentActivity() {
         val name = id + extension
         require(firmwareDir.findFile(name) == null) { "Firmware ya existe, no se sobrescribe" }
         val index = root.findFile(FirmwareCatalog.INDEX)
-        require(root.findFile("INDEX.NEW") == null && root.findFile("INDEX.BAK") == null) {
-            "Hay un catálogo temporal o respaldo sin revisar"
+        val previousBackup = root.findFile("INDEX.BAK")
+        require(root.findFile("INDEX.NEW") == null) { "Hay un INDEX.NEW pendiente de revisión" }
+        require(index != null || previousBackup == null) {
+            "Existe INDEX.BAK sin INDEX.CSV: recuperar manualmente antes de exportar"
+        }
+        if (previousBackup != null) {
+            require(previousBackup.isFile) { "INDEX.BAK no es un archivo" }
+            val oldCatalog = requireNotNull(contentResolver.openInputStream(previousBackup.uri)).use {
+                readLimited(it, FirmwareCatalog.MAX_BYTES)
+            }
+            // A valid old snapshot can be rotated after the replacement has been staged.
+            FirmwareCatalog.decode(oldCatalog.toString(Charsets.US_ASCII))
         }
         val prior = if (index != null) {
             require(index.isFile) { "INDEX.CSV no es un archivo" }
@@ -266,6 +276,11 @@ class SdLibraryActivity : ComponentActivity() {
                 "No se pudo verificar INDEX.NEW"
             }
             if (index != null) {
+                // The new INDEX.NEW is already verified. Rotate the previous backup only now,
+                // with the current verified INDEX.CSV still intact if deletion fails.
+                if (previousBackup != null) {
+                    require(previousBackup.delete()) { "No se pudo rotar INDEX.BAK antiguo" }
+                }
                 require(index.renameTo("INDEX.BAK")) { "No se pudo conservar INDEX.BAK" }
             }
             if (!temp.renameTo(FirmwareCatalog.INDEX)) {
