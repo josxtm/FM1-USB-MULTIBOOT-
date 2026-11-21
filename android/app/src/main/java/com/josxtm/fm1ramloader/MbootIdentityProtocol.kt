@@ -57,6 +57,10 @@ internal object MbootIdentityProtocol {
             }
         }
         val decoded = raw.toByteArray()
+        // Reject non-canonical 7-bit encodings, including non-zero padding bits.
+        // This keeps a transport mutation from being normalized into a different
+        // command before the fixed-opcode check below.
+        require(packFrame(decoded).contentEquals(frame)) { "Codificación 8→7 no canónica" }
         require(decoded.size >= 7 && decoded[0] == 0.toByte() && decoded[1] == 0x59.toByte() &&
             decoded[5] == 0.toByte()) { "Cabecera M-UPGRADE desconocida" }
         val bodyLength = (decoded[3].toInt() and 0xff) or

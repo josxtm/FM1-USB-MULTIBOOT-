@@ -71,4 +71,32 @@ class MbootIdentityProtocolTest {
             MbootIdentityProtocol.decodeFrame(reply(version = ""))
         }
     }
+
+    @Test fun detectsOneBitOpcodeMutationEvenWithOriginalChecksum() {
+        val original = reply()
+        // Decode the frame only to model a wire mutation. The checksum covers
+        // the body, not opcode; the explicit command allow-list must catch it.
+        val decoded = decodePackedForTest(original)
+        decoded[2] = (decoded[2].toInt() xor 0x02).toByte() // 0x12 -> 0x10
+        val mutated = MbootIdentityProtocol.packFrame(decoded)
+        assertThrows(IllegalArgumentException::class.java) {
+            MbootIdentityProtocol.decodeFrame(mutated)
+        }
+    }
+
+    private fun decodePackedForTest(frame: ByteArray): ByteArray {
+        var acc = 0
+        var bits = 0
+        val out = java.io.ByteArrayOutputStream()
+        for (i in 1 until frame.lastIndex) {
+            acc = acc or ((frame[i].toInt() and 255) shl bits)
+            bits += 7
+            while (bits >= 8) {
+                out.write(acc and 255)
+                acc = acc ushr 8
+                bits -= 8
+            }
+        }
+        return out.toByteArray()
+    }
 }
