@@ -1,0 +1,36 @@
+name: FM-1 RAM diagnostics
+on:
+  pull_request:
+  push:
+    branches: [main, feat/usb-host-sd-diagnostics]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test simulated mass storage
+        shell: bash
+        run: |
+          mkdir -p build
+          make test | tee build/test-results.txt
+      - name: Install pinned pi32v2 toolchain
+        run: scripts/get-toolchain.sh
+      - name: Build and validate RAM prototype
+        shell: bash
+        run: make all | tee build/build-validation.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-usb-diagnostics-ram-prototype
+          path: |
+            build/fm1-usb-diagnostics-ram-experimental.bin
+            build/fm1-usb-diagnostics.elf
+            build/fm1-usb-diagnostics.map
+            build/elf-report.txt
+            build/test-results.txt
+            build/build-validation.txt
+            build/SHA256SUMS.txt
+          if-no-files-found: error
