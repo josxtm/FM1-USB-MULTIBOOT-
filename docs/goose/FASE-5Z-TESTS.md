@@ -16,5 +16,6 @@ make virtual-slotfile-test virtual-slotfile-demo
 | Cesión de bus | `stg2_spi_mmio_test` ejecuta la rutina C de plataforma contra registros simulados. Comprueba NOP, cambio de PC7/PC8, frecuencia, devolución a LCD y salida por SPI sin respuesta. No accede a USB0 o Flash. |
 | Ausencia de VBUS | La regresión de 5Y mantiene USB‑C fuera de la ruta preboot. La auditoría del ELF impide enlazar `husb`, reset o escritura Flash en STG2. Ninguna prueba virtual mide tensión o verifica la placa. |
 | Regresión | Se conservan las 30 pruebas Python anteriores y el suite C99 existente de catálogo, USB/BOT, FAT32, selector textual, política de lanzamiento y `virtual_slotfile`. La suite Python total pasa 34 pruebas. |
+| APP1 histórico | El escáner GPIO omite el acceso al PHY sólo en el STG2 FM‑1. La compilación heredada conserva la imagen APP1 de 10.436 B, idéntica al asset Android. |
 
 GitHub Actions recompila el selector con `pi32v2-llvm 23.1.5-2` verificado por hash y usa el repositorio upstream fijado al commit de v2.4 para ejecutar el puente. El artefacto experimental se publica por separado con BIN, ELF, mapa, desensamblado, SHA‑256, informes ABI/pila, captura PPM y logs. Los ensayos históricos que generan otros artefactos de regresión no son una vía de arranque para este selector.

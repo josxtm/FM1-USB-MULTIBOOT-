@@ -44,9 +44,9 @@ stg2-v24-test: stg2-selector
 		-I"$(MBOOT24)/include" -I"$(MBOOT24)/tests" tests/stg2_v24_bridge.c "$(MBOOT24)/src/core.c" -o build/stg2-v24-test
 	./build/stg2-v24-test build/stg2/fm1-multiboot-selector-stg2.bin
 
-build/stg2/%.o: src/%.c $(wildcard src/*.h)
+build/stg2/%.o: src/%.c $(wildcard src/*.h) Makefile
 	@mkdir -p build/stg2
-	$(CLANG) $(CFLAGS) -fstack-usage -c $< -o $@
+	$(CLANG) $(CFLAGS) -DMB_NATIVE_STG2 -fstack-usage -c $< -o $@
 
 build/stg2/stg2_selector_start.o: src/stg2_selector_start.S
 	@mkdir -p build/stg2
