@@ -8,4 +8,4 @@ La prueba incluye BPB y volumen inválidos, desconexión, timeout, FAT cíclica,
 
 La medición de la imagen de tres entradas es 26 sectores desde mount hasta verificación; la de 64 entradas es 60 sectores. Esto incluye relecturas de directorios/FAT porque el adaptador abre cada ruta de forma segura. `sizeof(fat32)=560`; no hay caché de cluster todavía. El coste es aceptable para la demostración, pero la lectura secuencial/caché queda como optimización futura para imágenes grandes.
 
-El objetivo pi32v2 integrado se añadió separadamente y enlaza core, adaptador, FAT32, HAL ficticia y runtime. Si el enlace supera el assert de 64 KiB, el workflow conserva el error como bloqueo reproducible; nunca se considera SRAM física.
+El objetivo pi32v2 integrado se añadió separadamente y enlaza core, adaptador, FAT32, HAL ficticia y runtime. El cambio de `src/fat32.c` altera el binario APP1 generado; se actualizó el asset Android para conservar coherencia, manteniendo la versión comp15 y sin generar comp16. El workflow verifica ambos SHA-256. Si el enlace supera el assert de 64 KiB, el workflow conserva el error como bloqueo reproducible; nunca se considera SRAM física.
