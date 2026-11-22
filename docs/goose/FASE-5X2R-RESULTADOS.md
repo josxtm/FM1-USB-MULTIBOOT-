@@ -27,7 +27,16 @@ PRESETS/OCT−/OCT+/PLAY/REC son controles del menú que los escanea. No pueden 
 
 ## Validación
 
-La suite existente y el auditor anterior permanecen como fuente de verdad. La nueva fase no modifica código ejecutable; la validación de CI se ejecutará sobre el commit de esta rama. No se envió ningún comando al FM1.
+La suite existente y el auditor anterior permanecen como fuente de verdad. Pasaron localmente `make test`, `make firmware-tools-test`, `make flash-backup-audit-test`, `make boot-recovery-test`, `make virtual-installer-test` y `python3 -m unittest discover -s tests -p '*test.py'` con 19 tests Python OK.
+
+Los cuatro workflows pasaron sobre `f8d89f73fe317f3d29c29746bbe931bc1b702ec0`:
+
+- Embedded multiboot core — `45074703773` — success.
+- Cover Flow simulator — `45074707434` — success, sólo regresión.
+- FM-1 RAM diagnostics — `45074710419` — success.
+- Android RAM Loader — `45074713391` — success.
+
+La nueva fase no modifica código ejecutable ni envía comandos al FM1.
 
 ## Bloqueos
 
