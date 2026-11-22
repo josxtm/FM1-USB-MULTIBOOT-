@@ -64,7 +64,7 @@ build/mb_app_start_pi32v2.o: src/multiboot_ram_start.S
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
 build/embedded_ram_app_pi32v2.elf: build/embedded_ram_app_pi32v2.o build/embedded_ram_app_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o build/embedded_multiboot_pi32v2.o src/multiboot_ram.ld
-	$(LD) --gc-sections --no-undefined -Map build/embedded_ram_app_pi32v2.map -T src/multiboot_ram.ld -o $@ $^
+	$(LD) --gc-sections --no-undefined -Map build/embedded_ram_app_pi32v2.map -T src/multiboot_ram.ld -o $@ $(filter %.o,$^)
 
 build/embedded_fat32_multiboot_pi32v2.o: src/embedded_multiboot.c src/embedded_multiboot.h $(wildcard src/*.h)
 	@mkdir -p build
