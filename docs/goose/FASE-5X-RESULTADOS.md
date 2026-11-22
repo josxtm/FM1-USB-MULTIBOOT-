@@ -165,7 +165,14 @@ python3 -m unittest discover -s tests -p '*test.py'
 
 Resultado: **17 tests Python OK**, además de la prueba C MSC/FAT32 y la suite existente.
 
-Los cuatro workflows se ejecutarán sobre el commit de implementación de esta fase. Ningún workflow implica operación física.
+Los cuatro workflows pasaron sobre el commit de implementación `870b680c81ac30385f7a38938059c5cdc67a12d2`:
+
+- Embedded multiboot core — `45066724532` — success.
+- Cover Flow simulator — `45066728549` — success, sólo regresión.
+- FM-1 RAM diagnostics — `45066732256` — success.
+- Android RAM Loader — `45066735861` — success.
+
+Ningún workflow implica operación física.
 
 ## Bloqueos y evidencia faltante
 
@@ -196,6 +203,7 @@ Mientras ninguna exista, el siguiente experimento mínimo recomendado es únicam
 ## Estado de entrega
 
 - Rama: `goose/fase3b-4a-preflight`.
+- Commit de implementación validado: `870b680c81ac30385f7a38938059c5cdc67a12d2`.
 - PR #8: OPEN/Draft, sin merge.
 - `main`: intacto.
 - DARK-1 y m-bootloader: intactos.
