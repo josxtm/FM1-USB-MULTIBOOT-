@@ -9,6 +9,6 @@ El presupuesto se mantiene como medición de linker, no como capacidad SRAM fís
 * SHA/FM1CAT usan los buffers existentes del core; el renderer usa una línea RGB565 de 480 bytes.
 * El catálogo máximo continúa limitado a 64 entradas y 24 KiB.
 
-El informe `.map` y `llvm-readelf` del target full son la autoridad para tamaño final de image/BSS/segmentos. El stack dinámico máximo no está demostrado por análisis automático de la toolchain; por eso los objetos grandes permanecen en estado persistente controlado y no en variables automáticas.
+El informe CI del target full midió `.image=22108` bytes, APP1 `22116` bytes y BSS `25896` bytes (`0x6528`). La imagen ocupa APP desde `0x01C30000` hasta `0x01C3565c`; BSS termina en `0x01C1AD28`, antes del límite linker `0x01C1E000`. El stack dinámico máximo no está demostrado por análisis automático de la toolchain; por eso los objetos grandes permanecen en estado persistente controlado y no en variables automáticas.
 
 Si el target full excede APP/LOW, no se moverán direcciones arbitrariamente: se conservará DEMO/USB como arquitecturas separadas y se documentará la reducción o la necesidad de confirmar SRAM.

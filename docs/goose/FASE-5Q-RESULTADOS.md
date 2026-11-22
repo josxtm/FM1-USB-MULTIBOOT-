@@ -16,6 +16,6 @@ DEMO conserva DARK-1/MELODEE/TESSERA como nombres/datos de demostración sin bin
 
 ## Estado
 
-La imagen full es un candidato de software y su tamaño final será el reportado por el linker/CI. Si no cabe, no se cambian direcciones arbitrariamente. El mapa de memoria sigue siendo virtual hasta confirmar SRAM. El ABI run-ram/stage-2 sigue separado y `MB_LAUNCH_BLOCKED` no cambia.
+CI enlazó y validó la imagen full: `.image=0x565c` = 22108 bytes, APP1=22116 bytes, BSS=0x6528 = 25896 bytes, con entry `0x01C30000`. SHA-256 del APP1: `67c4c935a76b4c823c2ab63dd6d5ee0721209f325a6eded0cdfc5f5439d98ba0`. Estos son tamaños virtuales del linker y no capacidad SRAM física. Si no cabe en una unidad real, no se cambian direcciones arbitrariamente; se documenta una arquitectura alternativa. El ABI run-ram/stage-2 sigue separado y `MB_LAUNCH_BLOCKED` no cambia.
 
 Pendiente antes de Cover Flow físico: ABI del bootloader instalado, SRAM/stack, reloj, USB-C eléctrico, enumeración MSC, LCD/teclas y recuperación. Pendiente para firmwares reales: formato, ABI, relocación, vectores, dependencias, licencia y autorización independiente.
