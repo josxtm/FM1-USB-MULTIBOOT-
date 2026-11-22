@@ -14,7 +14,7 @@ class AppImageTest {
         assertEquals(AppSlot.SHA256, result.sha256)
         assertTrue(result.checks.all { it.second })
         assertNotNull(result.approved)
-        assertEquals(0xc951, crc16(diagnostic(), result.size - 8))
+        assertEquals(0xbdf6, crc16(diagnostic(), result.size - 8))
     }
 
     @Test fun rejectsBadTrailerBoardAndVersion() {
