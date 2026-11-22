@@ -4,12 +4,14 @@
 #include "embedded_ram_app.h"
 #include "embedded_lcd_renderer.h"
 #include "embedded_keys.h"
+#include "embedded_presets.h"
 #include "embedded_clock.h"
 #include "lcd.h"
 #include "keys.h"
 #include "usbio.h"
 #ifdef MB_USB_STORAGE_LINKED
 #include "embedded_usb_msc_storage.h"
+#include "embedded_lcd_list_renderer.h"
 #endif
 
 static const unsigned char dark[]="DARK-1", melodee[]="MELODEE", tessera[]="TESSERA";
@@ -57,8 +59,14 @@ static enum mb_state app_state APP_DATA=MB_BOOT;
 static unsigned app_frames APP_DATA=0;
 static struct mb_core app_core APP_DATA={0};
 static struct mb_demo_storage app_demo APP_DATA={0};
+#ifndef MB_TEXT_SELECTOR
 static struct mb_lcd_renderer app_lcd APP_DATA={0};
+#endif
+#ifdef MB_TEXT_SELECTOR
+static struct mb_lcd_list_renderer app_list APP_DATA={0};
+#endif
 static struct mb_key_adapter app_keys APP_DATA={0};
+static struct mb_presets_encoder app_presets APP_DATA={0};
 static struct mb_clock app_clock APP_DATA={0};
 #ifdef MB_USB_STORAGE_LINKED
 static struct mb_usb_msc_storage app_usb APP_DATA={0};
@@ -93,8 +101,15 @@ void embedded_ram_app_entry(u32 rom_arg)
  if(!timer_begin(ctx)||!timer_ok(ctx)||!timer_rate(ctx)){app_result=2;return;}
  mb_clock_init(&app_clock,timer_rate(ctx),timer_now(ctx));
  if(!panel_init(ctx)){app_result=3;return;}
- if(hooks_present)renderer=app_hooks.renderer;else{mb_lcd_renderer_init(&app_lcd,mb_lcd_physical_sink());renderer=app_lcd.renderer;}
- mb_keys_init(&app_keys);
+ if(hooks_present)renderer=app_hooks.renderer;
+ else {
+#ifdef MB_TEXT_SELECTOR
+  mb_lcd_list_renderer_init(&app_list,mb_lcd_physical_sink()); renderer=app_list.renderer;
+#else
+  mb_lcd_renderer_init(&app_lcd,mb_lcd_physical_sink()); renderer=app_lcd.renderer;
+#endif
+ }
+ mb_keys_init(&app_keys); mb_presets_init(&app_presets,4);
  if(!mb_ram_app_init(&app_core,hooks_present?app_hooks.backend:MB_APP_DEMO,
                      hooks_present?app_hooks.external_storage:(struct mb_storage){0,0},&app_demo,renderer)){
   app_state=app_core.state;app_result=4;return;
@@ -103,6 +118,9 @@ void embedded_ram_app_entry(u32 rom_arg)
  for(;;){
   raw=key_scan(ctx);
   if(!mb_clock_update(&app_clock,timer_now(ctx))){app_result=5;app_state=MB_ERROR;return;}
+  if(hooks_present && app_hooks.encoder_scan && mb_presets_poll(&app_presets,app_hooks.encoder_scan(ctx),&event)){
+   mb_event(&app_core,event);mb_render(&app_core);++app_frames;app_state=app_core.state;
+  }
   if(mb_keys_poll(&app_keys,raw,app_clock.now_ms,&event)){mb_event(&app_core,event);mb_render(&app_core);++app_frames;app_state=app_core.state;}
   ++steps;if(hooks_present&&app_hooks.max_steps&&steps>=app_hooks.max_steps){app_result=0;return;}
   wait_ms(ctx,10);

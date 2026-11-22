@@ -68,7 +68,7 @@ int main(void)
     }
     {
         struct host h={0,0,0};
-        struct mb_ram_app_hooks hooks={&h,host_timer,host_calibrated,host_rate,host_now,host_lcd,host_keys,host_delay,r,MB_APP_DEMO,{0,0},10};
+        struct mb_ram_app_hooks hooks={&h,host_timer,host_calibrated,host_rate,host_now,host_lcd,host_keys,host_delay,r,MB_APP_DEMO,{0,0},10,0};
         mb_ram_app_set_host_hooks(&hooks);
         embedded_ram_app_entry(0x01c30000u);
         if(mb_ram_app_last_result()!=0||h.lcd!=1||mb_ram_app_frame_count()<2||mb_ram_app_last_state()!=MB_BROWSE)return 12;

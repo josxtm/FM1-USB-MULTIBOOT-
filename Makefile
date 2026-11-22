@@ -10,7 +10,7 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage msc_bot usb_diag_log fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test usb-storage-test launch-policy-test firmware-tools-test clock-test timer-test ram-image-validator-test ram-minimal-test ram-minimal-pi32v2-object ram-minimal-image ram-app-pi32v2-image ram-app-pi32v2-full-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test usb-storage-test presets-test list-renderer-test launch-policy-test firmware-tools-test clock-test timer-test ram-image-validator-test ram-minimal-test ram-minimal-pi32v2-object ram-minimal-image ram-app-pi32v2-image ram-app-pi32v2-full-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
@@ -21,7 +21,7 @@ fat32-pi32v2-object: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat3
 
 fat32-pi32v2-sim: build/embedded_fat32_pi32v2.elf
 
-ram-app-pi32v2-object: build/embedded_ram_app_pi32v2.o build/embedded_ram_app_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_clock_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o
+ram-app-pi32v2-object: build/embedded_ram_app_pi32v2.o build/embedded_presets_pi32v2.o build/embedded_ram_app_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_clock_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o
 
 ram-app-pi32v2-sim: build/embedded_ram_app_pi32v2.elf
 
@@ -31,13 +31,17 @@ ram-app-pi32v2-image: build/embedded_ram_app_pi32v2.elf scripts/app_trailer.py s
 	$(READELF) -h -l -S -s build/embedded_ram_app_pi32v2.elf > build/embedded_ram_app_pi32v2.elf-report.txt
 	python3 scripts/validate_ram_image.py build/embedded_ram_app_pi32v2.elf build/embedded_ram_app_pi32v2.flat.bin build/embedded_ram_app_pi32v2.bin
 
+build/embedded_presets_pi32v2.o: src/embedded_presets.c src/embedded_presets.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
 build/embedded_ram_app_pi32v2.o: src/embedded_ram_app.c src/embedded_ram_app.h $(wildcard src/*.h)
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
 build/embedded_ram_app_full_pi32v2.o: src/embedded_ram_app.c src/embedded_ram_app.h $(wildcard src/*.h)
 	@mkdir -p build
-	$(CLANG) $(CFLAGS) -DMB_USB_STORAGE_LINKED -c $< -o $@
+	$(CLANG) $(CFLAGS) -DMB_USB_STORAGE_LINKED -DMB_TEXT_SELECTOR -c $< -o $@
 
 build/embedded_usb_msc_storage_pi32v2.o: src/embedded_usb_msc_storage.c src/embedded_usb_msc_storage.h $(wildcard src/*.h)
 	@mkdir -p build
@@ -48,6 +52,10 @@ build/husb_pi32v2.o: src/husb.c src/husb.h $(wildcard src/*.h)
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
 build/storage_pi32v2.o: src/storage.c src/storage.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_ram_app_list_renderer_pi32v2.o: src/embedded_lcd_list_renderer.c src/embedded_lcd_list_renderer.h $(wildcard src/*.h)
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
@@ -86,7 +94,7 @@ build/mb_app_start_pi32v2.o: src/multiboot_ram_start.S
 build/embedded_ram_app_pi32v2.elf: build/embedded_ram_app_pi32v2.o build/embedded_ram_app_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_clock_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o build/embedded_multiboot_pi32v2.o src/multiboot_ram.ld
 	$(LD) --gc-sections --no-undefined -Map build/embedded_ram_app_pi32v2.map -T src/multiboot_ram.ld -o $@ $(filter %.o,$^)
 
-RAM_FULL_OBJECTS = build/embedded_ram_app_full_pi32v2.o build/embedded_ram_app_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_clock_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o build/embedded_multiboot_pi32v2.o build/embedded_usb_msc_storage_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/usb_diag_log_pi32v2.o build/husb_pi32v2.o build/storage_pi32v2.o
+RAM_FULL_OBJECTS = build/embedded_ram_app_full_pi32v2.o build/embedded_presets_pi32v2.o build/embedded_ram_app_list_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_clock_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o build/embedded_multiboot_pi32v2.o build/embedded_usb_msc_storage_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/usb_diag_log_pi32v2.o build/husb_pi32v2.o build/storage_pi32v2.o
 
 build/ram-app-usb-full.pi32v2.elf: $(RAM_FULL_OBJECTS) src/multiboot_ram.ld
 	$(LD) --gc-sections --no-undefined -Map build/ram-app-usb-full.map -T src/multiboot_ram.ld -o $@ $(filter %.o,$^)
@@ -209,6 +217,20 @@ build/embedded_usb_storage_test: tests/embedded_usb_storage_test.c src/embedded_
 firmware-tools-test:
 	python3 -m unittest tests/firmware_tools_test.py
 
+presets-test: build/presets_encoder_test
+	./build/presets_encoder_test
+
+list-renderer-test: build/embedded_lcd_list_test
+	./build/embedded_lcd_list_test
+
+build/embedded_lcd_list_test: tests/embedded_lcd_list_test.c src/embedded_lcd_list_renderer.c src/embedded_lcd_list_renderer.h src/embedded_multiboot.c $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/embedded_lcd_list_test.c src/embedded_lcd_list_renderer.c src/embedded_multiboot.c -o $@
+
+build/presets_encoder_test: tests/presets_encoder_test.c src/embedded_presets.c src/embedded_presets.h src/embedded_multiboot.h src/mbl.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/presets_encoder_test.c src/embedded_presets.c -o $@
+
 launch-policy-test: build/mb_launch_policy_test
 	./build/mb_launch_policy_test
 
@@ -259,7 +281,7 @@ ram-image-validator-test:
 
 build/embedded_ram_app_test: tests/embedded_ram_app_test.c src/embedded_ram_app.c src/embedded_ram_app.h src/embedded_lcd_renderer.c src/embedded_keys.c src/embedded_clock.c src/embedded_multiboot.c $(wildcard src/*.h)
 	@mkdir -p build
-	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/embedded_ram_app_test.c src/embedded_ram_app.c src/embedded_lcd_renderer.c src/embedded_keys.c src/embedded_clock.c src/embedded_multiboot.c -o $@
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/embedded_ram_app_test.c src/embedded_ram_app.c src/embedded_lcd_renderer.c src/embedded_keys.c src/embedded_presets.c src/embedded_clock.c src/embedded_multiboot.c -o $@
 
 build/mb_launch_policy_test: tests/mb_launch_policy_test.c src/mb_launch_policy.c src/mb_launch_policy.h src/embedded_multiboot.h
 	@mkdir -p build
