@@ -8,7 +8,8 @@ SECTIONS {
  .image : { KEEP(*(.text.start)) *(.text .text.*) *(.rodata .rodata.* .srodata .srodata.*) *(.data .data.* .sdata .sdata.*) . = ALIGN(4); } > APP :program
  mb_image_end = ADDR(.image)+SIZEOF(.image);
  .bss (NOLOAD) : { mb_bss_start=.; *(.bss .bss.* .sbss .sbss.* COMMON) . = ALIGN(4); mb_bss_end=.; } > LOW :zero
- mb_stack_top=0x01C1F800; mb_sstack_top=0x01C20000;
+ mb_stack_top = 0x01C1F800;
+ mb_sstack_top = 0x01C20000;
  /DISCARD/ : { *(.comment) *(.eh_frame) *(.note*) }
 }
 ASSERT(mb_app_start==ORIGIN(APP),"entry must be first")
