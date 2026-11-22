@@ -24,6 +24,9 @@ La comprobación inicial encontró HEAD local y remoto iguales en `d32e9c3` (`d3
 - `make core-test`: superado localmente.
 - `make test`: USB/FAT32 existente superado localmente.
 - Compilación host estricta del nuevo núcleo: superada localmente.
+- Workflow dedicado del núcleo: ✅ [run 44967147599](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44967147599)
+- Diagnóstico RAM/pi32v2, APP1 y coherencia de artefactos: ✅ [run 44967151661](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44967151661)
+- Android comp15 conservado y verificado: ✅ [run 44967151731](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44967151731)
 - No se ejecutó toolchain pi32v2 localmente en este entorno; el workflow de diagnóstico existente sigue siendo el gate de APP1/pi32v2.
 - No se realizó prueba física de pantalla, USB Host, RAM o arranque.
 
