@@ -10,6 +10,9 @@ on:
       - 'src/storage.h'
       - 'src/embedded_fat32_storage.*'
       - 'src/msc_bot.*'
+      - 'src/embedded_lcd_renderer.*'
+      - 'src/embedded_keys.*'
+      - 'scripts/decode_usb_diag_log.py'
       - 'docs/goose/**'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
@@ -41,6 +44,7 @@ jobs:
           make test | tee usb-test-results.txt
           make msc-bot-test | tee msc-bot-results.txt
           make usb-diag-log-test | tee usb-diag-log-results.txt
+          make lcd-renderer-test | tee lcd-renderer-results.txt
           make msc-fat32-test | tee msc-fat32-results.txt
           make msc-fat32-sanitize | tee msc-fat32-sanitizer-results.txt
       - name: Compile core with strict host warnings
@@ -48,6 +52,8 @@ jobs:
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/msc_bot.c -o msc_bot.o
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/usb_diag_log.c -o usb_diag_log.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_lcd_renderer.c -o embedded_lcd_renderer.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_keys.c -o embedded_keys.o
       - name: Compile independent pi32v2 object
         run: |
           scripts/get-toolchain.sh toolchain
@@ -78,7 +84,9 @@ jobs:
             usb-test-results.txt
             msc-bot-results.txt
             usb-diag-log-results.txt
+            lcd-renderer-results.txt
             msc-fat32-results.txt
+            build/lcd-coverflow-*.ppm
             msc-fat32-sanitizer-results.txt
             build/fat32-test.img
             build/fat32-coverflow-*.svg
@@ -88,6 +96,8 @@ jobs:
             build/embedded_fat32_multiboot_pi32v2.o
             build/embedded_fat32_pi32v2.o
             build/fat32_pi32v2.o
+            build/embedded_lcd_renderer_pi32v2.o
+            build/embedded_keys_pi32v2.o
             build/embedded_fat32_pi32v2_sim.o
             build/embedded_fat32_pi32v2.elf
             build/embedded_fat32_pi32v2.map

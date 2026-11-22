@@ -10,14 +10,14 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage msc_bot usb_diag_log fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
 
 core-pi32v2-sim: build/embedded_multiboot_pi32v2.elf
 
-fat32-pi32v2-object: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/usb_diag_log_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o
+fat32-pi32v2-object: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/usb_diag_log_pi32v2.o build/embedded_lcd_renderer_pi32v2.o build/embedded_keys_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o
 
 fat32-pi32v2-sim: build/embedded_fat32_pi32v2.elf
 
@@ -42,6 +42,14 @@ build/msc_bot_pi32v2.o: src/msc_bot.c src/msc_bot.h src/mbl.h
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
 build/usb_diag_log_pi32v2.o: src/usb_diag_log.c src/usb_diag_log.h src/mbl.h
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_lcd_renderer_pi32v2.o: src/embedded_lcd_renderer.c src/embedded_lcd_renderer.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_keys_pi32v2.o: src/embedded_keys.c src/embedded_keys.h src/embedded_multiboot.h src/mbl.h
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
@@ -106,6 +114,13 @@ msc-bot-test: build/msc_bot_test
 usb-diag-log-test: build/usb_diag_log_test
 	./build/usb_diag_log_test
 
+lcd-renderer-test: build/embedded_lcd_renderer_test
+	./build/embedded_lcd_renderer_test
+
+build/embedded_lcd_renderer_test: tests/embedded_lcd_renderer_test.c src/embedded_lcd_renderer.c src/embedded_lcd_renderer.h src/embedded_keys.c src/embedded_keys.h src/embedded_multiboot.c $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/embedded_lcd_renderer_test.c src/embedded_lcd_renderer.c src/embedded_keys.c src/embedded_multiboot.c -o $@
+
 build/usb_diag_log_test: tests/usb_diag_log_test.c src/usb_diag_log.c src/usb_diag_log.h src/mbl.h
 	@mkdir -p build
 	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/usb_diag_log_test.c src/usb_diag_log.c -o $@
@@ -154,7 +169,7 @@ memory-report: build/memory_report
 core-sanitize: build/embedded_multiboot_sanitize
 	./build/embedded_multiboot_sanitize
 
-build/memory_report: tests/memory_report.c src/embedded_multiboot.h src/embedded_fat32_storage.h src/storage.h
+build/memory_report: tests/memory_report.c src/embedded_multiboot.h src/embedded_fat32_storage.h src/embedded_lcd_renderer.h src/embedded_keys.h src/storage.h
 	@mkdir -p build
 	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/memory_report.c -o $@
 
