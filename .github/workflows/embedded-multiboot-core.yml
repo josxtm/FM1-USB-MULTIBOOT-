@@ -9,6 +9,7 @@ on:
       - 'src/fat32.c'
       - 'src/storage.h'
       - 'src/embedded_fat32_storage.*'
+      - 'src/msc_bot.*'
       - 'docs/goose/**'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
@@ -38,8 +39,12 @@ jobs:
           for svg in build/fat32-coverflow-*.svg; do python3 scripts/validate_embedded_render.py "$svg"; done
           make fat32-sanitize | tee fat32-sanitizer-results.txt
           make test | tee usb-test-results.txt
+          make msc-bot-test | tee msc-bot-results.txt
+          make msc-fat32-test | tee msc-fat32-results.txt
       - name: Compile core with strict host warnings
-        run: cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
+        run: |
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/msc_bot.c -o msc_bot.o
       - name: Compile independent pi32v2 object
         run: |
           scripts/get-toolchain.sh toolchain
@@ -68,6 +73,8 @@ jobs:
             fat32-integration-results.txt
             fat32-sanitizer-results.txt
             usb-test-results.txt
+            msc-bot-results.txt
+            msc-fat32-results.txt
             build/fat32-test.img
             build/fat32-coverflow-*.svg
             build/embedded_multiboot_pi32v2.o
