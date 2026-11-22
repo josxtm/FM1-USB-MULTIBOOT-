@@ -9,6 +9,15 @@ class FirmwareTools(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix='.BIN') as f:
             f.write(b'opaque'); f.flush()
             self.assertEqual(self.invoke('inspect_firmware.py', f.name)['classification'], 'INSPECTION_ONLY')
+    def test_opaque_container_names_are_not_executable(self):
+        for suffix, expected in (('.fwsc', 'FWSC-OPAQUE'), ('flash.bin', 'FLASH.BIN-OPAQUE'),
+                                 ('ota.bin', 'OTA.BIN-OPAQUE')):
+            with tempfile.NamedTemporaryFile(suffix=suffix) as f:
+                f.write(b'opaque-container'); f.flush()
+                result = self.invoke('inspect_firmware.py', f.name)
+                self.assertEqual(result['format'], expected)
+                self.assertEqual(result['classification'], 'INSPECTION_ONLY')
+
     def test_inspector_app1(self):
         asset=os.path.join(ROOT,'android','app','src','main','assets','fm1-usb-diagnostics-ram-experimental.bin')
         result=self.invoke('inspect_firmware.py', asset)

@@ -32,6 +32,15 @@ def inspect(path):
         out['machine'] = struct.unpack_from('<H', data, 18)[0] if len(data) >= 20 else None
         out['requirements'] = ['load map, ABI, vectors, SRAM and entry validation']
         out['classification'] = 'INSPECTION_ONLY'
+    elif path.lower().endswith('.fwsc'):
+        out['format'] = 'FWSC-OPAQUE'; out['requirements'] = ['public FWSC container, signature, target and recovery specification']
+        out['classification'] = 'INSPECTION_ONLY'
+    elif path.lower().endswith('flash.bin'):
+        out['format'] = 'FLASH.BIN-OPAQUE'; out['requirements'] = ['M-Flasher layout, target map, entry and recovery specification']
+        out['classification'] = 'INSPECTION_ONLY'
+    elif path.lower().endswith('ota.bin'):
+        out['format'] = 'OTA.BIN-OPAQUE'; out['requirements'] = ['OTA manifest, signature, target map and recovery specification']
+        out['classification'] = 'INSPECTION_ONLY'
     elif path.upper().endswith('.FWS'):
         out['format'] = 'FWS-OPAQUE'; out['requirements'] = ['public FWS container specification']
         out['classification'] = 'INSPECTION_ONLY'
