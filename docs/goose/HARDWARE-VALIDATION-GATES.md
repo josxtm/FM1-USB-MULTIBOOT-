@@ -2,7 +2,8 @@
 
 | Gate | Evidencia actual | Pendiente | Criterio de aceptación |
 |---|---|---|---|
-| MIDI MODE / `0x12` | Menú del bootloader documentado | Respuesta real en tablet | Identidad, versión y capacidad sin escribir |
+| MIDI MODE / `0x12` | **VALIDADO FÍSICAMENTE**: Android 16 respondió `RESPONSE`; m-bootloader `2.4-395e6cc`, protocolo 1, 1 MiB, JEDEC `0x856014` | Repetir solo si se necesita evidencia adicional; no implica ejecución | Identidad, versión y capacidad sin escribir |
+
 | Recuperación | PLAY abre menú y BOOT APP vuelve a DARK-1 | Restauración integral | Copia/hash y restauración repetible |
 | Bootloader | `2.4-395E6CC` observado | Reservas RAM/ABI | Mapa confirmado por evidencia independiente |
 | USB-C VBUS | No caracterizado | Medición segura bajo carga | VBUS, CC, corriente y protección sin backfeed |

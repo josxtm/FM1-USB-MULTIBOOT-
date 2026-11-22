@@ -36,7 +36,7 @@ import java.io.Closeable
 
 /**
  * Hardware command surface is intentionally read-only: exactly one static SysEx 0x12.
- * No generic command sender, backup or RAM execution in comp12.
+ * No generic command sender, backup or RAM execution in comp15.
  */
 class MbootMidiActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -57,16 +57,27 @@ class MbootMidiActivity : ComponentActivity() {
     private var output: MidiOutputPort? = null
 
     private val midiCallback = object : MidiManager.DeviceCallback() {
+        override fun onDeviceAdded(info: MidiDeviceInfo) {
+            runOnUiThread {
+                record("Dispositivo MIDI conectado; enumeración actualizada")
+                refreshDevices()
+            }
+        }
+
         override fun onDeviceRemoved(info: MidiDeviceInfo) {
-            if (midiInfo?.id == info.id) {
-                runOnUiThread {
+            runOnUiThread {
+                refreshDevices()
+                if (midiInfo?.id == info.id) {
                     record("Dispositivo MIDI retirado por Android")
                     queryController.disconnected()
+                } else {
+                    record("Dispositivo MIDI retirado; enumeración actualizada")
                 }
             }
         }
     }
     private var status by mutableStateOf("Sin consultar")
+    private var enumerationStatus by mutableStateOf("Enumeración MIDI: pendiente")
     private var identity by mutableStateOf<MbootIdentityProtocol.Identity?>(null)
     private var running by mutableStateOf(false)
     private var appVersion by mutableStateOf("desconocida")
@@ -87,6 +98,7 @@ class MbootMidiActivity : ComponentActivity() {
         appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "desconocida"
         record("Actividad MIDI abierta · APK $appVersion")
         manager.registerDeviceCallback(midiCallback, handler)
+        refreshDevices()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF65E8CD))) {
                 Surface(Modifier.fillMaxSize()) {
@@ -98,6 +110,9 @@ class MbootMidiActivity : ComponentActivity() {
                             "3. En su menú selecciona MIDI MODE. 4. Conecta la tablet por USB-C. " +
                             "5. Pulsa Consultar.")
                         Text("Estado: $status")
+                        Text(enumerationStatus)
+                        OutlinedButton(onClick = ::refreshDevices, enabled = !running,
+                            modifier = Modifier.fillMaxWidth()) { Text("Actualizar dispositivos MIDI") }
                         if (history.isNotEmpty()) {
                             Text("Historial de sesión", style = MaterialTheme.typography.titleMedium)
                             history.takeLast(4).forEach { Text("${it.time} · ${it.message}") }
@@ -135,16 +150,21 @@ class MbootMidiActivity : ComponentActivity() {
         history = (history + DiagnosticEvent(time, message)).takeLast(32)
     }
 
+    private fun refreshDevices() {
+        if (!::manager.isInitialized) return
+        val candidates = MbootMidiDiscovery.candidates(manager.devices)
+        enumerationStatus = when (candidates.size) {
+            0 -> "Enumeración MIDI: 0 candidatos FM-1 disponibles"
+            1 -> "Enumeración MIDI: 1 candidato FM-1 disponible"
+            else -> "Enumeración MIDI: ${candidates.size} candidatos FM-1 disponibles"
+        }
+    }
+
     private fun identify() {
         stop()
         record("Inicio de detección USB-MIDI; solo consulta 0x12")
         identity = null
-        val candidates = manager.devices.filter { info ->
-            val name = info.properties.getString(MidiDeviceInfo.PROPERTY_NAME).orEmpty()
-            val product = info.properties.getString(MidiDeviceInfo.PROPERTY_PRODUCT).orEmpty()
-            info.type == MidiDeviceInfo.TYPE_USB && info.inputPortCount > 0 && info.outputPortCount > 0 &&
-                (name.contains("FM-1 Update", true) || product.contains("FM-1 Update", true))
-        }
+        val candidates = MbootMidiDiscovery.candidates(manager.devices)
         if (candidates.size != 1) {
             status = "Detectados ${candidates.size} dispositivos FM-1 Update. " +
                 "Entra en MIDI MODE y deja solo un FM1 conectado."
