@@ -122,5 +122,11 @@ No habilitar todavía instalación física. La siguiente fase debe obtener prime
 
 - Rama: `goose/fase3b-4a-preflight`.
 - PR #8: OPEN/Draft, sin merge.
+- Commit de implementación validado: `1c42d7a65e1ebcd0c405ad237eb38deb3a32abf9`.
+- Workflows validados sobre ese commit:
+  - Embedded multiboot core — `45061512321` — success.
+  - Cover Flow simulator — `45061516324` — success, sólo regresión.
+  - FM-1 RAM diagnostics — `45061520228` — success.
+  - Android RAM Loader — `45061524505` — success.
 - No se modificaron `main`, DARK-1 ni m-bootloader.
 - No se escribió ni borró Flash física.
