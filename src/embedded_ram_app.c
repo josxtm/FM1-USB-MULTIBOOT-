@@ -8,6 +8,9 @@
 #include "lcd.h"
 #include "keys.h"
 #include "usbio.h"
+#ifdef MB_USB_STORAGE_LINKED
+#include "embedded_usb_msc_storage.h"
+#endif
 
 static const unsigned char dark[]="DARK-1", melodee[]="MELODEE", tessera[]="TESSERA";
 static const char catalog[]=
@@ -57,6 +60,12 @@ static struct mb_demo_storage app_demo APP_DATA={0};
 static struct mb_lcd_renderer app_lcd APP_DATA={0};
 static struct mb_key_adapter app_keys APP_DATA={0};
 static struct mb_clock app_clock APP_DATA={0};
+#ifdef MB_USB_STORAGE_LINKED
+static struct mb_usb_msc_storage app_usb APP_DATA={0};
+/* A volatile reference keeps the complete explicit USB path in the linked
+ * image without initializing USB0.  The call remains a future physical gate. */
+static enum diag_result (*volatile app_usb_open)(struct mb_usb_msc_storage *) = mb_usb_msc_storage_open;
+#endif
 extern unsigned char mb_bss_start[],mb_bss_end[];
 void mb_ram_app_set_host_hooks(const struct mb_ram_app_hooks*h)
 {if(h){app_hooks=*h;hooks_present=1;}}
@@ -76,6 +85,9 @@ void embedded_ram_app_entry(u32 rom_arg)
  struct mb_renderer renderer;enum mb_event event;u32 steps=0,raw;
  void*ctx=app_hooks.context;
  app_result=0;app_frames=0;app_state=MB_BOOT;
+#ifdef MB_USB_STORAGE_LINKED
+ mb_usb_msc_storage_init(&app_usb); (void)app_usb_open;
+#endif
  if(rom_arg<0x01000000u){app_result=1;return;}
  if(!hooks_present)for(unsigned char*p=mb_bss_start;p<mb_bss_end;p++)*p=0;
  if(!timer_begin(ctx)||!timer_ok(ctx)||!timer_rate(ctx)){app_result=2;return;}

@@ -9,6 +9,9 @@ on:
       - 'src/fat32.c'
       - 'src/storage.h'
       - 'src/embedded_fat32_storage.*'
+      - 'src/embedded_usb_msc_storage.*'
+      - 'src/storage.c'
+      - 'src/husb.*'
       - 'src/msc_bot.*'
       - 'src/embedded_lcd_renderer.*'
       - 'src/embedded_keys.*'
@@ -51,6 +54,7 @@ jobs:
           make usb-diag-log-test | tee usb-diag-log-results.txt
           make lcd-renderer-test | tee lcd-renderer-results.txt
           make ram-app-test | tee ram-app-results.txt
+          make usb-storage-test | tee usb-storage-results.txt
           make launch-policy-test | tee launch-policy-results.txt
           make clock-test | tee clock-results.txt
           make timer-test | tee timer-results.txt
@@ -74,6 +78,7 @@ jobs:
           make TOOLCHAIN=toolchain core-pi32v2-object core-pi32v2-sim
           make TOOLCHAIN=toolchain fat32-pi32v2-object fat32-pi32v2-sim
           make TOOLCHAIN=toolchain ram-app-pi32v2-object ram-app-pi32v2-image
+          make TOOLCHAIN=toolchain ram-app-pi32v2-full-image
           make TOOLCHAIN=toolchain ram-minimal-pi32v2-object ram-minimal-image
           python3 scripts/ram_loader_dry_run.py build/ram_minimal.bin
           python3 scripts/ram_loader_dry_run.py build/ram_minimal.bin --cancel-after 1
@@ -104,6 +109,7 @@ jobs:
             usb-diag-log-results.txt
             lcd-renderer-results.txt
             ram-app-results.txt
+            usb-storage-results.txt
             launch-policy-results.txt
             clock-results.txt
             ram-image-validator-results.txt
@@ -126,6 +132,18 @@ jobs:
             build/embedded_ram_app_pi32v2.bin
             build/embedded_ram_app_pi32v2.elf-report.txt
             build/embedded_ram_app_pi32v2.o
+            build/ram-app-usb-full.pi32v2.elf
+            build/ram-app-usb-full.map
+            build/ram-app-usb-full.flat.bin
+            build/ram-app-usb-full.bin
+            build/ram-app-usb-full.elf-report.txt
+            build/ram-app-usb-full.SHA256SUMS.txt
+            build/embedded_ram_app_full_pi32v2.o
+            build/embedded_usb_msc_storage_pi32v2.o
+            build/husb_pi32v2.o
+            build/storage_pi32v2.o
+            build/msc_bot_pi32v2.o
+            build/fat32_pi32v2.o
             build/embedded_ram_app_renderer_pi32v2.o
             build/embedded_ram_app_keys_pi32v2.o
             build/embedded_ram_app_physical_keys_pi32v2.o
