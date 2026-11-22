@@ -14,7 +14,7 @@ Cover Flow fue retirado del binario full del selector. El nuevo renderer textual
 
 ## Evidencia
 
-Host generó `build/lcd-selector-list.ppm` a 240x240 y validó catálogos/lista y encoder. La conexión física del encoder PRESETS/encoder 6 no se afirmó: no existe pinout verificable suficiente. La HAL física debe proporcionar A/B antes de una prueba autorizada.
+Host generó `build/lcd-selector-list.ppm` a 240x240 (172815 bytes) y validó catálogos/lista y encoder. CI enlazó el selector full con `.image=22216` bytes, APP1=22224 bytes y BSS=25896 bytes; SHA-256 APP1 `fe2a080af2964d3503de82fef2db3fbafe2f8a07e20c0a55e7e79f02be7e9ac7`. El tamaño es virtual/linker, no SRAM física. La conexión física del encoder PRESETS/encoder 6 no se afirmó: no existe pinout verificable suficiente. La HAL física debe proporcionar A/B antes de una prueba autorizada.
 
 ## Arranque
 
