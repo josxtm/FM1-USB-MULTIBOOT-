@@ -46,16 +46,17 @@ int mb_ram_app_init(struct mb_core*c,enum mb_app_backend backend,struct mb_stora
  return 1;
 }
 
-static struct mb_ram_app_hooks app_hooks;
-static int hooks_present;
-static int app_result;
-static enum mb_state app_state=MB_BOOT;
-static unsigned app_frames;
-static struct mb_core app_core;
-static struct mb_demo_storage app_demo;
-static struct mb_lcd_renderer app_lcd;
-static struct mb_key_adapter app_keys;
-static struct mb_clock app_clock;
+#define APP_DATA __attribute__((section(".data.app")))
+static struct mb_ram_app_hooks app_hooks APP_DATA={0};
+static int hooks_present APP_DATA=0;
+static int app_result APP_DATA=0;
+static enum mb_state app_state APP_DATA=MB_BOOT;
+static unsigned app_frames APP_DATA=0;
+static struct mb_core app_core APP_DATA={0};
+static struct mb_demo_storage app_demo APP_DATA={0};
+static struct mb_lcd_renderer app_lcd APP_DATA={0};
+static struct mb_key_adapter app_keys APP_DATA={0};
+static struct mb_clock app_clock APP_DATA={0};
 extern unsigned char mb_bss_start[],mb_bss_end[];
 void mb_ram_app_set_host_hooks(const struct mb_ram_app_hooks*h)
 {if(h){app_hooks=*h;hooks_present=1;}}
