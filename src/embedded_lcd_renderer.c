@@ -5,12 +5,6 @@
 #include "glyphs.h"
 #include "disp.h"
 
-static void physical_window(void *p,u32 x,u32 y,u32 w,u32 h){(void)p;lcd_window(x,y,w,h);}
-static void physical_pixels(void *p,const u8 *b,u32 n){(void)p;lcd_pixels(b,n);}
-static void physical_end(void *p){(void)p;lcd_end();}
-struct mb_lcd_sink mb_lcd_physical_sink(void){struct mb_lcd_sink s={0,physical_window,physical_pixels,physical_end};return s;}
-int mb_lcd_physical_init(u32 board){return lcd_init(board);}
-
 static void px(struct mb_lcd_renderer *r,u32 i,u16 color){r->line[2u*i]=(u8)(color>>8);r->line[2u*i+1]=(u8)color;}
 static void fill(struct mb_lcd_renderer *r,u32 x,u32 y,u32 w,u32 h,u16 color)
 {
