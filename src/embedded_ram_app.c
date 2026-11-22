@@ -4,6 +4,7 @@
 #include "embedded_ram_app.h"
 #include "embedded_lcd_renderer.h"
 #include "embedded_keys.h"
+#include "embedded_clock.h"
 #include "lcd.h"
 #include "keys.h"
 #include "usbio.h"
@@ -37,6 +38,14 @@ struct mb_storage mb_demo_storage_hal(struct mb_demo_storage *s)
 { return (struct mb_storage){s,demo_read}; }
 void mb_demo_catalog_init(struct mb_core *c,struct mb_demo_storage *s,struct mb_renderer r)
 { mb_init(c,mb_demo_storage_hal(s),r); (void)mb_load_catalog(c); }
+int mb_ram_app_init(struct mb_core *c,enum mb_app_backend backend,struct mb_storage external,
+                    struct mb_demo_storage *demo,struct mb_renderer renderer)
+{
+    if(!c)return 0;
+    if(backend==MB_APP_DEMO){if(!demo)return 0;mb_demo_catalog_init(c,demo,renderer);}
+    else {mb_init(c,external,renderer);if(mb_load_catalog(c)!=MB_IO_OK)return 0;}
+    return 1;
+}
 
 void plat_delay_ms(u32 ms) { delay_us(1000u*ms); }
 static void demo_renderer(struct mb_lcd_renderer *r)
@@ -45,15 +54,18 @@ extern unsigned char mb_bss_start[], mb_bss_end[];
 void embedded_ram_app_entry(u32 rom_arg)
 {
     struct mb_core core; struct mb_demo_storage storage={0}; struct mb_lcd_renderer lcd;
-    struct mb_key_adapter keys; enum mb_event event;
+    struct mb_key_adapter keys; struct mb_clock clock; enum mb_event event;
     if(rom_arg<0x01000000u)return;
     for(unsigned char *p=mb_bss_start;p<mb_bss_end;p++)*p=0;
+    if(!timer_start_unconfigured() || !timer_calibrated())return;
+    mb_clock_init(&clock,timer_ticks_per_ms(),tb_now());
     if(!lcd_init(BRD_FM1))return;
     demo_renderer(&lcd); mb_keys_init(&keys); mb_demo_catalog_init(&core,&storage,lcd.renderer);
     mb_render(&core);
     for(;;){
         u32 raw=plat_menu_scan();
-        if(mb_keys_poll(&keys,raw,tb_now()/48000u,&event)){mb_event(&core,event);mb_render(&core);}
+        if(!mb_clock_update(&clock,tb_now()))return;
+        if(mb_keys_poll(&keys,raw,clock.now_ms,&event)){mb_event(&core,event);mb_render(&core);}
         plat_delay_ms(10);
     }
 }

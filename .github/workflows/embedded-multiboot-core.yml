@@ -52,6 +52,7 @@ jobs:
           make lcd-renderer-test | tee lcd-renderer-results.txt
           make ram-app-test | tee ram-app-results.txt
           make launch-policy-test | tee launch-policy-results.txt
+          make clock-test | tee clock-results.txt
           make ram-image-validator-test | tee ram-image-validator-results.txt
           make msc-fat32-test | tee msc-fat32-results.txt
           make msc-fat32-sanitize | tee msc-fat32-sanitizer-results.txt
@@ -64,6 +65,7 @@ jobs:
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_keys.c -o embedded_keys.o
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_ram_app.c -o embedded_ram_app.o
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/mb_launch_policy.c -o mb_launch_policy.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_clock.c -o embedded_clock.o
       - name: Compile independent pi32v2 object
         run: |
           scripts/get-toolchain.sh toolchain
@@ -98,6 +100,7 @@ jobs:
             lcd-renderer-results.txt
             ram-app-results.txt
             launch-policy-results.txt
+            clock-results.txt
             ram-image-validator-results.txt
             msc-fat32-results.txt
             build/lcd-coverflow-*.ppm
