@@ -12,6 +12,11 @@ on:
       - 'src/msc_bot.*'
       - 'src/embedded_lcd_renderer.*'
       - 'src/embedded_keys.*'
+      - 'src/embedded_ram_app.*'
+      - 'src/mb_launch_policy.*'
+      - 'src/multiboot_ram_start.S'
+      - 'src/multiboot_ram.ld'
+      - 'scripts/validate_ram_image.py'
       - 'scripts/decode_usb_diag_log.py'
       - 'docs/goose/**'
       - 'Makefile'
@@ -45,6 +50,9 @@ jobs:
           make msc-bot-test | tee msc-bot-results.txt
           make usb-diag-log-test | tee usb-diag-log-results.txt
           make lcd-renderer-test | tee lcd-renderer-results.txt
+          make ram-app-test | tee ram-app-results.txt
+          make launch-policy-test | tee launch-policy-results.txt
+          make ram-image-validator-test | tee ram-image-validator-results.txt
           make msc-fat32-test | tee msc-fat32-results.txt
           make msc-fat32-sanitize | tee msc-fat32-sanitizer-results.txt
       - name: Compile core with strict host warnings
@@ -54,11 +62,14 @@ jobs:
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/usb_diag_log.c -o usb_diag_log.o
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_lcd_renderer.c -o embedded_lcd_renderer.o
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_keys.c -o embedded_keys.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_ram_app.c -o embedded_ram_app.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/mb_launch_policy.c -o mb_launch_policy.o
       - name: Compile independent pi32v2 object
         run: |
           scripts/get-toolchain.sh toolchain
           make TOOLCHAIN=toolchain core-pi32v2-object core-pi32v2-sim
           make TOOLCHAIN=toolchain fat32-pi32v2-object fat32-pi32v2-sim
+          make TOOLCHAIN=toolchain ram-app-pi32v2-object ram-app-pi32v2-image
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.o > pi32v2-core-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.elf > pi32v2-core-linked-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_multiboot_pi32v2.o > pi32v2-fat32-core-elf-report.txt
@@ -85,6 +96,9 @@ jobs:
             msc-bot-results.txt
             usb-diag-log-results.txt
             lcd-renderer-results.txt
+            ram-app-results.txt
+            launch-policy-results.txt
+            ram-image-validator-results.txt
             msc-fat32-results.txt
             build/lcd-coverflow-*.ppm
             msc-fat32-sanitizer-results.txt
@@ -98,6 +112,19 @@ jobs:
             build/fat32_pi32v2.o
             build/embedded_lcd_renderer_pi32v2.o
             build/embedded_keys_pi32v2.o
+            build/embedded_ram_app_pi32v2.elf
+            build/embedded_ram_app_pi32v2.map
+            build/embedded_ram_app_pi32v2.flat.bin
+            build/embedded_ram_app_pi32v2.bin
+            build/embedded_ram_app_pi32v2.elf-report.txt
+            build/embedded_ram_app_pi32v2.o
+            build/embedded_ram_app_renderer_pi32v2.o
+            build/embedded_ram_app_keys_pi32v2.o
+            build/embedded_ram_app_physical_keys_pi32v2.o
+            build/embedded_ram_app_lcd_pi32v2.o
+            build/embedded_ram_app_timer_pi32v2.o
+            build/embedded_ram_app_runtime_pi32v2.o
+            build/mb_app_start_pi32v2.o
             build/embedded_fat32_pi32v2_sim.o
             build/embedded_fat32_pi32v2.elf
             build/embedded_fat32_pi32v2.map
