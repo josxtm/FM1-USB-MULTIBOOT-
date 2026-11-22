@@ -26,8 +26,12 @@ static enum mb_io_result ext_read(void *p,const char *path,uint32_t off,uint8_t 
     if(!strcmp(path,"FM1/INDEX.CSV")){data=ext_index;size=sizeof ext_index-1;}
     else if(!strcmp(path,"FM1/FW/USB_1.BIN")){data="USB";size=3;}
     else return MB_IO_MISSING;
-    if(off>size)return MB_IO_ERROR;if(off==size)return MB_IO_EOF;
-    if(cap>size-off)cap=(uint32_t)(size-off);memcpy(out,data+off,cap);*got=cap;return MB_IO_OK;
+    if(off>size)return MB_IO_ERROR;
+    if(off==size)return MB_IO_EOF;
+    if(cap>size-off)cap=(uint32_t)(size-off);
+    memcpy(out,data+off,cap);
+    *got=cap;
+    return MB_IO_OK;
 }
 static unsigned frames, cards, labels;
 static void begin(void *p){(void)p;frames++;}
