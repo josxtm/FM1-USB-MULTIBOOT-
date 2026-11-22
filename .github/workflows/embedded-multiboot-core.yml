@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and run portable C99 core tests
         run: |
+          set -o pipefail
           make core-test | tee core-test-results.txt
           make render-demo | tee render-demo-results.txt
           make render-matrix | tee render-matrix-results.txt

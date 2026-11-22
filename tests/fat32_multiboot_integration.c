@@ -60,7 +60,9 @@ int main(int argc, char **argv)
     if (strcmp(fault, "") && !verify_fault) {
         assert(loaded != MB_IO_OK);
         printf("FAULT %s result=%d state=%s\n", fault, loaded, mb_state_name(core.state));
-        if (svg) fclose(svg); free(bytes); return 0;
+        if (svg) fclose(svg);
+        free(bytes);
+        return 0;
     }
     assert(loaded == MB_IO_OK && core.catalog.count == expected);
     if (!strcmp(fault, "hash")) core.catalog.entries[1].sha256[0] = core.catalog.entries[1].sha256[0] == '0' ? '1' : '0';
@@ -75,7 +77,9 @@ int main(int argc, char **argv)
         printf("VERIFY FAULT %s result=%d state=%s hash=%s\n", fault, result, mb_state_name(core.state), core.catalog.entries[1].sha256);
         assert(core.state == MB_INCOMPATIBLE && !core.catalog.entries[1].integrity_verified);
         printf("FAULT %s result=%d state=%s\n", fault, result, mb_state_name(core.state));
-        if (svg) fclose(svg); free(bytes); return 0;
+        if (svg) fclose(svg);
+        free(bytes);
+        return 0;
     }
     uint8_t probe[4]; uint32_t probe_got = 0;
     assert(storage.read(storage.context, "FM1/FW/MISSING.BIN", 0, probe, sizeof probe, &probe_got) == MB_IO_MISSING);
