@@ -1,0 +1,36 @@
+name: Embedded multiboot core
+on:
+  pull_request:
+    paths:
+      - 'src/embedded_multiboot.*'
+      - 'tests/embedded_multiboot_test.c'
+      - 'Makefile'
+      - '.github/workflows/embedded-multiboot-core.yml'
+      - 'docs/goose/FASE-5A-RESULTADOS.md'
+      - 'docs/goose/EMBEDDED-MULTIBOOT-CORE.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run portable C99 core tests
+        run: |
+          make core-test | tee core-test-results.txt
+          make test | tee usb-test-results.txt
+      - name: Compile core with strict host warnings
+        run: cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
+      - name: Verify physical launch paths remain absent
+        run: |
+          ! grep -nE 'lcd_init|husb_init|usb_enumerate|disk_read|0x25|0x30' src/embedded_multiboot.c
+          grep -n 'MB_LAUNCH_BLOCKED' src/embedded_multiboot.c
+      - uses: actions/upload-artifact@v4
+        with:
+          name: embedded-multiboot-core-results
+          path: |
+            core-test-results.txt
+            usb-test-results.txt
+          if-no-files-found: error

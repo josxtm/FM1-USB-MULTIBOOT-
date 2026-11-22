@@ -10,8 +10,15 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test clean
+.PHONY: all test core-test clean
 all: build/SHA256SUMS.txt
+
+core-test: build/embedded_multiboot_test
+	./build/embedded_multiboot_test
+
+build/embedded_multiboot_test: tests/embedded_multiboot_test.c src/embedded_multiboot.c src/embedded_multiboot.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/embedded_multiboot_test.c src/embedded_multiboot.c -o $@
 
 build/%.o: src/%.c $(wildcard src/*.h)
 	@mkdir -p build
