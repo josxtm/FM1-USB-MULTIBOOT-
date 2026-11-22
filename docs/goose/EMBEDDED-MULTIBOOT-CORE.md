@@ -11,7 +11,7 @@
 
 The parser accepts `FM1CAT|1`, the exact column header, up to 64 entries, safe IDs, `ID.BIN`/`ID.FWS`, bounded labels/versions, positive sizes up to 4 MiB, lowercase 64-character SHA-256 and only `UNVERIFIED` compatibility. It rejects duplicates, malformed paths, invalid fields, truncation and oversized catalogs.
 
-The storage callback reads `FM1/INDEX.CSV` and firmware files incrementally. Verification hashes real file bytes with a fixed 512-byte buffer. Metadata and integrity remain separate; integrity never authorizes execution.
+The storage callback reads `FM1/INDEX.CSV` and constructs only `FM1/FW/<short filename>` for firmware. Verification hashes real file bytes incrementally with a fixed 512-byte buffer, requires explicit EOF after the declared size, and rejects truncation, over-read and extra bytes. Metadata and integrity remain separate; integrity never authorizes execution.
 
 ## Cover Flow and states
 

@@ -3,6 +3,7 @@
 #include <string.h>
 
 static int same(const char *a,const char*b){while(*a&&*a==*b){a++;b++;}return *a==*b;}
+static int fwpath(const char *name,char out[20]){size_t n=strlen(name);if(n<5||n>12||name[0]=='.')return 0;for(size_t j=0;j<n;j++)if(name[j]=='/'||name[j]=='\\'||(name[j]=='.'&&j&&name[j-1]=='.'))return 0;size_t i=0;const char p[]="FM1/FW/";while(p[i]){out[i]=p[i];i++;}for(size_t j=0;j<n;j++)out[i++]=name[j];out[i]=0;return 1;}
 static void copystr(char *d,size_t cap,const char*s){size_t i=0;while(i+1<cap&&s[i]){d[i]=s[i];i++;}d[i]=0;}
 static char *findc(char*s,char c){while(*s&&*s!=c)s++;return *s?s:0;}
 static int number(const char*s,uint32_t*out){uint32_t v=0;if(!*s)return 0;while(*s){if(*s<'0'||*s>'9'||v>(MB_MAX_IMAGE-(uint32_t)(*s-'0'))/10u)return 0;v=v*10u+(uint32_t)(*s-'0');s++;}*out=v;return 1;}
@@ -25,6 +26,7 @@ static int parse_line(struct mb_catalog *cat, char *line) {
     copystr(e->file,sizeof e->file,p[3]); copystr(e->sha256,sizeof e->sha256,p[5]); e->size=size; e->metadata_valid=1; cat->count++; return 1;
 }
 static int parse_catalog(struct mb_catalog *cat, char *buf, size_t len) {
+    for(size_t i=0;i<len;) { if(buf[i]=='\r'){if(i+1>=len||buf[i+1]!='\n')return 0;memmove(buf+i,buf+i+1,len-i-1);--len;continue;}++i; }
     static const char h1[]="FM1CAT|1\n", h2[]="ID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n";
     if(len<sizeof h1+sizeof h2-2 || memcmp(buf,h1,sizeof h1-1) || memcmp(buf+sizeof h1-1,h2,sizeof h2-1))return 0;
     size_t pos=sizeof h1+sizeof h2-2; while(pos<len) { size_t end=pos; while(end<len&&buf[end]!='\n')end++; if(end==pos||end-pos>160)return 0; buf[end]=0; if(cat->count>=MB_MAX_ENTRIES||!parse_line(cat,buf+pos))return 0; pos=end+1; }
@@ -34,9 +36,15 @@ void mb_init(struct mb_core *c, struct mb_storage s, struct mb_renderer r) { mem
 enum mb_io_result mb_load_catalog(struct mb_core *c) {
     c->state=MB_LOADING_CATALOG; c->catalog.count=0; c->selected=0; c->error[0]=0; static uint8_t data[MB_MAX_CATALOG+1]; uint32_t got=0;
     if(!c->storage.read){c->state=MB_NO_STORAGE;return MB_IO_MISSING;}
-    enum mb_io_result r=c->storage.read(c->storage.context,"FM1/INDEX.CSV",0,data,MB_MAX_CATALOG,&got);
-    if(r!=MB_IO_OK){c->state=(r==MB_IO_MISSING||r==MB_IO_DISCONNECTED)?MB_NO_STORAGE:MB_ERROR;copystr(c->error,sizeof c->error,"INDEX.CSV read failed");return r;}
-    if(got>MB_MAX_CATALOG||!parse_catalog(&c->catalog,(char*)data,got)){fail(c,"INDEX.CSV inválido");return MB_IO_ERROR;}
+    for(;;){
+        uint32_t chunk=0; enum mb_io_result r=c->storage.read(c->storage.context,"FM1/INDEX.CSV",got,data+got,MB_MAX_CATALOG-got,&chunk);
+        if(r==MB_IO_EOF)break;
+        if(r!=MB_IO_OK){c->state=(r==MB_IO_MISSING||r==MB_IO_DISCONNECTED)?MB_NO_STORAGE:MB_ERROR;copystr(c->error,sizeof c->error,"INDEX.CSV read failed");return r;}
+        if(!chunk||chunk>MB_MAX_CATALOG-got){fail(c,"INDEX.CSV read bounds");return MB_IO_ERROR;}
+        got+=chunk;
+        if(got==MB_MAX_CATALOG){uint8_t one;uint32_t extra=0;r=c->storage.read(c->storage.context,"FM1/INDEX.CSV",got,&one,1,&extra);if(r==MB_IO_EOF)break;fail(c,"INDEX.CSV exceeds limit");return MB_IO_ERROR;}
+    }
+    if(!parse_catalog(&c->catalog,(char*)data,got)){fail(c,"INDEX.CSV inválido");return MB_IO_ERROR;}
     c->state=c->catalog.count?MB_BROWSE:MB_EMPTY; return MB_IO_OK;
 }
 /* Small self-contained SHA-256 implementation for read-only verification. */
@@ -46,8 +54,8 @@ static void shinit(struct sha*s){static const uint32_t h[]={0x6a09e667,0xbb67ae8
 static void shblock(struct sha*s,const uint8_t*b){uint32_t w[64],a,bv,c,d,e,f,g,h;for(unsigned i=0;i<16;i++)w[i]=(uint32_t)b[4*i]<<24|(uint32_t)b[4*i+1]<<16|(uint32_t)b[4*i+2]<<8|b[4*i+3];for(unsigned i=16;i<64;i++){uint32_t x=rr(w[i-15],7)^rr(w[i-15],18)^(w[i-15]>>3),y=rr(w[i-2],17)^rr(w[i-2],19)^(w[i-2]>>10);w[i]=w[i-16]+x+w[i-7]+y;}a=s->h[0];bv=s->h[1];c=s->h[2];d=s->h[3];e=s->h[4];f=s->h[5];g=s->h[6];h=s->h[7];for(unsigned i=0;i<64;i++){uint32_t S1=rr(e,6)^rr(e,11)^rr(e,25),ch=(e&f)^((~e)&g),t1=h+S1+ch+K[i]+w[i],S0=rr(a,2)^rr(a,13)^rr(a,22),maj=(a&bv)^(a&c)^(bv&c),t2=S0+maj;h=g;g=f;f=e;e=d+t1;d=c;c=bv;bv=a;a=t1+t2;}s->h[0]+=a;s->h[1]+=bv;s->h[2]+=c;s->h[3]+=d;s->h[4]+=e;s->h[5]+=f;s->h[6]+=g;s->h[7]+=h;}
 static void shadd(struct sha*s,const uint8_t*b,size_t n){s->n+=n;while(n){size_t k=64-s->used;if(k>n)k=n;memcpy(s->b+s->used,b,k);s->used+=(unsigned)k;b+=k;n-=k;if(s->used==64){shblock(s,s->b);s->used=0;}}}
 static void shfinal(struct sha*s,char out[65]){static const char x[]="0123456789abcdef";uint64_t bits=s->n*8;uint8_t z[128]={0x80};size_t pad=s->used<56?56-s->used:120-s->used;shadd(s,z,pad);uint8_t l[8];for(int i=0;i<8;i++)l[7-i]=(uint8_t)(bits>>(8*i));shadd(s,l,8);for(unsigned i=0;i<8;i++)for(unsigned j=0;j<8;j++)out[8*i+j]=x[(s->h[i]>>(28-4*j))&15];out[64]=0;}
-enum mb_io_result mb_verify_selected(struct mb_core *c){if(c->selected>=c->catalog.count)return MB_IO_ERROR;struct mb_entry*e=&c->catalog.entries[c->selected];c->state=MB_VERIFY;e->file_present=0;e->integrity_verified=0;uint8_t b[512];uint32_t off=0,n=0;struct sha s;shinit(&s);while(off<e->size){enum mb_io_result r=c->storage.read(c->storage.context,e->file,off,b,sizeof b,&n);if(r!=MB_IO_OK){c->state=(r==MB_IO_DISCONNECTED)?MB_NO_STORAGE:MB_INCOMPATIBLE;return r;}if(!n||n>e->size-off){c->state=MB_ERROR;return MB_IO_ERROR;}shadd(&s,b,n);off+=n;}char got[65];shfinal(&s,got);e->file_present=1;if(same(got,e->sha256)){e->integrity_verified=1;c->state=MB_READY_FOR_SIMULATION;}else c->state=MB_INCOMPATIBLE;return MB_IO_OK;}
-void mb_event(struct mb_core*c,enum mb_event e){if(!c->catalog.count)return;if(e==MB_EVENT_REC||e==MB_EVENT_CANCEL){if(c->state==MB_INSPECT)c->state=MB_BROWSE;return;}if(c->state==MB_BROWSE||c->state==MB_INSPECT||c->state==MB_READY_FOR_SIMULATION||c->state==MB_INCOMPATIBLE){if(e==MB_EVENT_PREVIOUS)c->selected=(c->selected+c->catalog.count-1)%c->catalog.count;else if(e==MB_EVENT_NEXT)c->selected=(c->selected+1)%c->catalog.count;else if(e==MB_EVENT_PLAY)c->state=MB_INSPECT;}}
+enum mb_io_result mb_verify_selected(struct mb_core *c){if(c->selected>=c->catalog.count)return MB_IO_ERROR;struct mb_entry*e=&c->catalog.entries[c->selected];char path[20];if(!fwpath(e->file,path)){c->state=MB_INCOMPATIBLE;return MB_IO_ERROR;}c->state=MB_VERIFY;e->file_present=0;e->integrity_verified=0;uint8_t b[512];uint32_t off=0,n=0;struct sha s;shinit(&s);while(off<e->size){enum mb_io_result r=c->storage.read(c->storage.context,path,off,b,sizeof b,&n);if(r!=MB_IO_OK){c->state=(r==MB_IO_DISCONNECTED)?MB_NO_STORAGE:(r==MB_IO_TIMEOUT?MB_ERROR:MB_INCOMPATIBLE);return r;}if(!n||n>sizeof b){c->state=MB_ERROR;return MB_IO_ERROR;}if(n>e->size-off){c->state=MB_INCOMPATIBLE;return MB_IO_ERROR;}shadd(&s,b,n);off+=n;}enum mb_io_result end=c->storage.read(c->storage.context,path,off,b,1,&n);if(end==MB_IO_OK&&n){c->state=MB_INCOMPATIBLE;return MB_IO_ERROR;}if(end!=MB_IO_EOF){c->state=MB_ERROR;return end;}char got[65];shfinal(&s,got);e->file_present=1;if(same(got,e->sha256)){e->integrity_verified=1;c->state=MB_READY_FOR_SIMULATION;}else c->state=MB_INCOMPATIBLE;return MB_IO_OK;}
+void mb_event(struct mb_core*c,enum mb_event e){if(!c->catalog.count)return;if(e==MB_EVENT_REC||e==MB_EVENT_CANCEL){if(c->state==MB_INSPECT)c->state=MB_BROWSE;return;}if(c->state==MB_BROWSE||c->state==MB_INSPECT||c->state==MB_READY_FOR_SIMULATION||c->state==MB_INCOMPATIBLE){if(e==MB_EVENT_PREVIOUS){c->selected=(c->selected+c->catalog.count-1)%c->catalog.count;c->state=MB_BROWSE;}else if(e==MB_EVENT_NEXT){c->selected=(c->selected+1)%c->catalog.count;c->state=MB_BROWSE;}else if(e==MB_EVENT_PLAY)c->state=MB_INSPECT;}}
 const struct mb_entry*mb_selected(const struct mb_core*c){return c->selected<c->catalog.count?&c->catalog.entries[c->selected]:0;}
 enum mb_launch_result mb_prepare_launch(const struct mb_core*c){(void)c;return MB_LAUNCH_BLOCKED;}
 void mb_render(const struct mb_core*c){if(!c->renderer.begin)return;c->renderer.begin(c->renderer.context);if(c->catalog.count){uint32_t i=c->selected;const struct mb_entry*e=&c->catalog.entries[i];if(c->catalog.count>=3)c->renderer.card(c->renderer.context,&c->catalog.entries[(i+c->catalog.count-1)%c->catalog.count],-1,0);c->renderer.card(c->renderer.context,e,0,1);if(c->catalog.count>=2)c->renderer.card(c->renderer.context,&c->catalog.entries[(i+1)%c->catalog.count],1,0);}c->renderer.text(c->renderer.context,mb_state_name(c->state));c->renderer.end(c->renderer.context);}
