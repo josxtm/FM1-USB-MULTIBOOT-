@@ -91,6 +91,13 @@ static u32 timer_now(void*v){return hooks_present?app_hooks.timer_now(v):tb_now(
 static int panel_init(void*v){return hooks_present?app_hooks.lcd_init(v,BRD_FM1):lcd_init(BRD_FM1);}
 static u32 key_scan(void*v){return hooks_present?app_hooks.keys_scan(v):plat_menu_scan();}
 static void wait_ms(void*v,u32 ms){if(hooks_present)app_hooks.delay_ms(v,ms);else plat_delay_ms(ms);}
+static void app_status(const char *prefix, const char *reason)
+{
+ unsigned i=0,j=0;
+ while(prefix[i] && i+1<sizeof app_core.error){app_core.error[i]=prefix[i];++i;}
+ while(reason[j] && i+1<sizeof app_core.error){app_core.error[i++]=reason[j++];}
+ app_core.error[i]=0;
+}
 static void process_play(void)
 {
  struct mb_entry *e;
@@ -103,6 +110,7 @@ static void process_play(void)
  m.integrity_verified=e->integrity_verified;
  app_compat=mb_classify_launch(e,m);
  (void)mb_prepare_launch(&app_core);
+ app_status("BLOCKED: ",mb_compatibility_reason(app_compat));
 }
 static void process_event(enum mb_event event)
 {

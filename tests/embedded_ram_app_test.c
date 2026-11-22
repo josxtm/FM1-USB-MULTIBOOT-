@@ -43,10 +43,10 @@ static u32 host_keys(void *p){struct host*h=p;u32 r=0;if(h->step<3)r=MB_KEY_NEXT
 static void host_delay(void *p,u32 ms){(void)p;(void)ms;}
 static u32 host_play(void *p){(void)p;return MB_KEY_PLAY;}
 static u8 host_encoder(void *p){struct host*h=p;static const u8 seq[]={0,1,3,2,0};u8 v=seq[h->enc_step<5?h->enc_step:4];if(h->enc_step<5)++h->enc_step;return v;}
-static unsigned frames, cards, labels;
+static unsigned frames, cards, labels, blocked_status;
 static void begin(void *p){(void)p;frames++;}
 static void card(void *p,const struct mb_entry *e,int side,int focus){(void)p;(void)e;(void)side;(void)focus;cards++;}
-static void text(void *p,const char *s){(void)p;if(!strcmp(s,"BROWSE")||!strcmp(s,"INSPECT"))labels++;}
+static void text(void *p,const char *s){(void)p;if(!strcmp(s,"BROWSE")||!strcmp(s,"INSPECT"))labels++;if(!strncmp(s,"BLOCKED: ",9))blocked_status++;}
 static void end(void *p){(void)p;}
 int main(void)
 {
@@ -81,6 +81,7 @@ int main(void)
         h=(struct host){0,0,0,0};hooks.context=&h;hooks.backend=MB_APP_DEMO;hooks.external_storage=(struct mb_storage){0,0};hooks.keys_scan=host_play;hooks.encoder_scan=host_encoder;hooks.max_steps=8;
         mb_ram_app_set_host_hooks(&hooks);embedded_ram_app_entry(0x01c30000u);
         if(mb_ram_app_frame_count()==0 || mb_ram_app_last_compatibility()!=MB_COMPAT_INSPECTION_ONLY)return 15;
+        if(!blocked_status || strcmp(mb_ram_app_last_compatibility_reason(),"format/integrity known; execution ABI is not demonstrated"))return 16;
     }
     puts("RAM-only Cover Flow app: full startup DEMO/USB, buttons, inspection, cancel, verify, blocked launch: OK");
     return 0;
