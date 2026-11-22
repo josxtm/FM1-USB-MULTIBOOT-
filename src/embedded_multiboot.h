@@ -1,8 +1,13 @@
 /* SPDX-License-Identifier: MIT */
 #ifndef FM1_EMBEDDED_MULTIBOOT_H
 #define FM1_EMBEDDED_MULTIBOOT_H
-#include <stddef.h>
-#include <stdint.h>
+#ifndef FM1_MB_TYPES
+#define FM1_MB_TYPES
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long mb_u64;
+#endif
 
 #define MB_MAX_ENTRIES 64u
 #define MB_MAX_CATALOG 24576u
