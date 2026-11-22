@@ -8,10 +8,15 @@ import org.junit.Test
 /** Reads the same FM1CAT fixtures used by the host-core conformance cases. */
 class FirmwareCatalogConformanceTest {
     private fun fixture(name: String): String {
-        val file = File(System.getProperty("user.dir")).parentFile
-            .resolve("tests/fixtures/fm1cat/$name")
-        assertTrue("Missing shared fixture: $file", file.isFile)
-        return file.readText(Charsets.US_ASCII)
+        var directory: File? = File(System.getProperty("user.dir").orEmpty())
+        var file: File? = null
+        while (directory != null) {
+            val candidate = directory.resolve("tests/fixtures/fm1cat/$name")
+            if (candidate.isFile) { file = candidate; break }
+            directory = directory.parentFile
+        }
+        assertTrue("Missing shared fixture: $name", file?.isFile == true)
+        return requireNotNull(file).readText(Charsets.US_ASCII)
     }
 
     @Test fun validEmptyAndCrlfCatalogsMatchSpec() {
