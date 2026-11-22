@@ -11,4 +11,4 @@ The core state machine includes BOOT, NO_STORAGE, LOADING_CATALOG, EMPTY, BROWSE
 
 The existing m-bootloader, DARK-1, Boot ROM and protected Flash region are not replaced or modified. The observed return to DARK-1 is not treated as proof of complete recovery. Recovery requirements remain an external backup, verified restoration procedure, power-loss plan and independent map of protected regions.
 
-The existing `src/main.c`, `src/storage.c`, `src/fat32.c`, `src/husb.c` and `src/lcd.c` are retained. They are not silently wired into the new core, because physical USB Host, display initialization and RAM execution remain unapproved.
+The existing `src/main.c`, `src/storage.c`, `src/fat32.c`, `src/husb.c` and `src/lcd.c` are retained. They are not silently wired into the new core, because physical USB Host, display initialization and RAM execution remain unapproved. FASE 5G adds only a transport-independent diagnostic log; it does not change that safety boundary.

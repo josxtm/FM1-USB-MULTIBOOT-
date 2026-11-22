@@ -40,12 +40,14 @@ jobs:
           make fat32-sanitize | tee fat32-sanitizer-results.txt
           make test | tee usb-test-results.txt
           make msc-bot-test | tee msc-bot-results.txt
+          make usb-diag-log-test | tee usb-diag-log-results.txt
           make msc-fat32-test | tee msc-fat32-results.txt
           make msc-fat32-sanitize | tee msc-fat32-sanitizer-results.txt
       - name: Compile core with strict host warnings
         run: |
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
           cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/msc_bot.c -o msc_bot.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/usb_diag_log.c -o usb_diag_log.o
       - name: Compile independent pi32v2 object
         run: |
           scripts/get-toolchain.sh toolchain
@@ -75,6 +77,7 @@ jobs:
             fat32-sanitizer-results.txt
             usb-test-results.txt
             msc-bot-results.txt
+            usb-diag-log-results.txt
             msc-fat32-results.txt
             msc-fat32-sanitizer-results.txt
             build/fat32-test.img

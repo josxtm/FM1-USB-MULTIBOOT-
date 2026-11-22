@@ -7,17 +7,17 @@ OBJDUMP = $(TOOLCHAIN)/bin/llvm-objdump
 READELF = $(TOOLCHAIN)/bin/llvm-readelf
 CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-stack-protector \
          -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Isrc -DBOARD_ID=1 -DDISP_BOARD=1
-C_FILES = main storage msc_bot fat32 husb timer lcd keys watchdog runtime
+C_FILES = main storage msc_bot usb_diag_log fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
 
 core-pi32v2-sim: build/embedded_multiboot_pi32v2.elf
 
-fat32-pi32v2-object: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o
+fat32-pi32v2-object: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/usb_diag_log_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o
 
 fat32-pi32v2-sim: build/embedded_fat32_pi32v2.elf
 
@@ -41,11 +41,15 @@ build/msc_bot_pi32v2.o: src/msc_bot.c src/msc_bot.h src/mbl.h
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
+build/usb_diag_log_pi32v2.o: src/usb_diag_log.c src/usb_diag_log.h src/mbl.h
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
 build/embedded_fat32_pi32v2_runtime.o: src/runtime.c src/mbl.h
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
-build/embedded_fat32_pi32v2.elf: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o src/embedded_multiboot.ld
+build/embedded_fat32_pi32v2.elf: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/usb_diag_log_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o src/embedded_multiboot.ld
 	$(LD) -nostdlib -Map build/embedded_fat32_pi32v2.map -T src/embedded_multiboot.ld -e embedded_fat32_sim_entry -o $@ $^
 
 build/embedded_multiboot_pi32v2.o: src/embedded_multiboot.c src/embedded_multiboot.h $(wildcard src/*.h)
@@ -98,6 +102,13 @@ fm1cat-conformance: build/fm1cat_conformance_test
 
 msc-bot-test: build/msc_bot_test
 	./build/msc_bot_test
+
+usb-diag-log-test: build/usb_diag_log_test
+	./build/usb_diag_log_test
+
+build/usb_diag_log_test: tests/usb_diag_log_test.c src/usb_diag_log.c src/usb_diag_log.h src/mbl.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/usb_diag_log_test.c src/usb_diag_log.c -o $@
 
 msc-fat32-test: build/msc_fat32_integration
 	@for count in 0 1 2 3 64; do \
