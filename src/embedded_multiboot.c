@@ -20,7 +20,8 @@ static int parse_line(struct mb_catalog *cat, char *line) {
     copystr(e->id,sizeof e->id,p[0]);
     if(!number(p[4],&size)||!size)return 0;
     for(uint32_t i=0;i<cat->count;i++) if(same(cat->entries[i].id,e->id))return 0;
-    if(id>MB_ID_MAX)return 0; copystr(e->label,sizeof e->label,p[1]); copystr(e->version,sizeof e->version,p[2]);
+    if(id>MB_ID_MAX)return 0;
+    copystr(e->label,sizeof e->label,p[1]); copystr(e->version,sizeof e->version,p[2]);
     copystr(e->file,sizeof e->file,p[3]); copystr(e->sha256,sizeof e->sha256,p[5]); e->size=size; e->metadata_valid=1; cat->count++; return 1;
 }
 static int parse_catalog(struct mb_catalog *cat, char *buf, size_t len) {
