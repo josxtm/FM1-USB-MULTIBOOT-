@@ -27,7 +27,8 @@ jobs:
           python3 scripts/check_app1_consistency.py \
             build/fm1-usb-diagnostics-ram-experimental.bin \
             android/app/src/main/assets/fm1-usb-diagnostics-ram-experimental.bin
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: fm1-usb-diagnostics-ram-prototype
           path: |
@@ -39,4 +40,3 @@ jobs:
             build/build-validation.txt
             build/SHA256SUMS.txt
           if-no-files-found: error
-          if: always()
