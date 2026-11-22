@@ -3,6 +3,7 @@
 #define EMBEDDED_RAM_APP_H
 #include "embedded_multiboot.h"
 #include "mbl.h"
+#include "mb_launch_policy.h"
 
 enum mb_app_backend { MB_APP_DEMO, MB_APP_USB_MSC };
 struct mb_demo_storage { unsigned selected_reads; };
@@ -28,5 +29,7 @@ void mb_ram_app_set_host_hooks(const struct mb_ram_app_hooks *);
 int mb_ram_app_last_result(void);
 enum mb_state mb_ram_app_last_state(void);
 unsigned mb_ram_app_frame_count(void);
+enum mb_compatibility mb_ram_app_last_compatibility(void);
+const char *mb_ram_app_last_compatibility_reason(void);
 void embedded_ram_app_entry(u32 rom_arg);
 #endif

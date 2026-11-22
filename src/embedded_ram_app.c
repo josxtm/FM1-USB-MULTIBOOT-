@@ -56,6 +56,7 @@ static struct mb_ram_app_hooks app_hooks APP_DATA={0};
 static int hooks_present APP_DATA=0;
 static int app_result APP_DATA=0;
 static enum mb_state app_state APP_DATA=MB_BOOT;
+static enum mb_compatibility app_compat APP_DATA=MB_COMPAT_UNKNOWN;
 static unsigned app_frames APP_DATA=0;
 static struct mb_core app_core APP_DATA={0};
 static struct mb_demo_storage app_demo APP_DATA={0};
@@ -80,6 +81,8 @@ void mb_ram_app_set_host_hooks(const struct mb_ram_app_hooks*h)
 int mb_ram_app_last_result(void){return app_result;}
 enum mb_state mb_ram_app_last_state(void){return app_state;}
 unsigned mb_ram_app_frame_count(void){return app_frames;}
+enum mb_compatibility mb_ram_app_last_compatibility(void){return app_compat;}
+const char *mb_ram_app_last_compatibility_reason(void){return mb_compatibility_reason(app_compat);}
 void plat_delay_ms(u32 ms){delay_us(1000u*ms);}
 static int timer_begin(void*v){return hooks_present?app_hooks.timer_start(v):timer_start_unconfigured();}
 static int timer_ok(void*v){return hooks_present?app_hooks.timer_calibrated(v):timer_calibrated();}
@@ -88,11 +91,29 @@ static u32 timer_now(void*v){return hooks_present?app_hooks.timer_now(v):tb_now(
 static int panel_init(void*v){return hooks_present?app_hooks.lcd_init(v,BRD_FM1):lcd_init(BRD_FM1);}
 static u32 key_scan(void*v){return hooks_present?app_hooks.keys_scan(v):plat_menu_scan();}
 static void wait_ms(void*v,u32 ms){if(hooks_present)app_hooks.delay_ms(v,ms);else plat_delay_ms(ms);}
+static void process_play(void)
+{
+ struct mb_entry *e;
+ struct mb_launch_metadata m={0,0,0,0,0,0,0};
+ if(app_core.selected>=app_core.catalog.count)return;
+ e=&app_core.catalog.entries[app_core.selected];
+ m.format_known=e->metadata_valid;
+ if(mb_verify_selected(&app_core)!=MB_IO_OK && app_core.state!=MB_INCOMPATIBLE)
+  app_core.state=MB_ERROR;
+ m.integrity_verified=e->integrity_verified;
+ app_compat=mb_classify_launch(e,m);
+ (void)mb_prepare_launch(&app_core);
+}
+static void process_event(enum mb_event event)
+{
+ if(event==MB_EVENT_PLAY)process_play();
+ else mb_event(&app_core,event);
+}
 void embedded_ram_app_entry(u32 rom_arg)
 {
  struct mb_renderer renderer;enum mb_event event;u32 steps=0,raw;
  void*ctx=app_hooks.context;
- app_result=0;app_frames=0;app_state=MB_BOOT;
+ app_result=0;app_frames=0;app_state=MB_BOOT;app_compat=MB_COMPAT_UNKNOWN;
 #ifdef MB_USB_STORAGE_LINKED
  mb_usb_msc_storage_init(&app_usb); (void)app_usb_open;
 #endif
@@ -119,9 +140,9 @@ void embedded_ram_app_entry(u32 rom_arg)
   raw=key_scan(ctx);
   if(!mb_clock_update(&app_clock,timer_now(ctx))){app_result=5;app_state=MB_ERROR;return;}
   if(hooks_present && app_hooks.encoder_scan && mb_presets_poll(&app_presets,app_hooks.encoder_scan(ctx),&event)){
-   mb_event(&app_core,event);mb_render(&app_core);++app_frames;app_state=app_core.state;
+   process_event(event);mb_render(&app_core);++app_frames;app_state=app_core.state;
   }
-  if(mb_keys_poll(&app_keys,raw,app_clock.now_ms,&event)){mb_event(&app_core,event);mb_render(&app_core);++app_frames;app_state=app_core.state;}
+  if(mb_keys_poll(&app_keys,raw,app_clock.now_ms,&event)){process_event(event);mb_render(&app_core);++app_frames;app_state=app_core.state;}
   ++steps;if(hooks_present&&app_hooks.max_steps&&steps>=app_hooks.max_steps){app_result=0;return;}
   wait_ms(ctx,10);
  }

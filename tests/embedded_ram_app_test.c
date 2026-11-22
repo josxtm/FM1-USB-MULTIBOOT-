@@ -33,7 +33,7 @@ static enum mb_io_result ext_read(void *p,const char *path,uint32_t off,uint8_t 
     *got=cap;
     return MB_IO_OK;
 }
-struct host { u32 tick; unsigned step; int lcd; };
+struct host { u32 tick; unsigned step; unsigned enc_step; int lcd; };
 static int host_timer(void *p){(void)p;return 1;}
 static int host_calibrated(void *p){(void)p;return 1;}
 static u32 host_rate(void *p){(void)p;return 48000;}
@@ -41,6 +41,8 @@ static u32 host_now(void *p){struct host*h=p;u32 t=h->tick;h->tick+=960000u;retu
 static int host_lcd(void *p,u32 board){struct host*h=p;(void)board;h->lcd++;return 1;}
 static u32 host_keys(void *p){struct host*h=p;u32 r=0;if(h->step<3)r=MB_KEY_NEXT;else if(h->step<6)r=MB_KEY_PLAY;else if(h->step<9)r=MB_KEY_REC;++h->step;return r;}
 static void host_delay(void *p,u32 ms){(void)p;(void)ms;}
+static u32 host_play(void *p){(void)p;return MB_KEY_PLAY;}
+static u8 host_encoder(void *p){struct host*h=p;static const u8 seq[]={0,1,3,2,0};u8 v=seq[h->enc_step<5?h->enc_step:4];if(h->enc_step<5)++h->enc_step;return v;}
 static unsigned frames, cards, labels;
 static void begin(void *p){(void)p;frames++;}
 static void card(void *p,const struct mb_entry *e,int side,int focus){(void)p;(void)e;(void)side;(void)focus;cards++;}
@@ -67,14 +69,18 @@ int main(void)
         if(mb_ram_app_init(&c,MB_APP_USB_MSC,(struct mb_storage){0,0},&s,r)||c.state!=MB_NO_STORAGE)return 11;
     }
     {
-        struct host h={0,0,0};
+        struct host h={0,0,0,0};
         struct mb_ram_app_hooks hooks={&h,host_timer,host_calibrated,host_rate,host_now,host_lcd,host_keys,host_delay,r,MB_APP_DEMO,{0,0},10,0};
         mb_ram_app_set_host_hooks(&hooks);
         embedded_ram_app_entry(0x01c30000u);
         if(mb_ram_app_last_result()!=0||h.lcd!=1||mb_ram_app_frame_count()<2||mb_ram_app_last_state()!=MB_BROWSE)return 12;
-        h=(struct host){0,0,0};hooks.context=&h;hooks.backend=MB_APP_USB_MSC;hooks.external_storage=(struct mb_storage){0,ext_read};hooks.max_steps=1;
+        if(mb_ram_app_last_compatibility()!=MB_COMPAT_INSPECTION_ONLY)return 14;
+        h=(struct host){0,0,0,0};hooks.context=&h;hooks.backend=MB_APP_USB_MSC;hooks.external_storage=(struct mb_storage){0,ext_read};hooks.max_steps=1;
         mb_ram_app_set_host_hooks(&hooks);embedded_ram_app_entry(0x01c30000u);
         if(mb_ram_app_last_result()!=0||mb_ram_app_last_state()!=MB_BROWSE)return 13;
+        h=(struct host){0,0,0,0};hooks.context=&h;hooks.backend=MB_APP_DEMO;hooks.external_storage=(struct mb_storage){0,0};hooks.keys_scan=host_play;hooks.encoder_scan=host_encoder;hooks.max_steps=8;
+        mb_ram_app_set_host_hooks(&hooks);embedded_ram_app_entry(0x01c30000u);
+        if(mb_ram_app_frame_count()==0 || mb_ram_app_last_compatibility()!=MB_COMPAT_INSPECTION_ONLY)return 15;
     }
     puts("RAM-only Cover Flow app: full startup DEMO/USB, buttons, inspection, cancel, verify, blocked launch: OK");
     return 0;

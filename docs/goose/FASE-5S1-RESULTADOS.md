@@ -1,0 +1,33 @@
+# FASE 5S.1 — integración definitiva PRESETS + PLAY
+
+## Encoder PRESETS
+
+El decoder lógico existente se conservó y ahora forma parte del bucle de entrada mediante `encoder_scan` opcional. La HAL entrega A/B; cuatro transiciones forman un detente, los rebotes/transiciones inválidas se descartan y los eventos se convierten en NEXT/PREVIOUS.
+
+La investigación no encontró evidencia suficiente para afirmar el GPIO físico del encoder PRESETS/encoder 6 del FM-1 instalado. No se inventó pinout ni se modificó `keys.c`. La integración física queda desacoplada hasta disponer de una HAL verificable.
+
+## PLAY real en software
+
+La ruta host ahora procesa PLAY como:
+
+`PLAY → congelar selección actual → mb_verify_selected() → SHA-256 → mb_launch_policy → mb_prepare_launch()`
+
+La selección no cambia durante la verificación. El resultado queda en `mb_ram_app_last_compatibility()` y en el estado core. Un APP/archivo con integridad correcta pero ABI no demostrado queda `INSPECTION_ONLY`; `mb_prepare_launch()` continúa devolviendo `MB_LAUNCH_BLOCKED`. REC/CANCEL permite volver desde estados de resultado.
+
+Pulsaciones repetidas siguen filtradas por el adaptador de teclas y no existe salto físico.
+
+## DEMO/USB
+
+DEMO permanece disponible para host sin hardware. USB MSC es backend explícito y no se inicializa automáticamente. La prueba de entrada USB emulada recorre MSC/BOT→FAT32→INDEX.CSV→lista→encoder/PLAY→verificación→política. Errores de storage no hacen fallback silencioso.
+
+## Interfaz
+
+El footer textual muestra `PRESETS: ELEGIR` y `PLAY: INICIAR`. Se conserva la captura 240×240 y el renderer no usa framebuffer completo. Se mantienen pruebas de catálogos 0/1/2/3/64, renderer, encoder y flujo RAM host.
+
+## Memoria y arquitectura
+
+La medición 5S anterior fue `.image=22216` y APP1=22224 bytes, BSS=25896. La integración de policy/estado PLAY y sink compartido se valida nuevamente por CI; el mapa es virtual y no prueba SRAM. El selector no puede volver automáticamente si otro firmware reemplaza su misma área Flash: eso requiere un residente fuera de esa región o reinstalación/recovery externo. La instalación virtual no se presenta como rollback real.
+
+## Bloqueos
+
+ABI stage-2/run-ram, SRAM, Flash map, pinout PRESETS, reloj, recovery, USB físico y compatibilidad de firmwares siguen pendientes. No se modificó main, m-bootloader o DARK-1; no se escribió Flash ni se ejecutó FM1. PR #8 continúa Draft.
