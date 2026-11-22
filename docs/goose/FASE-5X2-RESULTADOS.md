@@ -138,12 +138,12 @@ No existe writer físico ni ruta de comandos de programación. `MB_LAUNCH_BLOCKE
 
 ## CI y estado
 
-La ejecución de GitHub Actions se realizará sobre el commit de implementación de esta fase. Se deben mantener verdes:
+Los workflows pasaron sobre el commit de implementación `c5863fdd0a18a0feb4e5bfe3df9d14a674bf98c8`:
 
-- Embedded multiboot core;
-- Cover Flow simulator, sólo regresión histórica;
-- FM-1 RAM diagnostics;
-- Android RAM Loader.
+- Embedded multiboot core — `45073133469` — success.
+- Cover Flow simulator — `45073136680` — success, sólo regresión histórica.
+- FM-1 RAM diagnostics — `45073140103` — success.
+- Android RAM Loader — `45073143230` — success.
 
 Los workflows no contienen el respaldo real y no ejecutan Flash, USB Host, RAM ni firmware en el dispositivo.
 
@@ -161,6 +161,7 @@ Los workflows no contienen el respaldo real y no ejecutan Flash, USB Host, RAM n
 ## Estado de entrega
 
 - Rama: `goose/fase3b-4a-preflight`.
+- Commit de implementación validado: `c5863fdd0a18a0feb4e5bfe3df9d14a674bf98c8`.
 - PR #8: OPEN/Draft, sin merge.
 - Flash física: sin acceso de lectura/escritura en esta fase.
 - Decisión de instalación permanente: **NO-GO** hasta cerrar recovery, USB-C y ABI.
