@@ -32,12 +32,12 @@ La medición 5S anterior fue `.image=22216` y APP1=22224 bytes, BSS=25896. 5S.1 
 
 Los tests host pasan para `ram-app-test`, `presets-test`, `list-renderer-test` y `launch-policy-test`. El flujo integral usa `encoder_scan`, verifica la selección y comprueba que PLAY mantenido no genera eventos repetidos antes del periodo de debounce/repetición. El renderer recibe ahora el estado de bloqueo (`BLOCKED: ...`) y muestra la razón de política; no se confunde una verificación SHA correcta con autorización de ejecución.
 
-Los cuatro workflows del commit final `470ce621aef12873eb2ca9a3c55054eb414956d8` terminaron correctamente:
+El commit de implementación validado es `470ce621aef12873eb2ca9a3c55054eb414956d8`; la rama queda documentada por el commit final `78dd4e239deff474e0c4279e419b7ed00fdcd866`. Los cuatro workflows del commit final de código/documentación terminaron correctamente:
 
-- Embedded multiboot core — run `45058674622` — success.
-- Cover Flow simulator — run `45058678428` — success; se conserva sólo como regresión.
-- FM-1 RAM diagnostics — run `45058682667` — success.
-- Android RAM Loader — run `45058687089` — success.
+- Embedded multiboot core — run `45059012990` — success.
+- Cover Flow simulator — run `45059017132` — success; se conserva sólo como regresión.
+- FM-1 RAM diagnostics — run `45059020729` — success.
+- Android RAM Loader — run `45059023918` — success.
 
 La validación pi32v2 completa se mantiene en CI; el entorno local no contiene el toolchain fijado. El remoto coincide con el commit indicado y PR #8 permanece OPEN/Draft.
 
