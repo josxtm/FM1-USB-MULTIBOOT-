@@ -42,6 +42,15 @@ La aplicación usa la misma máquina de estados y renderer para DEMO y USB emula
 
 ## Memoria y stack
 
+El enlace pi32v2 final del preflight (CI `45045206304`) midió:
+
+```text
+.image / flat BIN     5320 bytes
+APP1                   5328 bytes
+.bss                  25140 bytes
+static total          30460 bytes
+```
+
 El linker experimental conserva APP, LOW, BSS, stack y memoria retenida separadas. El validador comprueba segmentos, BSS, memoria retenida, símbolos indefinidos y símbolos peligrosos.
 
 La profundidad máxima de stack no puede demostrarse solamente con el mapa. Los tamaños estáticos medidos anteriormente permanecen:
