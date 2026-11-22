@@ -151,12 +151,12 @@ python3 -m unittest discover -s tests -p '*test.py'
 
 Resultado: **18 tests Python OK** después de añadir el fixture estructural, además de la suite C existente.
 
-Workflows de GitHub Actions sobre el commit de implementación `870b680c81ac30385f7a38938059c5cdc67a12d2`:
+Workflows de GitHub Actions sobre el commit de implementación `e3d8933154a6c744a1e1f2000ae6e15d91660115`:
 
-- Embedded multiboot core — `45066724532` — success.
-- Cover Flow simulator — `45066728549` — success, sólo regresión.
-- FM-1 RAM diagnostics — `45066732256` — success.
-- Android RAM Loader — `45066735861` — success.
+- Embedded multiboot core — `45072114627` — success.
+- Cover Flow simulator — `45072118013` — success, sólo regresión.
+- FM-1 RAM diagnostics — `45072121661` — success.
+- Android RAM Loader — `45072125304` — success.
 
 Ningún workflow contiene el respaldo real ni ejecuta Flash, RAM o USB Host en el dispositivo.
 
@@ -195,6 +195,7 @@ Ningún workflow contiene el respaldo real ni ejecuta Flash, RAM o USB Host en e
 ## Estado de seguridad y entrega
 
 - Rama: `goose/fase3b-4a-preflight`.
+- Commit de implementación validado: `e3d8933154a6c744a1e1f2000ae6e15d91660115`.
 - PR #8: OPEN/Draft, sin merge.
 - `main`: intacto.
 - DARK-1 y m-bootloader: intactos.
