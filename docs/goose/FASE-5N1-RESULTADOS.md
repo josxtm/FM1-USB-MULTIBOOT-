@@ -66,7 +66,16 @@ RAM-only Cover Flow app: full startup DEMO/USB, buttons, inspection, cancel, ver
 
 `struct mb_core`, renderer, keys y clock de la aplicación se mantienen como almacenamiento estático controlado. Esto evita colocar el core de aproximadamente 9 KB como objeto automático dentro de `embedded_ram_app_entry`.
 
-El enlace final de referencia anterior midió 5320 bytes de imagen, 5328 bytes APP1, 25140 bytes BSS y 30460 bytes estáticos. El mapa/linker continúan imponiendo los límites APP/LOW y el validador comprueba BSS, segmentos y memoria retenida.
+El enlace pi32v2 final tras mover el estado persistente de la aplicación a `.data.app` midió:
+
+```text
+.image / flat BIN     15368 bytes
+APP1                   15376 bytes
+.bss                  25140 bytes
+static total          40508 bytes
+```
+
+La decisión evita colocar el `mb_core` en BSS/stack y deja el BSS por debajo del límite LOW; aumenta la imagen inicializada porque el estado debe quedar disponible en RAM al entrar. El mapa/linker continúan imponiendo los límites APP/LOW y el validador comprueba BSS, segmentos y memoria retenida.
 
 La profundidad máxima de stack sigue sin estar demostrada: el mapa no sustituye un análisis ABI/dinámico ni una prueba en el FM-1.
 
