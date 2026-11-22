@@ -7,6 +7,11 @@ Se añadió `scripts/validate_ram_image.py`. Es un validador estructural indepen
 Comprueba:
 
 - ELF32 little-endian.
+- Ausencia de símbolos indefinidos en el ELF enlazado.
+- Ausencia de símbolos explícitos de programación/borrado/ejecución prohibida.
+
+También informa SHA-256 del segmento plano para identificación reproducible.
+
 - Machine `JieLi pi32v2` (`241`).
 - Tipo executable.
 - Entry esperado, por defecto `0x01C30000`.

@@ -16,9 +16,31 @@ PT_LOAD=1
 def fail(msg): raise ValueError(msg)
 def u16(b,o): return struct.unpack_from('<H',b,o)[0]
 def u32(b,o): return struct.unpack_from('<I',b,o)[0]
+def symbol_gate(elf):
+ shoff=u32(elf,32); shentsize=u16(elf,46); shnum=u16(elf,48)
+ if shentsize!=40 or shoff+shentsize*shnum>len(elf): fail('invalid section table')
+ sections=[]
+ for i in range(shnum):
+  o=shoff+i*shentsize; sections.append(struct.unpack_from('<10I',elf,o))
+ forbidden={'flash_write','flash_erase','program_flash','erase_flash','execute_ram'}
+ undefined=[]
+ for sec in sections:
+  if sec[1]!=2: continue
+  off,size,link,entsize=sec[4],sec[5],sec[6],sec[9]
+  if link>=len(sections) or entsize!=16 or off+size>len(elf): fail('invalid symbol table')
+  stroff, strsize=sections[link][4],sections[link][5]; strings=elf[stroff:stroff+strsize]
+  for pos in range(off,off+size,entsize):
+   name,_,_,_,_,shndx=struct.unpack_from('<IIIBBH',elf,pos)
+   end=strings.find(b'\0',name)
+   symbol=strings[name:end].decode('ascii','replace') if name< len(strings) else ''
+   if shndx==0 and symbol: undefined.append(symbol)
+   if symbol in forbidden: fail('forbidden symbol: '+symbol)
+ if undefined: fail('undefined symbols: '+','.join(undefined))
+
 def main():
  p=argparse.ArgumentParser();p.add_argument('elf');p.add_argument('flat');p.add_argument('image');p.add_argument('--entry',type=lambda x:int(x,0),default=APP);p.add_argument('--app-base',type=lambda x:int(x,0),default=APP);a=p.parse_args()
  elf=open(a.elf,'rb').read();flat=open(a.flat,'rb').read();image=open(a.image,'rb').read()
+ symbol_gate(elf)
  if len(elf)<52 or elf[:8]!=b'\x7fELF\x01\x01\x01\x00':fail('expected ELF32 little-endian')
  if u16(elf,18)!=MACHINE or u16(elf,16)!=2 or u32(elf,24)!=a.entry:fail('wrong ELF type, machine or entry')
  phoff=u32(elf,28); phentsize=u16(elf,42); phnum=u16(elf,44)

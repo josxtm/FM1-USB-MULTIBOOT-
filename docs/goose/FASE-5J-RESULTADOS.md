@@ -52,6 +52,20 @@ El contrato de llamada, reloj, estado heredado, vectorización, watchdog, SRAM y
 
 Las pruebas host proporcionan HAL inertes y no acceden a registros físicos.
 
+## Medición CI
+
+El toolchain pi32v2 23.1.5-2 enlazó la aplicación experimental y generó:
+
+```text
+.image / flat BIN = 5080 bytes
+APP1                 = 5088 bytes
+.bss                 = 25136 bytes
+static link total    = 30216 bytes
+entry                = 0x01C30000
+```
+
+El mapa, ELF, BIN, trailer APP1 y reporte de secciones se publicaron como artefactos del workflow. Estas cifras son del linker; no son una medición de SRAM ni una autorización de ejecución.
+
 ## Estado de cierre
 
-5J queda **completada en software host y preparada para compilación pi32v2**. La ejecución en hardware no está autorizada. La medición final de ELF/BIN depende del toolchain pi32v2 de CI.
+5J queda **completada en software host y pi32v2**. La ejecución en hardware no está autorizada.
