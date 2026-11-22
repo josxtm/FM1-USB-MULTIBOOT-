@@ -15,7 +15,7 @@ A dedicated pi32v2 object target is attempted in CI when `scripts/get-toolchain.
 - Host strict object: **verified**.
 - Host functional tests: **verified**.
 - pi32v2 object compilation: **CI gate**, separate from APP1.
-- Independent freestanding link: **pending**; no startup, linker placement or HAL binding is claimed.
+- Independent freestanding link: **verified for the isolated simulation ELF and linker script**; no FM-1 startup or physical HAL binding is claimed.
 - Execution on AC791N: **not authorized and not tested**.
 
 The core does not link `lcd.c`, `husb.c`, GPIO, SPI, Flash or RAM loader code. It therefore cannot accidentally activate the physical backend. The existing `make all` APP1 target and approved Android asset are not modified by this phase.

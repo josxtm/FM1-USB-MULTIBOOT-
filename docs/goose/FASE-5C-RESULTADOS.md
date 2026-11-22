@@ -21,6 +21,14 @@ El demo host carga un catálogo FM1CAT v1 de tres entradas mediante la HAL, camb
 
 El objeto pi32v2 se compila con `scripts/get-toolchain.sh` y flags freestanding. El ELF se enlaza con un script aislado, sin startup del FM-1 ni controladores LCD/USB. El mapa y los tamaños se publican como artefactos CI. Este enlace demuestra compatibilidad de compilación/enlace del prototipo, no un ABI de bootloader ni ejecución AC791N.
 
+## Validación CI
+
+- Núcleo host, render SVG, objeto pi32v2, ELF enlazado y mapa: ✅ [run 44971600771](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44971600771)
+- Checks de PR del núcleo, diagnóstico y Cover Flow: ✅ [core 44971604765](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44971604765) · [diagnóstico 44971604926](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44971604926) · [Cover Flow 44971605029](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44971605029)
+- Android comp15 conservado: ✅ [run 44971604692](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44971604692)
+
+La primera ejecución del ELF enlazado expuso referencias a `memcpy`/`memset`; se corrigió enlazando el runtime freestanding existente, sin usar libc host. La segunda ejecución fue satisfactoria.
+
 ## Seguridad
 
 No se enlazan comandos `0x25`/`0x30`, Flash, USB Host, GPIO, SPI, saltos arbitrarios ni carga RAM. `mb_prepare_launch()` sigue bloqueado. DARK-1, m-bootloader y `[0x00000,0x04000)` permanecen intactos.
