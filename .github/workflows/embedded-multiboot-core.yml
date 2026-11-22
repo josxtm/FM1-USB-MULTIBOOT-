@@ -20,14 +20,17 @@ jobs:
       - name: Build and run portable C99 core tests
         run: |
           make core-test | tee core-test-results.txt
+          make render-demo | tee render-demo-results.txt
+          test -s build/embedded-coverflow-demo.svg
           make test | tee usb-test-results.txt
       - name: Compile core with strict host warnings
         run: cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
       - name: Compile independent pi32v2 object
         run: |
           scripts/get-toolchain.sh toolchain
-          make TOOLCHAIN=toolchain core-pi32v2-object
+          make TOOLCHAIN=toolchain core-pi32v2-object core-pi32v2-sim
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.o > pi32v2-core-elf-report.txt
+          toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.elf > pi32v2-core-linked-elf-report.txt
       - name: Verify physical launch paths remain absent
         run: |
           ! grep -nE 'lcd_init|husb_init|usb_enumerate|disk_read|0x25|0x30' src/embedded_multiboot.c
@@ -37,7 +40,12 @@ jobs:
           name: embedded-multiboot-core-results
           path: |
             core-test-results.txt
+            render-demo-results.txt
+            build/embedded-coverflow-demo.svg
             usb-test-results.txt
             build/embedded_multiboot_pi32v2.o
+            build/embedded_multiboot_pi32v2.elf
+            build/embedded_multiboot_pi32v2.map
             pi32v2-core-elf-report.txt
+            pi32v2-core-linked-elf-report.txt
           if-no-files-found: error

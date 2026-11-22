@@ -5,7 +5,8 @@
 - `src/embedded_multiboot.h/.c`: C99 core and HAL contracts.
 - `tests/embedded_multiboot_test.c`: deterministic in-memory storage and renderer tests.
 - `Makefile`: `make core-test` builds and runs the isolated host target.
-- `.github/workflows/embedded-multiboot-core.yml`: strict host build, core tests, legacy USB/FAT32 tests and physical-path guard.
+- `.github/workflows/embedded-multiboot-core.yml`: strict host build, render demo, legacy USB/FAT32 tests, pi32v2 object/ELF/map and physical-path guard.
+- `src/embedded_multiboot_sim.c` and `src/embedded_multiboot.ld`: isolated link-only pi32v2 simulation target.
 
 ## FM1CAT v1
 

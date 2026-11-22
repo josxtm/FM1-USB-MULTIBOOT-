@@ -10,17 +10,33 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test core-pi32v2-object clean
+.PHONY: all test core-test render-demo core-pi32v2-object core-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
+
+core-pi32v2-sim: build/embedded_multiboot_pi32v2.elf
 
 build/embedded_multiboot_pi32v2.o: src/embedded_multiboot.c src/embedded_multiboot.h $(wildcard src/*.h)
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
+build/embedded_multiboot_sim_pi32v2.o: src/embedded_multiboot_sim.c src/embedded_multiboot.h
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_multiboot_pi32v2.elf: build/embedded_multiboot_pi32v2.o build/embedded_multiboot_sim_pi32v2.o src/embedded_multiboot.ld
+	$(LD) -nostdlib -Map build/embedded_multiboot_pi32v2.map -T src/embedded_multiboot.ld -o $@ build/embedded_multiboot_pi32v2.o build/embedded_multiboot_sim_pi32v2.o
+
 core-test: build/embedded_multiboot_test
 	./build/embedded_multiboot_test
+
+render-demo: build/embedded_render_demo
+	./build/embedded_render_demo
+
+build/embedded_render_demo: tests/embedded_render_demo.c src/embedded_multiboot.c src/embedded_multiboot.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/embedded_render_demo.c src/embedded_multiboot.c -o $@
 
 build/embedded_multiboot_test: tests/embedded_multiboot_test.c src/embedded_multiboot.c src/embedded_multiboot.h
 	@mkdir -p build
