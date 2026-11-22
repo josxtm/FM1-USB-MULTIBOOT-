@@ -25,8 +25,12 @@ build/embedded_multiboot_sim_pi32v2.o: src/embedded_multiboot_sim.c src/embedded
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
-build/embedded_multiboot_pi32v2.elf: build/embedded_multiboot_pi32v2.o build/embedded_multiboot_sim_pi32v2.o src/embedded_multiboot.ld
-	$(LD) -nostdlib -Map build/embedded_multiboot_pi32v2.map -T src/embedded_multiboot.ld -o $@ build/embedded_multiboot_pi32v2.o build/embedded_multiboot_sim_pi32v2.o
+build/embedded_multiboot_runtime_pi32v2.o: src/runtime.c src/mbl.h
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_multiboot_pi32v2.elf: build/embedded_multiboot_pi32v2.o build/embedded_multiboot_sim_pi32v2.o build/embedded_multiboot_runtime_pi32v2.o src/embedded_multiboot.ld
+	$(LD) -nostdlib -Map build/embedded_multiboot_pi32v2.map -T src/embedded_multiboot.ld -o $@ build/embedded_multiboot_pi32v2.o build/embedded_multiboot_sim_pi32v2.o build/embedded_multiboot_runtime_pi32v2.o
 
 core-test: build/embedded_multiboot_test
 	./build/embedded_multiboot_test
