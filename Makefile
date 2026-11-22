@@ -7,7 +7,7 @@ OBJDUMP = $(TOOLCHAIN)/bin/llvm-objdump
 READELF = $(TOOLCHAIN)/bin/llvm-readelf
 CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-stack-protector \
          -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Isrc -DBOARD_ID=1 -DDISP_BOARD=1
-C_FILES = main storage fat32 husb timer lcd keys watchdog runtime
+C_FILES = main storage msc_bot fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
 .PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim clean
