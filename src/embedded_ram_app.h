@@ -19,6 +19,7 @@ struct mb_ram_app_hooks {
     enum mb_app_backend backend;
     struct mb_storage external_storage;
     u32 max_steps;
+    u8 (*encoder_scan)(void *); /* optional PRESETS A/B sample, board HAL-owned */
 };
 struct mb_storage mb_demo_storage_hal(struct mb_demo_storage *);
 void mb_demo_catalog_init(struct mb_core *, struct mb_demo_storage *, struct mb_renderer);
