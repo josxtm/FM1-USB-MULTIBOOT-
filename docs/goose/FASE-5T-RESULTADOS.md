@@ -131,4 +131,10 @@ La recomendación para la siguiente fase es resolver primero el **contrato de re
 
 - Rama: `goose/fase3b-4a-preflight`.
 - PR #8: OPEN/Draft, sin merge.
-- Último commit: se actualizará tras la validación CI de esta fase.
+- Commit de implementación validado: `07b52cd2670cdf53fcfc4713142b70f725b333ef`.
+- Workflows validados sobre ese commit:
+  - Embedded multiboot core — `45060432811` — success.
+  - Cover Flow simulator — `45060436477` — success, sólo regresión.
+  - FM-1 RAM diagnostics — `45060440205` — success.
+  - Android RAM Loader — `45060444391` — success.
+- El commit posterior que actualice este informe será documental; no cambia el código ejecutable validado.
