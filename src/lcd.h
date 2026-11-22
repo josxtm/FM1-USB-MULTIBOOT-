@@ -5,6 +5,7 @@
 #include "disp.h" /* BRD_FM1, BRD_SMK, RGB() */
 
 int lcd_init(u32 board);
+int lcd_operational(void);
 void lcd_window(u32 x, u32 y, u32 w, u32 h); /* then pixels, then lcd_end */
 void lcd_pixels(const u8 *p, u32 n);
 void lcd_end(void);

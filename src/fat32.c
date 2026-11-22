@@ -246,33 +246,67 @@ enum diag_result fat32_open_fm1_file(struct fat32 *fs, const char *short_name, s
     return open_fm1_child(fs, short_name, 0, file);
 }
 
-enum diag_result fat32_read_at(struct fat32 *fs, const struct fat_file *file, u32 offset,
-                               u8 *output, u32 capacity, u32 *written)
+enum diag_result fat32_seek(struct fat32 *fs, const struct fat_file *file, u32 offset,
+                            struct fat_cursor *cursor)
 {
-    if (!fs || !file || !written || (capacity && !output)) return DIAG_RANGE;
-    *written = 0;
-    if (offset > file->size || capacity > file->size - offset) return DIAG_RANGE;
-    if (!capacity) return DIAG_OK;
+    if (!fs || !fs->sectors_per_cluster || !file || !cursor || offset > file->size) return DIAG_RANGE;
     const u32 bytes_per_cluster = (u32)fs->sectors_per_cluster * 512u;
-    u32 cluster = file->cluster, skip = offset / bytes_per_cluster;
+    const u32 skip = ((offset && offset == file->size) ? offset - 1u : offset) / bytes_per_cluster;
+    if (skip >= fs->clusters || !valid_cluster(fs, file->cluster)) return DIAG_FAT;
+    u32 cluster = file->cluster;
     for (u32 step = 0; step < skip; ++step) {
         enum diag_result r = next_cluster(fs, &cluster);
         if (r != DIAG_OK) return r == DIAG_END ? DIAG_FAT : r;
     }
-    u32 in_cluster = offset % bytes_per_cluster, remaining = capacity;
-    for (u32 steps = 0; remaining && steps <= fs->clusters; ++steps) {
-        u32 sector = in_cluster / 512u, in_sector = in_cluster % 512u;
-        enum diag_result r = data_sector(fs, cluster, sector);
+    *cursor = (struct fat_cursor){cluster, offset, offset - skip * bytes_per_cluster};
+    return DIAG_OK;
+}
+
+enum diag_result fat32_read_next(struct fat32 *fs, const struct fat_file *file,
+                                struct fat_cursor *cursor, u8 *output, u32 capacity, u32 *written)
+{
+    if (!written) return DIAG_RANGE;
+    *written = 0;
+    if (!fs || !fs->sectors_per_cluster || !file || !cursor || (capacity && !output) ||
+        cursor->offset > file->size || capacity > file->size - cursor->offset) return DIAG_RANGE;
+    const u32 bytes_per_cluster = (u32)fs->sectors_per_cluster * 512u;
+    for (u32 steps = 0; *written < capacity && steps <= fs->clusters; ++steps) {
+        if (cursor->in_cluster == bytes_per_cluster) {
+            enum diag_result r = next_cluster(fs, &cursor->cluster);
+            if (r != DIAG_OK) return r == DIAG_END ? DIAG_FAT : r;
+            cursor->in_cluster = 0;
+        }
+        u32 sector = cursor->in_cluster / 512u, in_sector = cursor->in_cluster % 512u;
+        enum diag_result r = data_sector(fs, cursor->cluster, sector);
         if (r != DIAG_OK) return r;
         u32 take = 512u - in_sector;
-        if (take > remaining) take = remaining;
+        if (take > capacity - *written) take = capacity - *written;
         for (u32 i = 0; i < take; ++i) output[*written + i] = fs->sector[in_sector + i];
-        *written += take; remaining -= take; in_cluster += take;
-        if (remaining && in_cluster == bytes_per_cluster) {
-            in_cluster = 0;
-            r = next_cluster(fs, &cluster);
-            if (r != DIAG_OK) return r == DIAG_END ? DIAG_FAT : r;
-        }
+        *written += take;
+        cursor->offset += take;
+        cursor->in_cluster += take;
     }
-    return remaining ? DIAG_FAT : DIAG_OK;
+    return *written == capacity ? DIAG_OK : DIAG_FAT;
+}
+
+enum diag_result fat32_check_eof(struct fat32 *fs, const struct fat_file *file,
+                                const struct fat_cursor *cursor)
+{
+    if (!fs || !file || !cursor || cursor->offset != file->size || !valid_cluster(fs, cursor->cluster))
+        return DIAG_RANGE;
+    u32 cluster = cursor->cluster;
+    enum diag_result r = next_cluster(fs, &cluster);
+    return r == DIAG_END ? DIAG_OK : r == DIAG_OK ? DIAG_FAT : r;
+}
+
+enum diag_result fat32_read_at(struct fat32 *fs, const struct fat_file *file, u32 offset,
+                              u8 *output, u32 capacity, u32 *written)
+{
+    if (!written) return DIAG_RANGE;
+    *written = 0;
+    if (!fs || !file || offset > file->size || capacity > file->size - offset) return DIAG_RANGE;
+    if (!capacity) return DIAG_OK;
+    struct fat_cursor cursor;
+    enum diag_result r = fat32_seek(fs, file, offset, &cursor);
+    return r == DIAG_OK ? fat32_read_next(fs, file, &cursor, output, capacity, written) : r;
 }

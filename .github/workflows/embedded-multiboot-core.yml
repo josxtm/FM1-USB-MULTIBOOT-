@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'src/embedded_multiboot.*'
+      - 'src/stg2_*'
       - 'tests/**'
       - 'scripts/validate_embedded_render.py'
       - 'scripts/generate_fat32_image.py'
@@ -22,6 +23,7 @@ on:
       - 'src/multiboot_ram_start.S'
       - 'src/multiboot_ram.ld'
       - 'scripts/validate_ram_image.py'
+      - 'scripts/validate_stg2.py'
       - 'scripts/decode_usb_diag_log.py'
       - 'scripts/virtual_flash_installer.py'
       - 'scripts/virtual_slotfile.py'
@@ -67,6 +69,7 @@ jobs:
           make virtual-installer-test | tee virtual-installer-results.txt
           make virtual-slotfile-test 2>&1 | tee virtual-slotfile-results.txt
           make virtual-slotfile-demo | tee virtual-slotfile-storage-results.txt
+          make stg2-host-test 2>&1 | tee stg2-host-results.txt
           make boot-recovery-test | tee boot-recovery-results.txt
           make flash-backup-audit-test | tee flash-backup-audit-results.txt
           make launch-policy-test | tee launch-policy-results.txt
@@ -100,6 +103,34 @@ jobs:
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.elf > pi32v2-core-linked-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_multiboot_pi32v2.o > pi32v2-fat32-core-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_pi32v2.elf > pi32v2-fat32-linked-elf-report.txt
+      - name: Check out the exact installed bootloader's source for its host loader
+        uses: actions/checkout@v4
+        with:
+          repository: jvitkauskas/m-bootloader
+          ref: 395e6cc469ba1d6eae9922a752d1f416ff07b69a
+          path: build/m-bootloader-v24
+          persist-credentials: false
+      - name: Validate native STG2 and test the v2.4 loader
+        run: |
+          set -o pipefail
+          make TOOLCHAIN=toolchain stg2-v24-test | tee stg2-v24-results.txt
+          (cd build/stg2 && sha256sum -c SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-stg2-selector-experimental-hardware-unverified
+          path: |
+            build/stg2/fm1-multiboot-selector-stg2.bin
+            build/stg2/fm1-multiboot-selector-stg2.elf
+            build/stg2/fm1-multiboot-selector-stg2.map
+            build/stg2/SHA256SUMS.txt
+            build/stg2/ABI.txt
+            build/stg2/stack-report.txt
+            build/stg2/elf-report.txt
+            build/stg2/disassembly.txt
+            build/stg2-selector.ppm
+            stg2-host-results.txt
+            stg2-v24-results.txt
+          if-no-files-found: error
       - name: Verify physical launch paths remain absent
         run: |
           ! grep -nE 'lcd_init|husb_init|usb_enumerate|disk_read|0x25|0x30' src/embedded_multiboot.c

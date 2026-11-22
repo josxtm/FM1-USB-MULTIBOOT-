@@ -28,6 +28,7 @@ static void cs(int hi) { gp_set(PINS->cs_p, PINS->cs_n, hi); }
 static void dc(int hi) { gp_set(PINS->dc_p, PINS->dc_n, hi); }
 
 static int lcd_fault;
+int lcd_operational(void) { return !lcd_fault; }
 
 static void wait_done(void)
 {
