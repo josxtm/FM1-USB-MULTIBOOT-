@@ -127,12 +127,12 @@ El conjunto Python pasó con 15 tests después de añadir la regresión fail-clo
 
 ## CI
 
-Los cuatro workflows se ejecutarán sobre el commit de esta fase y deben conservarse verdes:
+Los cuatro workflows pasaron sobre el commit de implementación `ac3ae6bd553c689ce2b06f15870d18a47429461e`:
 
-- Embedded multiboot core;
-- Cover Flow simulator, sólo regresión;
-- FM-1 RAM diagnostics;
-- Android RAM Loader.
+- Embedded multiboot core — `45064373936` — success.
+- Cover Flow simulator — `45064391282` — success, sólo regresión.
+- FM-1 RAM diagnostics — `45064447149` — success.
+- Android RAM Loader — `45064654125` — success.
 
 Los workflows no implican Flash física, ejecución FM1 ni USB Host real.
 
@@ -169,5 +169,6 @@ Los workflows no implican Flash física, ejecución FM1 ni USB Host real.
 No se modificó `main`, DARK-1 ni m-bootloader. No se escribió ni borró Flash, no se ejecutó RAM/APP1, no se activó USB Host ni se realizó trabajo VBUS/CC.
 
 - Rama: `goose/fase3b-4a-preflight`.
+- Commit de implementación validado: `ac3ae6bd553c689ce2b06f15870d18a47429461e`.
 - PR #8: OPEN/Draft, sin merge.
 - Decisión de recuperación autónoma USB-C: **NO-GO**.
