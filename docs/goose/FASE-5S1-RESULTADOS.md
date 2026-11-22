@@ -26,7 +26,7 @@ El footer textual muestra `PRESETS: ELEGIR` y `PLAY: INICIAR`. Se conserva la ca
 
 ## Memoria y arquitectura
 
-La medición 5S anterior fue `.image=22216` y APP1=22224 bytes, BSS=25896. La integración de policy/estado PLAY y sink compartido se valida nuevamente por CI; el mapa es virtual y no prueba SRAM. El selector no puede volver automáticamente si otro firmware reemplaza su misma área Flash: eso requiere un residente fuera de esa región o reinstalación/recovery externo. La instalación virtual no se presenta como rollback real.
+La medición 5S anterior fue `.image=22216` y APP1=22224 bytes, BSS=25896. 5S.1 enlaza policy/PLAY y mide `.image=23724` bytes, APP1=23732 bytes y BSS=25896 (`0x6528`); SHA-256 APP1 `bb20fca002bd0a4785c0c26a5634eb4a1eb3d9f9bb1c224ab45fc73c2725a6e8`. El aumento de 1508 bytes corresponde a la ruta de verificación/policy y estado de compatibilidad; no se amplió BSS. El mapa es virtual y no prueba SRAM. El selector no puede volver automáticamente si otro firmware reemplaza su misma área Flash: eso requiere un residente fuera de esa región o reinstalación/recovery externo. La instalación virtual no se presenta como rollback real.
 
 ## Bloqueos
 
