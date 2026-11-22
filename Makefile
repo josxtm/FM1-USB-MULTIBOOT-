@@ -91,7 +91,7 @@ build/mb_app_start_pi32v2.o: src/multiboot_ram_start.S
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
-build/embedded_ram_app_pi32v2.elf: build/embedded_ram_app_pi32v2.o build/embedded_ram_app_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_clock_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o build/embedded_multiboot_pi32v2.o src/multiboot_ram.ld
+build/embedded_ram_app_pi32v2.elf: build/embedded_ram_app_pi32v2.o build/embedded_presets_pi32v2.o build/embedded_ram_app_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_clock_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o build/embedded_multiboot_pi32v2.o src/multiboot_ram.ld
 	$(LD) --gc-sections --no-undefined -Map build/embedded_ram_app_pi32v2.map -T src/multiboot_ram.ld -o $@ $(filter %.o,$^)
 
 RAM_FULL_OBJECTS = build/embedded_ram_app_full_pi32v2.o build/embedded_presets_pi32v2.o build/embedded_ram_app_list_renderer_pi32v2.o build/embedded_ram_app_keys_pi32v2.o build/embedded_ram_app_physical_keys_pi32v2.o build/embedded_ram_app_lcd_pi32v2.o build/embedded_ram_app_timer_pi32v2.o build/embedded_ram_app_clock_pi32v2.o build/embedded_ram_app_runtime_pi32v2.o build/mb_app_start_pi32v2.o build/embedded_multiboot_pi32v2.o build/embedded_usb_msc_storage_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/usb_diag_log_pi32v2.o build/husb_pi32v2.o build/storage_pi32v2.o
