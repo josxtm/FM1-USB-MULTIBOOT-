@@ -108,6 +108,30 @@ test("INDEX.CSV real valida y reemplaza catálogo de muestra sin habilitar arran
   assert.match(app.element("status").textContent, /No se carga ni modifica/i);
 });
 
+test("INDEX.CSV vacío conserva el estado sin firmware", async () => {
+  const app = setup();
+  const empty = "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n";
+  app.element("catalogInput").fire("change", {
+    target: { files: [{ size: empty.length, text: async () => empty }] }
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.element("name").textContent, "SIN FIRMWARE");
+  app.element("play").fire("click");
+  assert.match(app.element("status").textContent, /Catálogo vacío/i);
+});
+
+test("INDEX.CSV importado usa la ruta FM1/FW y no arranca", async () => {
+  const app = setup();
+  const valid = "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n" +
+    "NEWFW|MI NUEVO FW|2.0|NEWFW.BIN|324|" + "a".repeat(64) + "|UNVERIFIED\n";
+  app.element("catalogInput").fire("change", {
+    target: { files: [{ size: valid.length, text: async () => valid }] }
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.element("name").textContent, "MI NUEVO FW");
+  assert.match(html, /FM1\/FW\//);
+});
+
 test("INDEX.CSV malicioso se rechaza sin cambiar el catálogo", async () => {
   const app = setup();
   const invalid = "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n" +

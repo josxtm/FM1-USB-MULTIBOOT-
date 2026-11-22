@@ -91,22 +91,24 @@
   const status=document.getElementById("status");
   let current=0,position=0,mode="browse",last=performance.now(),pointerStart=null;
   let count=catalog.length, imported=false;
-  const wrap=(n)=>((n%count)+count)%count;
-  const nearest=(n,ref)=>{const target=wrap(n);const shifts=[target-count,target,target+count];return shifts.reduce((a,b)=>Math.abs(b-ref)<Math.abs(a-ref)?b:a)};
+  const wrap=(n)=>count?((n%count)+count)%count:0;
+  const nearest=(n,ref)=>{if(!count)return 0;const target=wrap(n);const shifts=[target-count,target,target+count];return shifts.reduce((a,b)=>Math.abs(b-ref)<Math.abs(a-ref)?b:a)};
   function updateInfo(){
     const f=catalog[current];
-    name.textContent=f.name;version.textContent=f.version;
+    name.textContent=f?f.name:"SIN FIRMWARE";version.textContent=f?f.version:"—";
     document.getElementById("source").textContent=imported?"INDEX.CSV importado":"Catálogo simulado";
-    document.getElementById("compat").textContent=imported?"UNVERIFIED":"No verificada";
+    document.getElementById("compat").textContent=f?(imported?"UNVERIFIED":"No verificada"):"N/A";
   }
   function setStatus(text,warning){
     status.textContent=text;status.classList.toggle("danger",!!warning);
   }
   function go(step){
+    if(!count){setStatus("Catálogo vacío: no hay firmware para seleccionar.",true);return}
     if(mode!=="browse"){mode="browse";setStatus("Selección de firmwares. La ejecución real sigue deshabilitada.",false)}
     current=wrap(current+step);updateInfo();
   }
   function confirm(){
+    if(!count){setStatus("Catálogo vacío: PLAY solo puede inspeccionar entradas existentes.",true);return}
     mode="detail";
     setStatus(catalog[current].name+": selección visual solamente. No se carga ni modifica ningún firmware.",true);
   }
@@ -167,7 +169,7 @@
     ctx.strokeStyle="#2b5157";ctx.beginPath();ctx.moveTo(11,26);ctx.lineTo(229,26);ctx.stroke();
     const base=Math.round(position);
     const cards=[];
-    for(let d=-2;d<=2;d++){
+    if(count) for(let d=-2;d<=2;d++){
       const index=base+d;const dist=index-position;
       if(Math.abs(dist)>2.25)continue;
       const abs=Math.abs(dist),scale=Math.max(.59,1-abs*.25);
@@ -202,7 +204,7 @@
     if(text.length>24576)throw new Error("Catálogo demasiado grande");
     const lines=text.replace(/\r/g,"").trimEnd().split("\n");
     if(lines[0]!=="FM1CAT|1"||lines[1]!=="ID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT")throw new Error("Versión FM1CAT incompatible");
-    const rows=lines.slice(2);if(!rows.length||rows.length>64)throw new Error("El catálogo debe tener entre 1 y 64 entradas");
+    const rows=lines.slice(2);if(rows.length>64)throw new Error("El catálogo no puede superar 64 entradas");
     const seen=new Set();
     return rows.map((row,i)=>{
       const p=row.split("|");
@@ -215,7 +217,7 @@
       if(!/^[0-9]{1,8}$/.test(size)||Number(size)<=0||Number(size)>4194304||!/^[a-f0-9]{64}$/.test(sha))throw new Error("Tamaño o huella inválidos");
       if(compat!=="UNVERIFIED")throw new Error("Compatibilidad sin verificar");
       const colors=[["#103c44","#31d9b4"],["#303a70","#9aaffe"],["#632a50","#ed7fb7"],["#49301e","#f6b75b"]];
-      return {id,name:label,version,description:file,colors:colors[i%4],shape:i%4};
+      return {id,name:label,version,description:file,path:"FM1/FW/"+file,colors:colors[i%4],shape:i%4};
     });
   }
   document.getElementById("catalogInput").addEventListener("change",async e=>{
