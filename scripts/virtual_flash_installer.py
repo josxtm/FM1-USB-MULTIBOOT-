@@ -74,11 +74,12 @@ def validate_flash_bin(data):
 class FlashRegionPolicy:
     """Explicit erase authorization; omitted regions remain protected.
 
-    The default models the documented app span [0x4000,0xFF000); callers
-    may narrow it further.  It is not permission to write a real device: the
-    simulator has no physical I/O and does not parse proprietary region data.
+    The default authorizes no range.  A profile may explicitly model the
+    documented app span, but that profile is not permission to write a real
+    device: the simulator has no physical I/O and does not parse proprietary
+    region data.
     """
-    def __init__(self, authorized_ranges=((BOOTLOADER_END, KEY_MAC_START),)):
+    def __init__(self, authorized_ranges=()):
         self.authorized = self._normalise(authorized_ranges)
         for start, end in self.authorized:
             if start < BOOTLOADER_END:

@@ -21,7 +21,14 @@ def app1(payload=b'candidate-pi32v2'):
 
 class VirtualInstallerTest(unittest.TestCase):
     def policy(self):
-        return MOD.FlashRegionPolicy()
+        # Explicit simulated profile only; production/default is fail-closed.
+        return MOD.FlashRegionPolicy([(MOD.BOOTLOADER_END, MOD.KEY_MAC_START)])
+
+    def test_default_policy_is_fail_closed(self):
+        result = MOD.VirtualInstaller().install(
+            self.raw_flash(), confirmed=True, filename='flash.bin')
+        self.assertEqual(result['result'], 'REJECTED')
+        self.assertIn('no documented authorized erase region', result['validation']['reasons'])
 
     def raw_flash(self, payload=b'candidate-flash'):
         payload += b'\0' * ((-len(payload)) % MOD.SECTOR)
