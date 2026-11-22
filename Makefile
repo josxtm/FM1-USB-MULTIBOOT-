@@ -43,6 +43,14 @@ build/embedded_usb_msc_storage_pi32v2.o: src/embedded_usb_msc_storage.c src/embe
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
 
+build/husb_pi32v2.o: src/husb.c src/husb.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/storage_pi32v2.o: src/storage.c src/storage.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
 build/embedded_ram_app_renderer_pi32v2.o: src/embedded_lcd_renderer.c src/embedded_lcd_renderer.h $(wildcard src/*.h)
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
