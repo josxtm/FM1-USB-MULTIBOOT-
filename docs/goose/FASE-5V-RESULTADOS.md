@@ -141,14 +141,14 @@ python3 -m unittest discover -s tests -p '*test.py'
 
 El descubrimiento completo pasó con 14 tests Python, además de las pruebas C existentes.
 
-Los cuatro workflows deben mantenerse verdes en el commit final de esta fase:
+Los cuatro workflows pasaron sobre el commit de implementación `559ac9e36b02dc44e358c51ae451bf96426939b0`:
 
-- Embedded multiboot core;
-- Cover Flow simulator, sólo regresión histórica;
-- FM-1 RAM diagnostics;
-- Android RAM Loader.
+- Embedded multiboot core — `45063221136` — success.
+- Cover Flow simulator — `45063224660` — success, sólo regresión histórica.
+- FM-1 RAM diagnostics — `45063228404` — success.
+- Android RAM Loader — `45063232218` — success.
 
-La validación de CI se ejecutará después de este commit. Ningún workflow implica ejecución física, escritura Flash o USB Host real.
+Ningún workflow implica ejecución física, escritura Flash o USB Host real.
 
 ## Requisitos concretos para FASE 5W
 
