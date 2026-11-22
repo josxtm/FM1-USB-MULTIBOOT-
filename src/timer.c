@@ -47,12 +47,12 @@ void delay_us(u32 us)
     u32 ticks;
     u32 guard;
     u32 start;
-    mb_u64 product;
+    unsigned long long product;
 
     if (!ticks_ms || !us) return;
     /* 64-bit intermediate avoids overflow for long delays.  A timer delta
      * beyond half the 32-bit domain is ambiguous, so cap rather than wrap. */
-    product = (mb_u64)us * (mb_u64)ticks_ms;
+    product = (unsigned long long)us * (unsigned long long)ticks_ms;
     product = (product + 999u) / 1000u;
     ticks = product >= 0x80000000ull ? 0x7fffffffu : (u32)product;
     if (!ticks) ticks = 1;
