@@ -7,6 +7,9 @@
 - `Makefile`: `make core-test` builds and runs the isolated host target.
 - `.github/workflows/embedded-multiboot-core.yml`: strict host build, render demo, legacy USB/FAT32 tests, pi32v2 object/ELF/map and physical-path guard.
 - `src/embedded_multiboot_sim.c` and `src/embedded_multiboot.ld`: isolated link-only pi32v2 simulation target.
+- `src/embedded_fat32_storage.c/.h`: read-only adapter from the existing FAT32 reader to `mb_storage`.
+- `scripts/generate_fat32_image.py` and `tests/fat32_multiboot_integration.c`: reproducible block-image integration, including fragmented files and injected faults.
+- `tests/fm1cat_conformance_test.c`: C consumer of the shared FM1CAT fixtures.
 
 ## FM1CAT v1
 

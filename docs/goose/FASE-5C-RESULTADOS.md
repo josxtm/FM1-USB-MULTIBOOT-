@@ -31,7 +31,7 @@ La primera ejecución del ELF enlazado expuso referencias a `memcpy`/`memset`; s
 
 ## FASE 5C.2 — cierre técnico reproducible
 
-Se añadieron `render-matrix`, `memory-report`, ASan/UBSan, validación XML y trazas end-to-end. La medición host reproducible es `mb_entry=140`, `mb_catalog=8964`, `mb_core=9096`, catálogo máximo 24.576 bytes, buffer de verificación 512 bytes y framebuffer RGB565 0. La entrada `TWO & DEMO` demuestra escape XML; la matriz verifica 1/2/3/64 entradas. El parser rechaza bytes no ASCII en campos, EOF ambiguo, lecturas sin progreso, truncamiento, exceso, traversal y nombres fuera de `ID.BIN`/`ID.FWS`.
+Se añadieron `render-matrix`, `memory-report`, ASan/UBSan, validación XML y trazas end-to-end. La medición host reproducible es `mb_entry=140`, `mb_catalog=8964`, `mb_core=9096`, catálogo máximo 24.576 bytes, buffer de verificación 512 bytes y framebuffer RGB565 0. El renderer aplica escape XML defensivo y la matriz verifica 1/2/3/64 entradas. El parser rechaza bytes no ASCII en campos, EOF ambiguo, lecturas sin progreso, truncamiento, exceso, traversal y nombres fuera de `ID.BIN`/`ID.FWS`.
 
 `PI32V2-LINK-REPORT.md`, `MEMORY-BUDGET.md`, `FM1CAT-CONFORMANCE-EXTENDED.md` y `COVERFLOW-EMBEDDED-VALIDATION.md` registran las mediciones, la matriz y las limitaciones. El presupuesto de 64 KiB del linker es virtual; no demuestra SRAM libre, stack disponible ni ABI del bootloader. FAT32/USB continúa siendo un límite simulado: el core se integra mediante HAL y las pruebas USB/FAT32 existentes permanecen host-only.
 

@@ -24,7 +24,7 @@ La secuencia cubre boot, catálogo, selección, inspección, retorno, hash/size 
 
 ## SVG y estados
 
-La superficie es exactamente 240×240, con fondo oscuro, acentos turquesa y texto XML escapado (`&`, `<`, `>`, comillas y apóstrofes). `scripts/validate_embedded_render.py` parsea XML, comprueba dimensiones y exige `PLAY INSPECT ONLY`; el label `TWO & DEMO` valida el caso de escape.
+La superficie es exactamente 240×240, con fondo oscuro, acentos turquesa y texto XML escapado (`&`, `<`, `>`, comillas y apóstrofes). `scripts/validate_embedded_render.py` parsea XML, comprueba dimensiones y exige `PLAY INSPECT ONLY`. Los campos FM1CAT son estrictamente ASCII según la especificación, por lo que el demo usa `TWO DEMO`; el backend conserva escape defensivo para cualquier texto que reciba.
 
 Los estados públicos del core son BOOT, NO_STORAGE, LOADING_CATALOG, EMPTY, BROWSE, INSPECT, VERIFY, READY_FOR_SIMULATION, INCOMPATIBLE, ERROR y RECOVERY. Las rutas de error se ejercitan en las pruebas C (missing/disconnect, límites, metadata y verificación); RECOVERY es una reserva de integración futura y no se fuerza artificialmente a declarar una recuperación real. No se afirma que todos esos estados sean una captura de hardware.
 

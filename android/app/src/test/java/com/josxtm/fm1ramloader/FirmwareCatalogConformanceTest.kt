@@ -26,7 +26,7 @@ class FirmwareCatalogConformanceTest {
     }
 
     @Test fun invalidSharedCatalogsAreRejected() {
-        listOf("invalid-path.csv", "invalid-duplicate.csv").forEach { name ->
+        listOf("invalid-path.csv", "invalid-duplicate.csv", "invalid-label.csv", "invalid-version.csv", "invalid-no-final-lf.csv").forEach { name ->
             try {
                 FirmwareCatalog.decode(fixture(name))
                 throw AssertionError("Expected rejection: $name")

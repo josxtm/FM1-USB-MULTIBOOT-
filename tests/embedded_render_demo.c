@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char catalog[] = "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\nONE|ONE DEMO|1.0|ONE.BIN|3|ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad|UNVERIFIED\nTWO|TWO & DEMO|2.0|TWO.FWS|3|ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad|UNVERIFIED\nTHREE|THREE DEMO|3.0|THREE.BIN|3|ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad|UNVERIFIED\n";
+static const char catalog[] = "FM1CAT|1\nID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\nONE|ONE DEMO|1.0|ONE.BIN|3|ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad|UNVERIFIED\nTWO|TWO DEMO|2.0|TWO.FWS|3|ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad|UNVERIFIED\nTHREE|THREE DEMO|3.0|THREE.BIN|3|ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad|UNVERIFIED\n";
 static FILE *svg, *trace;
 static enum mb_io_result read_memory(void *context,const char *path,uint32_t offset,uint8_t *out,uint32_t cap,uint32_t *got)
 { (void)context; if(!strcmp(path,"FM1/INDEX.CSV")){if(offset>=sizeof catalog-1)return MB_IO_EOF;*got=(uint32_t)(sizeof catalog-1-offset);if(*got>cap)*got=cap;memcpy(out,catalog+offset,*got);return MB_IO_OK;} if(!strncmp(path,"FM1/FW/",7)){const char data[]="abc";if(offset>=3)return MB_IO_EOF;*got=3-offset;if(*got>cap)*got=cap;memcpy(out,data+offset,*got);return MB_IO_OK;} return MB_IO_MISSING; }

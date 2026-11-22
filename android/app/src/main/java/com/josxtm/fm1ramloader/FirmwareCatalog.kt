@@ -59,7 +59,11 @@ internal object FirmwareCatalog {
 
     fun decode(text: String): List<FirmwareEntry> {
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "Catálogo demasiado grande" }
-        val lines = text.trimEnd('\n', '\r').split('\n').map { it.trimEnd('\r') }
+        require(text.endsWith('\n')) { "Catálogo truncado" }
+        require(!text.replace("\r\n", "").contains('\r')) { "CR aislado" }
+        val normalized = text.replace("\r\n", "\n")
+        val lines = normalized.dropLast(1).split('\n')
+        require(lines.none { it.isEmpty() }) { "Línea vacía" }
         require(lines.size >= 2 && lines[0] == "FM1CAT|1" &&
             lines[1] == "ID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT") { "Formato FM1CAT incompatible" }
         val entries = lines.drop(2).map { line ->

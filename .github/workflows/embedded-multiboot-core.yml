@@ -5,6 +5,10 @@ on:
       - 'src/embedded_multiboot.*'
       - 'tests/**'
       - 'scripts/validate_embedded_render.py'
+      - 'scripts/generate_fat32_image.py'
+      - 'src/fat32.c'
+      - 'src/storage.h'
+      - 'src/embedded_fat32_storage.*'
       - 'docs/goose/**'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
@@ -28,6 +32,9 @@ jobs:
           test -s build/embedded-e2e-trace.txt
           make memory-report
           make core-sanitize | tee sanitizer-results.txt
+          make fm1cat-conformance | tee fm1cat-conformance-results.txt
+          make fat32-integration | tee fat32-integration-results.txt
+          make fat32-sanitize | tee fat32-sanitizer-results.txt
           make test | tee usb-test-results.txt
       - name: Compile core with strict host warnings
         run: cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
@@ -52,7 +59,11 @@ jobs:
             build/embedded-e2e-trace.txt
             build/memory-budget.txt
             sanitizer-results.txt
+            fm1cat-conformance-results.txt
+            fat32-integration-results.txt
+            fat32-sanitizer-results.txt
             usb-test-results.txt
+            build/fat32-test.img
             build/embedded_multiboot_pi32v2.o
             build/embedded_multiboot_pi32v2.elf
             build/embedded_multiboot_pi32v2.map

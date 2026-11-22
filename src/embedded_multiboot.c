@@ -14,9 +14,11 @@ static void fail(struct mb_core *c, const char *s) { c->state = MB_ERROR; copyst
 static int hex64(const char *s) { for (unsigned i=0;i<64;i++) if (!((s[i]>='0'&&s[i]<='9')||(s[i]>='a'&&s[i]<='f'))) return 0; return s[64]==0; }
 static int safe_id(const char *s) { unsigned long n=lenof(s); if(!n||n>MB_ID_MAX)return 0; for(unsigned long i=0;i<n;i++) if(!((s[i]>='A'&&s[i]<='Z')||(s[i]>='0'&&s[i]<='9')||s[i]=='_'))return 0; return 1; }
 static int field(const char *s, unsigned long max) { unsigned long n=lenof(s); if(!n||n>max)return 0; for(unsigned long i=0;i<n;i++) { unsigned char ch=(unsigned char)s[i]; if(ch<32||ch>126||ch=='|')return 0; } return 1; }
+static int label_field(const char *s) { unsigned long n=lenof(s); if(!field(s,MB_LABEL_MAX))return 0; for(unsigned long i=0;i<n;i++) if(!((s[i]>='A'&&s[i]<='Z')||(s[i]>='a'&&s[i]<='z')||(s[i]>='0'&&s[i]<='9')||s[i]==' '||s[i]=='.'||s[i]=='_'||s[i]=='-'))return 0; return 1; }
+static int version_field(const char *s) { unsigned long n=lenof(s); if(!field(s,MB_VERSION_MAX))return 0; for(unsigned long i=0;i<n;i++) if(!((s[i]>='A'&&s[i]<='Z')||(s[i]>='a'&&s[i]<='z')||(s[i]>='0'&&s[i]<='9')||s[i]=='.'||s[i]=='_'||s[i]=='-'))return 0; return 1; }
 static int parse_line(struct mb_catalog *cat, char *line) {
     char *p[7], *q=line; unsigned n=0; for(;;) { if(n==7)return 0; p[n++]=q; q=findc(q,'|'); if(!q)break; *q++=0; }
-    if(n!=7 || !safe_id(p[0]) || !field(p[1],MB_LABEL_MAX) || !field(p[2],MB_VERSION_MAX) ||
+    if(n!=7 || !safe_id(p[0]) || !label_field(p[1]) || !version_field(p[2]) ||
        !field(p[3],12) || !field(p[4],10) || !hex64(p[5]) || !same(p[6],"UNVERIFIED")) return 0;
     struct mb_entry *e=&cat->entries[cat->count]; unsigned long id=lenof(p[0]); char expected[13]; uint32_t size;
     copystr(expected,sizeof expected,p[0]); copystr(expected+id,sizeof expected-id,".BIN");
@@ -32,7 +34,7 @@ static int parse_catalog(struct mb_catalog *cat, char *buf, unsigned long len) {
     for(unsigned long i=0;i<len;) { if(buf[i]=='\r'){if(i+1>=len||buf[i+1]!='\n')return 0;mb_shift_left((char *)buf,i,len);--len;continue;}++i; }
     static const char h1[]="FM1CAT|1\n", h2[]="ID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT\n";
     if(len<sizeof h1+sizeof h2-2 || !mb_equal(buf,h1,sizeof h1-1) || !mb_equal(buf+sizeof h1-1,h2,sizeof h2-1))return 0;
-    unsigned long pos=sizeof h1+sizeof h2-2; while(pos<len) { unsigned long end=pos; while(end<len&&buf[end]!='\n')end++; if(end==pos||end-pos>160)return 0; buf[end]=0; if(cat->count>=MB_MAX_ENTRIES||!parse_line(cat,buf+pos))return 0; pos=end+1; }
+    unsigned long pos=sizeof h1+sizeof h2-2; while(pos<len) { unsigned long end=pos; while(end<len&&buf[end]!='\n')end++; if(end==pos||end==len||end-pos>160)return 0; buf[end]=0; if(cat->count>=MB_MAX_ENTRIES||!parse_line(cat,buf+pos))return 0; pos=end+1; }
     return 1;
 }
 void mb_init(struct mb_core *c, struct mb_storage s, struct mb_renderer r) { if(!c)return; mb_zero(c,sizeof *c); c->state=MB_BOOT; c->storage=s; c->renderer=r; }

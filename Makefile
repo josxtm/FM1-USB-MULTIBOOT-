@@ -10,7 +10,7 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize core-pi32v2-object core-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance core-pi32v2-object core-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
@@ -41,6 +41,37 @@ render-demo: build/embedded_render_demo
 render-matrix: build/embedded_render_matrix
 	./build/embedded_render_matrix
 
+fat32-image:
+	python3 scripts/generate_fat32_image.py build/fat32-test.img 3
+
+fat32-integration: build/fat32_multiboot_integration
+	@for count in 0 1 2 3 64; do \
+		python3 scripts/generate_fat32_image.py build/fat32-test.img $$count >/dev/null; \
+		./build/fat32_multiboot_integration build/fat32-test.img '' $$count; \
+	done
+	python3 scripts/generate_fat32_image.py build/fat32-test.img 3 >/dev/null
+	./build/fat32_multiboot_integration build/fat32-test.img disconnect
+	./build/fat32_multiboot_integration build/fat32-test.img timeout
+
+build/fat32_multiboot_integration: tests/fat32_multiboot_integration.c src/embedded_fat32_storage.c src/embedded_fat32_storage.h src/embedded_multiboot.c src/embedded_multiboot.h src/fat32.c src/storage.c src/storage.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/fat32_multiboot_integration.c src/embedded_fat32_storage.c src/embedded_multiboot.c src/fat32.c -o $@
+
+fm1cat-conformance: build/fm1cat_conformance_test
+	./build/fm1cat_conformance_test
+
+build/fm1cat_conformance_test: tests/fm1cat_conformance_test.c src/embedded_multiboot.c src/embedded_multiboot.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/fm1cat_conformance_test.c src/embedded_multiboot.c -o $@
+
+fat32-sanitize: build/fat32_multiboot_sanitize
+	python3 scripts/generate_fat32_image.py build/fat32-test.img 3 >/dev/null
+	./build/fat32_multiboot_sanitize build/fat32-test.img
+
+build/fat32_multiboot_sanitize: tests/fat32_multiboot_integration.c src/embedded_fat32_storage.c src/embedded_multiboot.c src/fat32.c
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc tests/fat32_multiboot_integration.c src/embedded_fat32_storage.c src/embedded_multiboot.c src/fat32.c -o $@
+
 build/embedded_render_matrix: tests/embedded_render_matrix.c src/embedded_multiboot.c src/embedded_multiboot.h
 	@mkdir -p build
 	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/embedded_render_matrix.c src/embedded_multiboot.c -o $@
@@ -51,7 +82,7 @@ memory-report: build/memory_report
 core-sanitize: build/embedded_multiboot_sanitize
 	./build/embedded_multiboot_sanitize
 
-build/memory_report: tests/memory_report.c src/embedded_multiboot.h
+build/memory_report: tests/memory_report.c src/embedded_multiboot.h src/embedded_fat32_storage.h src/storage.h
 	@mkdir -p build
 	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/memory_report.c -o $@
 

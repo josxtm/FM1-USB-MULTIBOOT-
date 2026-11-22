@@ -16,7 +16,7 @@ The portable multiboot core uses fixed storage: catalog maximum 24,576 bytes, 64
 
 Measured host sizes are `sizeof(mb_entry)=140`, `sizeof(mb_catalog)=8964`, and `sizeof(mb_core)=9096`. The catalog buffer is intentionally bounded at 24,576 bytes (plus one sentinel byte), verification uses a 512-byte chunk and SHA state, and the renderer has no framebuffer. The isolated linker asserts text+rodata+data+bss <= 64 KiB, but stack depth, runtime reservations, FAT32 sector buffers and actual pi32v2 SRAM availability are unknown. These are measurements of software layouts, not physical allocations.
 
-The catalog buffer is intentionally bounded and is a host/simulation implementation. A future pi32v2 port may replace it with a streaming line reader preserving the parser contract; that would reduce peak catalog storage but requires a line-oriented HAL and has not been claimed here.
+The catalog buffer is intentionally bounded and is a host/simulation implementation. A future pi32v2 port may replace it with a streaming line reader preserving the parser contract; that would reduce peak catalog storage but requires a line-oriented HAL and has not been claimed here. The FAT32 parser uses one 512-byte sector buffer (`sizeof(struct fat32)=560` including metadata); this is a software measurement, not confirmed free SRAM.
 
 ## Gate
 

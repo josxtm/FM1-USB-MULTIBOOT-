@@ -3,7 +3,7 @@
 The software prototype separates four layers:
 
 1. `embedded_multiboot.c`: portable state machine, FM1CAT v1 parser, selection, verification and render callbacks.
-2. Storage HAL: a read-only `mb_storage.read` callback. The host tests provide an in-memory backend; the existing FAT32/MSC code remains a separate diagnostic backend.
+2. Storage HAL: a read-only `mb_storage.read` callback. The host tests provide an in-memory backend, and `embedded_fat32_storage.c` now adapts the existing FAT32 reader over a simulated block image. USB MSC remains unlinked and physical.
 3. Render HAL: callbacks for cards and status. No ST7789 register access is linked by the portable core.
 4. Future FM-1 backend: explicitly experimental and disabled in this delivery.
 
