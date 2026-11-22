@@ -10,7 +10,7 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
@@ -100,12 +100,22 @@ msc-bot-test: build/msc_bot_test
 	./build/msc_bot_test
 
 msc-fat32-test: build/msc_fat32_integration
-	python3 scripts/generate_fat32_image.py build/fat32-test.img 3 >/dev/null
-	./build/msc_fat32_integration build/fat32-test.img
+	@for count in 0 1 2 3 64; do \
+		python3 scripts/generate_fat32_image.py build/fat32-test.img $$count >/dev/null; \
+		./build/msc_fat32_integration build/fat32-test.img $$count; \
+	done
 
-build/msc_fat32_integration: tests/msc_fat32_integration.c src/msc_bot.c src/fat32.c src/storage.h src/msc_bot.h
+build/msc_fat32_integration: tests/msc_fat32_integration.c src/msc_bot.c src/fat32.c src/embedded_fat32_storage.c src/embedded_multiboot.c src/storage.h src/msc_bot.h
 	@mkdir -p build
-	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/msc_fat32_integration.c src/msc_bot.c src/fat32.c -o $@
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/msc_fat32_integration.c src/msc_bot.c src/fat32.c src/embedded_fat32_storage.c src/embedded_multiboot.c -o $@
+
+msc-fat32-sanitize: build/msc_fat32_sanitize
+	python3 scripts/generate_fat32_image.py build/fat32-test.img 3 >/dev/null
+	./build/msc_fat32_sanitize build/fat32-test.img 3
+
+build/msc_fat32_sanitize: tests/msc_fat32_integration.c src/msc_bot.c src/fat32.c src/embedded_fat32_storage.c src/embedded_multiboot.c
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc tests/msc_fat32_integration.c src/msc_bot.c src/fat32.c src/embedded_fat32_storage.c src/embedded_multiboot.c -o $@
 
 build/msc_bot_test: tests/msc_bot_test.c src/msc_bot.c src/msc_bot.h src/mbl.h
 	@mkdir -p build
@@ -173,7 +183,7 @@ build/SHA256SUMS.txt: build/fm1-usb-diagnostics-ram-experimental.bin scripts/val
 
 test:
 	@mkdir -p build
-	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/usb_storage_test.c src/storage.c src/fat32.c -o build/usb_storage_test
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/usb_storage_test.c src/storage.c src/msc_bot.c src/fat32.c -o build/usb_storage_test
 	./build/usb_storage_test
 
 clean:

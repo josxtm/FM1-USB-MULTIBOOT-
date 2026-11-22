@@ -4,12 +4,26 @@
 
 static int valid_ptr(const void *p) { return p != 0; }
 
+void mb_msc_build_cbw(u8 *cbw, u32 tag, const u8 *cdb, u8 cdb_len,
+                      u32 transfer, int data_in)
+{
+    u8 i;
+    if (!cbw || !cdb || cdb_len < 1 || cdb_len > 16) return;
+    for (i = 0; i < MB_MSC_CBW_SIZE; ++i) cbw[i] = 0;
+    st32(cbw, MB_MSC_SIGNATURE_CBW);
+    st32(cbw + 4, tag);
+    st32(cbw + 8, transfer);
+    cbw[12] = data_in ? 0x80u : 0;
+    cbw[14] = cdb_len;
+    for (i = 0; i < cdb_len; ++i) cbw[15 + i] = cdb[i];
+}
+
 enum mb_msc_result mb_msc_validate_cbw(const u8 *cbw, u32 length, u32 *tag,
                                        u32 *transfer, int *data_in, u8 *cdb_len)
 {
     if (!valid_ptr(cbw) || length != MB_MSC_CBW_SIZE || !tag || !transfer ||
         !data_in || !cdb_len || ld32(cbw) != MB_MSC_SIGNATURE_CBW ||
-        (cbw[12] & 0x7fu) != 0 || cbw[14] < 1 || cbw[14] > 16)
+        (cbw[12] & 0x7fu) != 0 || cbw[13] != 0 || cbw[14] < 1 || cbw[14] > 16)
         return MB_MSC_MALFORMED;
     *tag = ld32(cbw + 4);
     *transfer = ld32(cbw + 8);
@@ -26,7 +40,9 @@ enum mb_msc_result mb_msc_validate_csw(const u8 *csw, u32 length, u32 tag,
         ld32(csw) != MB_MSC_SIGNATURE_CSW || ld32(csw + 4) != tag ||
         csw[12] > 2) return MB_MSC_MALFORMED;
     residue = ld32(csw + 8);
-    if (residue > transfer || received > transfer || received + residue != transfer)
+    if (received > transfer || residue > transfer - received)
+        return MB_MSC_MALFORMED;
+    if (received + residue != transfer)
         return MB_MSC_MALFORMED;
     *status = csw[12];
     return *status == 0 ? MB_MSC_OK : MB_MSC_DEVICE;
@@ -67,14 +83,12 @@ enum mb_msc_result mb_msc_bot_read10(struct mb_msc_bot *bot, u32 lba, u8 *sector
     u8 cdb_len, status;
     if (!bot || !sector || !bot->io.bulk_out || !bot->io.bulk_in ||
         (bot->blocks && lba >= bot->blocks)) return MB_MSC_MALFORMED;
-    st32(cbw, MB_MSC_SIGNATURE_CBW);
-    st32(cbw + 4, ++bot->tag);
-    st32(cbw + 8, 512);
-    cbw[12] = 0x80;
-    cbw[14] = 10;
-    cbw[15] = 0x28;
-    bs32(cbw + 17, lba);
-    cbw[22] = 0; cbw[23] = 1;
+    {
+        u8 cdb[10] = {0x28};
+        bs32(cdb + 2, lba);
+        cdb[8] = 1;
+        mb_msc_build_cbw(cbw, ++bot->tag, cdb, sizeof cdb, 512, 1);
+    }
     if (mb_msc_validate_cbw(cbw, sizeof cbw, &tag, &transfer, &data_in, &cdb_len) != MB_MSC_OK ||
         !data_in || !mb_msc_read_only_cdb(cbw + 15, cdb_len, &command_lba, &command_blocks, &cdb_bytes) ||
         command_lba != lba || command_blocks != 1 || cdb_bytes != 512)

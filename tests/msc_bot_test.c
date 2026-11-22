@@ -17,6 +17,7 @@ int main(void)
     assert(tag == 7 && size == 512 && in && n == 10);
     assert(mb_msc_read_only_cdb(p + 15, n, &lba, &blocks, &bytes) && lba == 12 && blocks == 1 && bytes == 512);
     p[0] = 0; assert(mb_msc_validate_cbw(p, sizeof p, &tag, &size, &in, &n) == MB_MSC_MALFORMED);
+    cbw(p, 7, 512, 0x80, 0x28); p[13] = 1; assert(mb_msc_validate_cbw(p, sizeof p, &tag, &size, &in, &n) == MB_MSC_MALFORMED);
     cbw(p, 7, 512, 0x00, 0x2a); assert(!mb_msc_read_only_cdb(p + 15, 10, &lba, &blocks, &bytes));
     cbw(p, 7, 512, 0x80, 0x28); p[14] = 0; assert(mb_msc_validate_cbw(p, sizeof p, &tag, &size, &in, &n) == MB_MSC_MALFORMED);
     memset(s, 0, sizeof s); st32(s, MB_MSC_SIGNATURE_CSW); st32(s + 4, 7); st32(s + 8, 0); s[12] = 0;

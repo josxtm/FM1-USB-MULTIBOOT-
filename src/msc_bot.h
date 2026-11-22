@@ -28,7 +28,9 @@ struct mb_msc_bot {
     u32 blocks;
 };
 
-/* Validate the fixed framing before interpreting any command bytes. */
+/* Build and validate the fixed framing before interpreting command bytes. */
+void mb_msc_build_cbw(u8 *cbw, u32 tag, const u8 *cdb, u8 cdb_len,
+                      u32 transfer, int data_in);
 enum mb_msc_result mb_msc_validate_cbw(const u8 *cbw, u32 length, u32 *tag,
                                        u32 *transfer, int *data_in, u8 *cdb_len);
 enum mb_msc_result mb_msc_validate_csw(const u8 *csw, u32 length, u32 tag,
