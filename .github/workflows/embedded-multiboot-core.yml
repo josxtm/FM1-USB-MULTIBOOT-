@@ -25,6 +25,7 @@ on:
       - 'scripts/decode_usb_diag_log.py'
       - 'scripts/virtual_flash_installer.py'
       - 'scripts/boot_recovery_model.py'
+      - 'scripts/audit_flash_backup.py'
       - 'docs/goose/**'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
@@ -64,6 +65,7 @@ jobs:
           make firmware-tools-test | tee firmware-tools-results.txt
           make virtual-installer-test | tee virtual-installer-results.txt
           make boot-recovery-test | tee boot-recovery-results.txt
+          make flash-backup-audit-test | tee flash-backup-audit-results.txt
           make launch-policy-test | tee launch-policy-results.txt
           make clock-test | tee clock-results.txt
           make timer-test | tee timer-results.txt
@@ -125,6 +127,7 @@ jobs:
             firmware-tools-results.txt
             virtual-installer-results.txt
             boot-recovery-results.txt
+            flash-backup-audit-results.txt
             launch-policy-results.txt
             clock-results.txt
             ram-image-validator-results.txt
