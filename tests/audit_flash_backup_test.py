@@ -34,6 +34,57 @@ class AuditFlashBackupTest(unittest.TestCase):
         self.assertTrue(result['checks']['expected_sha256'])
         self.assertEqual(result['regions']['boot'], [0, 0x4000])
 
+    def test_synthetic_config_and_application_directory(self):
+        flash = bytearray(self.valid_backup())
+        config = bytearray(96)
+        config[0:32] = bytes(range(32))
+        config[32:34] = struct.pack('<H', MOD.crc16(config[:32]))
+        flash[0x3FA0:0x4000] = config
+
+        def make_entry(name, address, length, attr, data_crc=0):
+            raw = bytearray(32)
+            raw[2:4] = struct.pack('<H', data_crc)
+            raw[4:8] = struct.pack('<I', address)
+            raw[8:12] = struct.pack('<I', length)
+            raw[12] = attr
+            raw[16:16 + len(name)] = name.encode('ascii')
+            raw[0:2] = struct.pack('<H', MOD.crc16(raw[2:]))
+            return bytes(raw)
+
+        records = [
+            ('uboot.boot', 0xA0, 16, 0x02, 0),
+            ('isd_config.ini', 0x3FA0, 96, 0x02, MOD.crc16(config)),
+            ('app_dir_head', 0x4000, 0xFFFFFFFF, 0x81, 0),
+            ('key_mac', 0xFF000, 0x1000, 0x02, 0),
+        ]
+        for i, record in enumerate(records):
+            flash[0x20 + i * 32:0x40 + i * 32] = MOD.enc(make_entry(*record))
+        # A zero-key synthetic app table is sufficient to test table decoding.
+        key = MOD.decode_unit_key(config)
+        app_records = [
+            make_entry('app_area_head', 0x02000120, 0x8F000, 0x83),
+            make_entry('app.bin', 0x120, 0x1000, 0x82, MOD.crc16(b'A' * 0x1000)),
+            make_entry('cfg_tool.bin', 0x1120, 0x1000, 0x82, MOD.crc16(b'B' * 0x1000)),
+            make_entry('PRCT', 0x4000, 0x1000, 0x12),
+            make_entry('VM', 0x93000, 0x1000, 0x12),
+            make_entry('BTIF', 0xE9000, 0x1000, 0x12),
+            make_entry('USR', 0xEA000, 0x1000, 0x12),
+        ]
+        for i, raw in enumerate(app_records):
+            offset = 0x4000 + i * 32
+            flash[offset:offset + 32] = MOD.enc(raw, key ^ ((i * 32 // 4) & 0xffff))
+        for rel, payload in ((0x120, b'A' * 0x1000), (0x1120, b'B' * 0x1000)):
+            for off in range(0, len(payload), 32):
+                physical = 0x4000 + rel + off
+                flash[physical:physical + 32] = MOD.enc(payload[off:off + 32], key ^ (((rel + off) >> 2) & 0xffff))
+        result = MOD.audit(bytes(flash))
+        self.assertTrue(result['checks']['configuration'])
+        self.assertTrue(result['checks']['app_table'])
+        self.assertTrue(result['checks']['app_files_crc'])
+        names = [entry['name'] for entry in result['app_table']]
+        self.assertEqual(names[:3], ['app_area_head', 'app.bin', 'cfg_tool.bin'])
+        self.assertFalse(result['privacy']['sensitive_values_emitted'])
+
     def test_short_or_wrong_backup_never_looks_complete(self):
         result = MOD.audit(b'not-a-device-backup')
         self.assertFalse(result['checks']['capacity_1MiB'])
