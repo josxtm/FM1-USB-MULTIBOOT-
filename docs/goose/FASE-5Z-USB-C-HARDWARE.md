@@ -1,0 +1,14 @@
+# Fase 5Z · USB‑C y lector MSC externo
+
+**Decisión NO-GO para el lector USB‑C en recuperación con la configuración actual.** El bloqueo de arranque está identificado en el código exacto. `SD CARD` sondea SPI1 y `DOWNLOAD MODE` y `MIDI MODE` ofrecen servicios USB de dispositivo a un host. El v2.4 no expone un camino desde el menú para iniciar USB0 Host, enumerar un lector MSC o buscar `MENU.BIN` por USB. Un lector con alimentación propia tampoco añade este camino. [boot.c `395e6cc`](https://github.com/jvitkauskas/m-bootloader/blob/395e6cc469ba1d6eae9922a752d1f416ff07b69a/src/boot.c) · [sdboot.c `395e6cc`](https://github.com/jvitkauskas/m-bootloader/blob/395e6cc469ba1d6eae9922a752d1f416ff07b69a/src/sdboot.c)
+
+| Capa | Evidencia revisada |
+|---|---|
+| SoC y PHY | `WL82.h` y `usb.h` del SDK `d179b44` muestran controlador Host, DEVCTL y señales SIE/VBUSVALID. `src/husb.c` usa el *override* de VBUS válido para el controlador. Esa señal interna no habilita una fuente de 5 V en el puerto. El SDK no forma parte del STG2. |
+| Uso USB del FM‑1 | FM‑1‑RE `ec832f2` analiza USB de dispositivo en firmware original. Melodee documenta Host MIDI con D+/D− y dice que su firmware no conduce VBUS. M‑Unbricker documenta comunicación entre dos instrumentos con su propia alimentación. Son escenarios distintos de un lector MSC pasivo. |
+| Placa, conector y alimentación | Las referencias públicas revisadas no permiten identificar en la revisión del propietario la ruta CC1/CC2, el rol de fuente, interruptor de VBUS, límite de corriente ni protección contra retorno. No se deduce de las fotografías ni del pinout de AC791N que la placa pueda alimentar el lector. |
+| MSC/BOT y FAT32 | El núcleo existente enumera y lee un dispositivo emulado y verifica FM1CAT. Sus pruebas dan evidencia de software para utilizarlo después de un arranque y una conexión válidos. El STG2 de 5Z excluye del enlace todo código USB Host y no activa el PHY USB0 ni VBUS. |
+
+[SDK AC79](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK/tree/d179b4484759423312073f5fbb232501aa491047) · [Análisis de dispositivo USB](https://github.com/AL-255/FM-1-RE/blob/ec832f281ca165a7d5e0722985f3acb1465046d5/docs/io/06-usb.md) · [Melodee y VBUS](https://github.com/keremimo/melodee/blob/165d177a425944f3d30b0b669255a6ed0050c3a5/BUILDING.md#usb-midi-host) · [Investigación eléctrica 5Y](FASE-5Y-RESULTADOS.md)
+
+Para reabrir la opción hacen falta una entrada autónoma a código Host compatible con el m‑bootloader intacto y una caracterización segura de CC, rol, 5 V, corriente y protección sobre la revisión concreta. Sólo después tendría sentido un ensayo autorizado de enumeración de solo lectura y comprobación de BPB FAT32, `FM1/INDEX.CSV` y un hash de prueba. La Fase 5Z no inyecta tensión, modifica alimentación ni ordena conectar el lector.

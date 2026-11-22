@@ -13,7 +13,10 @@
  * shift registers), the output levels last. */
 static const u8 snap_off[8] = { GP_DIR, GP_DIE, GP_PU, GP_PD, GP_HD0, GP_HD, GP_DIEH, GP_OUT };
 static u32 snap[SNAP_PORTS][8];
+/* FM-1 STG2 uses only GPIO. Preserve the existing PHY save/restore in other images. */
+#if !defined(MB_NATIVE_STG2) || BOARD_ID != BRD_FM1
 static u32 snap_phy;
+#endif
 static u8 on;
 
 static void save(void)
@@ -23,7 +26,9 @@ static void save(void)
 	for (p = 0; p < SNAP_PORTS; p++)
 		for (i = 0; i < 8; i++)
 			snap[p][i] = RD(GPIO(p ? PH : PA) + snap_off[i]);
+#if !defined(MB_NATIVE_STG2) || BOARD_ID != BRD_FM1
 	snap_phy = RD(PHY_CON);
+#endif
 }
 
 static void restore(void)
@@ -33,7 +38,9 @@ static void restore(void)
 	for (p = 0; p < SNAP_PORTS; p++)
 		for (i = 0; i < 8; i++)
 			WR(GPIO(p ? PH : PA) + snap_off[i], snap[p][i]);
+#if !defined(MB_NATIVE_STG2) || BOARD_ID != BRD_FM1
 	WR(PHY_CON, snap_phy);
+#endif
 }
 
 static void pulse(u32 port, u32 pin)

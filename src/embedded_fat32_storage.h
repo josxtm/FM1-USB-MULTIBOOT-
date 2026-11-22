@@ -4,7 +4,12 @@
 #include "embedded_multiboot.h"
 #include "storage.h"
 
-struct mb_fat32_storage { struct fat32 *fs; };
+struct mb_fat32_storage {
+    struct fat32 *fs;
+    struct fat_file file;
+    struct fat_cursor cursor;
+    char path[20];
+};
 void mb_fat32_storage_init(struct mb_fat32_storage *, struct fat32 *);
 struct mb_storage mb_fat32_storage_hal(struct mb_fat32_storage *);
 #endif

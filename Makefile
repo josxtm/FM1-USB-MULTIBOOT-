@@ -13,6 +13,58 @@ OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 .PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test usb-storage-test presets-test list-renderer-test launch-policy-test firmware-tools-test virtual-installer-test boot-recovery-test flash-backup-audit-test clock-test timer-test ram-image-validator-test ram-minimal-test ram-minimal-pi32v2-object ram-minimal-image ram-app-pi32v2-image ram-app-pi32v2-full-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
+STG2_C = stg2_selector stg2_selector_platform stg2_sd embedded_multiboot embedded_fat32_storage \
+         fat32 embedded_lcd_list_renderer embedded_lcd_sink lcd keys embedded_keys embedded_clock timer runtime
+STG2_OBJECTS = $(addprefix build/stg2/,$(addsuffix .o,$(STG2_C))) build/stg2/stg2_selector_start.o
+
+.PHONY: stg2-selector stg2-host-test stg2-v24-test
+stg2-selector: build/stg2/fm1-multiboot-selector-stg2.bin
+
+STG2_HOST = src/stg2_selector.c src/stg2_sd.c src/embedded_multiboot.c \
+            src/embedded_fat32_storage.c src/fat32.c src/embedded_lcd_list_renderer.c
+build/stg2-selector-test: tests/stg2_selector_test.c $(STG2_HOST) $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc $(filter %.c,$^) -o $@
+
+build/stg2-spi-mmio-test: tests/stg2_spi_mmio_test.c src/stg2_selector_platform.c $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Wl,--gc-sections -Isrc $< -o $@
+
+stg2-host-test: build/stg2-selector-test build/stg2-spi-mmio-test
+	python3 -m unittest tests/stg2_image_test.py
+	./build/stg2-spi-mmio-test
+	@set -e; tmp=$$(mktemp -d build/stg2-test.XXXXXX); trap 'rm -rf "$$tmp"' EXIT; \
+		python3 scripts/generate_fat32_image.py "$$tmp/card.img" 12 >/dev/null; \
+		./build/stg2-selector-test "$$tmp/card.img"
+
+MBOOT24 ?= build/m-bootloader-v24
+stg2-v24-test: stg2-selector
+	test "$$(git -C "$(MBOOT24)" rev-parse HEAD)" = 395e6cc469ba1d6eae9922a752d1f416ff07b69a
+	$(CC_HOST) -std=c11 -O2 -Wall -Wextra -Werror -DPLATFORM_SIM \
+		-I"$(MBOOT24)/include" -I"$(MBOOT24)/tests" tests/stg2_v24_bridge.c "$(MBOOT24)/src/core.c" -o build/stg2-v24-test
+	./build/stg2-v24-test build/stg2/fm1-multiboot-selector-stg2.bin
+
+build/stg2/%.o: src/%.c $(wildcard src/*.h) Makefile
+	@mkdir -p build/stg2
+	$(CLANG) $(CFLAGS) -DMB_NATIVE_STG2 -fstack-usage -c $< -o $@
+
+build/stg2/stg2_selector_start.o: src/stg2_selector_start.S
+	@mkdir -p build/stg2
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/stg2/fm1-multiboot-selector-stg2.elf: $(STG2_OBJECTS) src/stg2_selector.ld
+	$(LD) --gc-sections --no-undefined -Map build/stg2/fm1-multiboot-selector-stg2.map -T src/stg2_selector.ld -o $@ $(STG2_OBJECTS)
+
+build/stg2/fm1-multiboot-selector-stg2.bin: build/stg2/fm1-multiboot-selector-stg2.elf scripts/validate_stg2.py Makefile
+	$(OBJCOPY) -O binary -j .image $< build/stg2/selector.flat
+	$(READELF) -h -l -S -s $< > build/stg2/elf-report.txt
+	$(OBJDUMP) -d $< > build/stg2/disassembly.txt
+	python3 scripts/validate_stg2.py $< build/stg2/selector.flat $@ build/stg2/ABI.txt build/stg2/disassembly.txt
+	awk -F '\t' 'NF!=3 || $$3!="static" {bad=1} {sum+=$$2; if ($$2>max) {max=$$2; frame=$$1}} END { \
+		printf "Largest static frame: %s (%u B)\nSum of all emitted static frames: %u B / 8192 B\n", frame, max, sum; \
+		exit (bad || max==0 || sum>8192)}' build/stg2/*.su > build/stg2/stack-report.txt
+	cd build/stg2 && sha256sum fm1-multiboot-selector-stg2.bin fm1-multiboot-selector-stg2.elf > SHA256SUMS.txt
+
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
 
 core-pi32v2-sim: build/embedded_multiboot_pi32v2.elf

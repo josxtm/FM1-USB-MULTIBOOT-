@@ -36,6 +36,7 @@ struct fat32 {
 };
 
 struct fat_file { char name[13]; u32 cluster, size; };
+struct fat_cursor { u32 cluster, offset, in_cluster; };
 struct fat_dir { u32 cluster, transitions; u8 sector, entry, end; };
 
 enum diag_result fat32_mount(struct fat32 *fs, struct block_device disk);
@@ -45,6 +46,10 @@ enum diag_result fat32_open_fm1_index(struct fat32 *fs, struct fat_file *index);
 enum diag_result fat32_open_fm1_file(struct fat32 *fs, const char *short_name, struct fat_file *file);
 enum diag_result fat32_read_at(struct fat32 *fs, const struct fat_file *file, u32 offset,
                                u8 *output, u32 capacity, u32 *written);
+enum diag_result fat32_seek(struct fat32 *, const struct fat_file *, u32 offset, struct fat_cursor *);
+enum diag_result fat32_read_next(struct fat32 *, const struct fat_file *, struct fat_cursor *,
+                                u8 *, u32 capacity, u32 *written);
+enum diag_result fat32_check_eof(struct fat32 *, const struct fat_file *, const struct fat_cursor *);
 enum diag_result fat32_next(struct fat32 *fs, struct fat_dir *dir, struct fat_file *file);
 enum diag_result fat32_read_prefix(struct fat32 *fs, const struct fat_file *file,
                                    u8 *output, u32 capacity, u32 *written);
