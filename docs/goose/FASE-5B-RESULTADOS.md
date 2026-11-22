@@ -29,6 +29,14 @@
 
 El núcleo no usa LCD, USB Host, Flash ni libc de host para I/O; se apoya en el runtime freestanding existente para memoria. El catálogo está acotado a 24 KiB y la verificación usa un buffer de 512 bytes. El mapa exacto de SRAM, pila, ABI y reservas del m-bootloader sigue sin estar demostrado.
 
+## Validación CI
+
+- Núcleo C99, fixtures, rutas `FM1/FW`, EOF, SHA y objeto pi32v2: ✅ [run 44969355754](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44969355754)
+- Diagnóstico RAM/pi32v2, APP1 y coherencia: ✅ [run 44969355744](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44969355744)
+- Android/Kotlin/Lint y conformance FM1CAT compartida: ✅ [run 44969352349](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44969352349)
+- El primer intento Android falló porque el test no localizaba la fixture desde el directorio de Gradle; se corrigió la búsqueda ascendente y la repetición fue satisfactoria.
+- `make core-test`, `make test` y compilación freestanding host: ✅
+
 ## Bloqueos y seguridad
 
 No se implementó ruta física de arranque. `mb_prepare_launch()` continúa devolviendo `MB_LAUNCH_BLOCKED`. No se habilitan `0x25`, `0x30`, Flash, saltos arbitrarios, carga RAM física, ST7789 físico ni USB Host físico. DARK-1, m-bootloader y `[0x00000,0x04000)` permanecen intactos.
