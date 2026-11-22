@@ -51,8 +51,10 @@ class AuditFlashBackupTest(unittest.TestCase):
             raw[0:2] = struct.pack('<H', MOD.crc16(raw[2:]))
             return bytes(raw)
 
+        boot_payload = b'BOOT-CONTAINER!!'
+        flash[0xA0:0xB0] = MOD.enc(boot_payload)
         records = [
-            ('uboot.boot', 0xA0, 16, 0x02, 0),
+            ('uboot.boot', 0xA0, 16, 0x02, MOD.crc16(boot_payload)),
             ('isd_config.ini', 0x3FA0, 96, 0x02, MOD.crc16(config)),
             ('app_dir_head', 0x4000, 0xFFFFFFFF, 0x81, 0),
             ('key_mac', 0xFF000, 0x1000, 0x02, 0),
@@ -65,7 +67,7 @@ class AuditFlashBackupTest(unittest.TestCase):
             make_entry('app_area_head', 0x02000120, 0x8F000, 0x83),
             make_entry('app.bin', 0x120, 0x1000, 0x82, MOD.crc16(b'A' * 0x1000)),
             make_entry('cfg_tool.bin', 0x1120, 0x1000, 0x82, MOD.crc16(b'B' * 0x1000)),
-            make_entry('PRCT', 0x4000, 0x1000, 0x12),
+            make_entry('PRCT', 0x4000, 0x3000, 0x12),
             make_entry('VM', 0x93000, 0x1000, 0x12),
             make_entry('BTIF', 0xE9000, 0x1000, 0x12),
             make_entry('USR', 0xEA000, 0x1000, 0x12),
@@ -81,9 +83,24 @@ class AuditFlashBackupTest(unittest.TestCase):
         self.assertTrue(result['checks']['configuration'])
         self.assertTrue(result['checks']['app_table'])
         self.assertTrue(result['checks']['app_files_crc'])
+        uboot = next(entry for entry in result['boot_table'] if entry['name'] == 'uboot.boot')
+        self.assertTrue(uboot['data_crc_valid'])
+        self.assertEqual(uboot['data_crc_kind'], 'plain_container_crc16')
+        self.assertTrue(any(item['first'] == 'PRCT' or item['second'] == 'PRCT'
+                            for item in result['map_nesting']))
         names = [entry['name'] for entry in result['app_table']]
         self.assertEqual(names[:3], ['app_area_head', 'app.bin', 'cfg_tool.bin'])
         self.assertFalse(result['privacy']['sensitive_values_emitted'])
+
+    def test_nested_and_invalid_overlap_are_distinct(self):
+        report = MOD.ranges_overlap([
+            {'name': 'PRCT', 'category': 'PRCT', 'physical_start': 0x4000, 'physical_end': 0x9000},
+            {'name': 'app.bin', 'category': 'FILE', 'physical_start': 0x4120, 'physical_end': 0x8000},
+            {'name': 'VM', 'category': 'VM', 'physical_start': 0x9000, 'physical_end': 0xA000},
+            {'name': 'bad', 'category': 'FILE', 'physical_start': 0x9800, 'physical_end': 0xB000},
+        ])
+        self.assertEqual(len(report['expected_nesting']), 1)
+        self.assertEqual(len(report['invalid']), 1)
 
     def test_short_or_wrong_backup_never_looks_complete(self):
         result = MOD.audit(b'not-a-device-backup')

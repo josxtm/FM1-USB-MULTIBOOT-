@@ -95,14 +95,33 @@ def public_entry(e, evidence, physical=None):
 
 
 def ranges_overlap(items):
-    ordered = sorted((x['physical_start'], x['physical_end'], x['name']) for x in items
+    ordered = sorted((x['physical_start'], x['physical_end'], x['name'], x.get('category')) for x in items
                      if 'physical_start' in x and x['physical_end'] > x['physical_start'])
-    overlaps = []
+    expected, invalid = [], []
     for previous, current in zip(ordered, ordered[1:]):
         if current[0] < previous[1]:
-            overlaps.append({'first': previous[2], 'second': current[2],
-                             'at': current[0]})
-    return overlaps
+            outer, inner = (previous, current) if previous[0] <= current[0] and previous[1] >= current[1] else (current, previous)
+            record = {'first': previous[2], 'second': current[2], 'at': current[0]}
+            if outer[3] in ('PRCT', 'VM', 'BTIF', 'USR') and inner[3] == 'FILE':
+                record['reason'] = 'descriptor contains application file'
+                expected.append(record)
+            else:
+                invalid.append(record)
+    return {'expected_nesting': expected, 'invalid': invalid}
+
+
+def boot_data_crc(data, parsed):
+    start = parsed['address']
+    stored = data[start:start + parsed['length']]
+    if len(stored) != parsed['length']:
+        return False, 'out_of_range'
+    if parsed['name'] == 'uboot.boot':
+        if len(stored) < 16:
+            return False, 'boot_container_too_short'
+        # BANKCB/boot container header and payload each restart ENC(0xFFFF).
+        plain = enc(stored[:16]) + enc(stored[16:])
+        return crc16(plain) == parsed['data_crc'], 'plain_container_crc16'
+    return crc16(stored) == parsed['data_crc'], 'stored_bytes_crc16'
 
 
 def audit(data, expected_sha=None):
@@ -151,10 +170,10 @@ def audit(data, expected_sha=None):
             public['category'] = 'APP_DIRECTORY' if parsed['name'] == 'app_dir_head' else 'KEY_MAC'
             boot_entries.append(public)
             continue
-        parsed['data_crc_valid'] = False
-        if parsed['length'] and physical[1] <= len(data):
-            parsed['data_crc_valid'] = crc16(data[physical[0]:physical[1]]) == parsed['data_crc']
-        boot_entries.append(public_entry(parsed, parsed['data_crc_valid'], physical))
+        parsed['data_crc_valid'], parsed['data_crc_kind'] = boot_data_crc(data, parsed)
+        public = public_entry(parsed, parsed['data_crc_valid'], physical)
+        public['data_crc_kind'] = parsed['data_crc_kind']
+        boot_entries.append(public)
     result['boot_table'] = boot_entries
     result['checks']['boot_table_entries'] = bool(boot_entries) and all(e['valid'] for e in boot_entries)
 
@@ -196,6 +215,9 @@ def audit(data, expected_sha=None):
                 result['warnings'].append('application table first record invalid')
             break
         is_descriptor = parsed['attribute'] in (0x12, 0x92)
+        if parsed['attribute'] not in (0x12, 0x92, 0x82, 0x83):
+            result['warnings'].append('unknown application record attribute; table walk stopped')
+            break
         if parsed['name'] == 'app_area_head':
             public = public_entry(parsed, True)
             public['category'] = 'APP_AREA'
@@ -221,9 +243,11 @@ def audit(data, expected_sha=None):
     result['app_table'] = app_entries
     result['checks']['app_table'] = bool(app_entries) and all(e['valid'] for e in app_entries)
     result['checks']['app_files_crc'] = all(e['data_crc_valid'] for e in app_entries if e['name'] in ('app.bin', 'cfg_tool.bin'))
-    result['map_overlaps'] = ranges_overlap(app_entries)
+    overlap_report = ranges_overlap(app_entries)
+    result['map_nesting'] = overlap_report['expected_nesting']
+    result['map_overlaps'] = overlap_report['invalid']
     if result['map_overlaps']:
-        result['warnings'].append('application regions overlap')
+        result['warnings'].append('invalid application regions overlap')
     result['regions']['application'] = [BOOT_END, KEY_START]
     result['regions']['unknown_gap_policy'] = 'protected unless explicitly described by a valid table'
     return result
