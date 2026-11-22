@@ -8,7 +8,7 @@ internal object AppSlot {
     const val MAX_BYTES = (END - START).toInt()
     const val BLOCK_BYTES = 512
     const val DIAGNOSTIC = "fm1-usb-diagnostics-ram-experimental.bin"
-    const val SHA256 = "364af5cb7ce487fbbb24fd1c910c14885bacb5c58d9292f59926416a3be3ff4d"
+    const val SHA256 = "7c26b901bb23bab89b892d06e39a154057c0e0509862feb30aa2ad8765171162"
 
     fun contains(address: Long, size: Int): Boolean =
         address >= START && address < END && size > 0 && size.toLong() <= END - address
