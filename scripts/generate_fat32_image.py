@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate a deterministic, read-only FAT32 test image for the host harness."""
-import hashlib, struct, sys
+import argparse
+import hashlib, struct
 from pathlib import Path
 
 SECTOR = 512
@@ -20,9 +21,30 @@ def entry(name, cluster, size, directory=False):
     put32(b, 28, size); return b
 
 def main():
-    out = Path(sys.argv[1] if len(sys.argv) > 1 else 'build/fat32-test.img')
-    count = int(sys.argv[2] if len(sys.argv) > 2 else 3)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output', nargs='?', type=Path, default=Path('build/fat32-test.img'))
+    parser.add_argument('count', type=int, nargs='?', default=3)
+    parser.add_argument('--slotfile-card', type=Path, help='use the same synthetic catalog and files as a 5Y demo')
+    args = parser.parse_args()
+    out, count = args.output, args.count
     if not 0 <= count <= 64: raise SystemExit('count must be 0..64')
+    if args.slotfile_card:
+        from virtual_slotfile import candidate, parse_catalog, read_file
+        folder = args.slotfile_card / 'FM1'
+        index = read_file(folder / 'INDEX.CSV', 24576)
+        sources = []
+        for item in parse_catalog(index).values():
+            data, _ = candidate(args.slotfile_card, item)
+            sources.append((item.id, item.filename, data))
+        count = len(sources)
+    else:
+        index = None
+        sources = []
+        for i in range(count):
+            ident = f'F{i+1:02d}'
+            filename = ident + ('.FWS' if i == 1 else '.BIN')
+            data = (f'FM1-5D-{ident}-' + ('0123456789abcdef' * 40)).encode()[:700 + i]
+            sources.append((ident, filename, data))
     image = bytearray(TOTAL * SECTOR)
     # FAT32 superfloppy BPB. The parser intentionally requires >=65525 clusters.
     b = memoryview(image)[0:SECTOR]; b[0:3] = b'\xeb\x58\x90'; b[3:11] = b'GOOSE5D '
@@ -54,18 +76,17 @@ def main():
     # alloc_chain starts at 2, so root/FW are the first two allocations; patch names below.
     fw_entries = []
     records = []
-    for i in range(count):
-        ident = f'F{i+1:02d}'
-        filename = ident + ('.FWS' if i == 1 else '.BIN')
-        data = (f'FM1-5D-{ident}-' + ('0123456789abcdef' * 40)).encode()[:700 + i]
+    for ident, filename, data in sources:
         cluster, size = alloc_chain(data)
         fw_entries.append(entry(filename, cluster, size))
         records.append((ident, filename, size, hashlib.sha256(data).hexdigest()))
     fw_cluster, _ = dir_chain(fw_entries)
     # Build INDEX after hashes are known, then allocate it.
-    lines = ['FM1CAT|1', 'ID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT']
-    lines += [f'{i}|Firmware {i}|1.0|{fn}|{size}|{sha}|UNVERIFIED' for i, fn, size, sha in records]
-    index = ('\n'.join(lines) + '\n').encode(); index_cluster, index_size = alloc_chain(index)
+    if index is None:
+        lines = ['FM1CAT|1', 'ID|LABEL|VERSION|FILE|SIZE|SHA256|COMPAT']
+        lines += [f'{i}|Firmware {i}|1.0|{fn}|{size}|{sha}|UNVERIFIED' for i, fn, size, sha in records]
+        index = ('\n'.join(lines) + '\n').encode()
+    index_cluster, index_size = alloc_chain(index)
     # Rebuild the two directories with the actual child clusters.
     def write_cluster(cluster, data):
         start = (RESERVED + FATS * FAT_SECTORS + cluster - 2) * SECTOR

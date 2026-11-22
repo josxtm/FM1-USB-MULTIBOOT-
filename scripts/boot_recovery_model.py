@@ -9,6 +9,7 @@ opens hardware and deliberately refuses to report an unproven recovery as
 successful.
 """
 import argparse
+from binascii import crc_hqx
 import json
 
 
@@ -57,6 +58,24 @@ class RecoveryModel:
                 'decision': 'CONDITIONAL_ONLY' if available else 'NO-GO',
                 'reason': ('temporary stage-2 is not a persistent selector and is not '
                            'evidence for USB-C host access')}
+
+    def recovery_selector_v24(self, *, source, menu_open, spi_card=False, stage2=b''):
+        """Model the published 395e6cc SD CARD branch, without entering any device mode."""
+        result = {'source': source, 'physical_verified': False, 'selector_available': False,
+                  'persistent_in_flash': False, 'bootloader': '2.4-395E6CC', 'next': 'NO_PREBOOT_USB_MSC'}
+        if source != 'm-card-spi':
+            return result
+        if not menu_open:
+            result['next'] = 'BOOT_APP_PATH'
+        elif not spi_card:
+            result['next'] = 'RECOVERY_MENU_WITHOUT_SD'
+        elif not (16 <= len(stage2) <= 0x8000 and stage2[-8:-4] == b'STG2' and
+                  stage2[-2:] == b'\0\0' and crc_hqx(stage2[:-8], 0) == int.from_bytes(stage2[-4:-2], 'little')):
+            result['next'] = 'RECOVERY_MENU_STAGE2_INVALID'
+        else:
+            result.update(next='STAGE2_ENVELOPE_ACCEPTED_IN_MODEL', handoff_envelope_ok=True,
+                          selector_invoked=False, load_base='0x01C28000', catalog='FM1/INDEX.CSV')
+        return result
 
 
 def main():
