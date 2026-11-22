@@ -10,7 +10,7 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage msc_bot usb_diag_log fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test launch-policy-test clock-test ram-image-validator-test ram-app-pi32v2-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test launch-policy-test clock-test timer-test ram-image-validator-test ram-minimal-test ram-minimal-pi32v2-object ram-app-pi32v2-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
@@ -174,6 +174,26 @@ launch-policy-test: build/mb_launch_policy_test
 
 clock-test: build/embedded_clock_test
 	./build/embedded_clock_test
+
+timer-test: build/timer_arithmetic_test
+	./build/timer_arithmetic_test
+
+build/timer_arithmetic_test: tests/timer_arithmetic_test.c src/embedded_clock.c src/embedded_clock.h src/mbl.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/timer_arithmetic_test.c src/embedded_clock.c -o $@
+
+ram-minimal-test: build/ram_minimal_test
+	./build/ram_minimal_test
+
+build/ram_minimal_test: tests/ram_minimal_test.c src/ram_minimal.c src/mbl.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/ram_minimal_test.c src/ram_minimal.c -o $@
+
+ram-minimal-pi32v2-object: build/ram_minimal_pi32v2.o
+
+build/ram_minimal_pi32v2.o: src/ram_minimal.c src/mbl.h
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
 
 build/embedded_clock_test: tests/embedded_clock_test.c src/embedded_clock.c src/embedded_clock.h src/mbl.h
 	@mkdir -p build

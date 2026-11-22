@@ -53,6 +53,8 @@ jobs:
           make ram-app-test | tee ram-app-results.txt
           make launch-policy-test | tee launch-policy-results.txt
           make clock-test | tee clock-results.txt
+          make timer-test | tee timer-results.txt
+          make ram-minimal-test | tee ram-minimal-results.txt
           make ram-image-validator-test | tee ram-image-validator-results.txt
           make msc-fat32-test | tee msc-fat32-results.txt
           make msc-fat32-sanitize | tee msc-fat32-sanitizer-results.txt
@@ -72,6 +74,7 @@ jobs:
           make TOOLCHAIN=toolchain core-pi32v2-object core-pi32v2-sim
           make TOOLCHAIN=toolchain fat32-pi32v2-object fat32-pi32v2-sim
           make TOOLCHAIN=toolchain ram-app-pi32v2-object ram-app-pi32v2-image
+          make TOOLCHAIN=toolchain ram-minimal-pi32v2-object
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.o > pi32v2-core-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.elf > pi32v2-core-linked-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_multiboot_pi32v2.o > pi32v2-fat32-core-elf-report.txt

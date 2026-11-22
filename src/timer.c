@@ -23,19 +23,42 @@ int timer_start(void)
     ticks_ms=48000; /* legacy diagnostic default; not used by RAM preflight */
     return 1;
 }
-int timer_set_ticks_per_ms(u32 ticks) { if(!ticks)return 0;ticks_ms=ticks;return 1; }
-int timer_calibrated(void) { return ticks_ms!=0; }
+int timer_set_ticks_per_ms(u32 ticks)
+{
+    if (!ticks) return 0;
+    ticks_ms = ticks;
+    return 1;
+}
+int timer_calibrated(void) { return ticks_ms != 0; }
 u32 timer_ticks_per_ms(void) { return ticks_ms; }
 
 u32 tb_now(void) { return RD(TMR0 + 4); }
-u32 tb_ms_since(u32 start) { return (tb_now() - start) / ticks_ms; }
+
+/* A zero rate is an initialization failure, not a valid divisor.  Returning
+ * zero keeps timeout callers safe while the RAM entry gate reports failure. */
+u32 tb_ms_since(u32 start)
+{
+    if (!ticks_ms) return 0;
+    return (tb_now() - start) / ticks_ms;
+}
 
 void delay_us(u32 us)
 {
-    const u32 start = tb_now();
-    const u32 ticks = us * (ticks_ms / 1000u);
-    for (u32 guard = ticks * 4u + 100u; tb_now() - start < ticks && guard; --guard)
-        ;
+    u32 ticks;
+    u32 guard;
+    u32 start;
+    mb_u64 product;
+
+    if (!ticks_ms || !us) return;
+    /* 64-bit intermediate avoids overflow for long delays.  A timer delta
+     * beyond half the 32-bit domain is ambiguous, so cap rather than wrap. */
+    product = (mb_u64)us * (mb_u64)ticks_ms;
+    product = (product + 999u) / 1000u;
+    ticks = product >= 0x80000000ull ? 0x7fffffffu : (u32)product;
+    if (!ticks) ticks = 1;
+    start = tb_now();
+    guard = ticks > 0x1fffffffu ? 0xffffffffu : ticks * 4u + 100u;
+    while ((u32)(tb_now() - start) < ticks && guard) --guard;
 }
 
 void usb_disable(void)
