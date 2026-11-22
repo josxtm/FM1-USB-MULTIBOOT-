@@ -12,4 +12,6 @@
 | APP1 RAM | ELF/CRC/SHA simulados | Carga/retorno físico | Solo tras autorización de seguridad independiente |
 | Flash | Región protegida documentada | Recuperación completa | Nunca tocar `[0x00000,0x04000)` |
 
+El ELF aislado y el origen de linker `0x01C30000` son evidencia de compilación/enlace únicamente: no prueban una ventana SRAM físicamente válida, reservas del bootloader, ABI ni autorización de carga. No se abrió ningún gate físico nuevo en 5C.2.
+
 No conectar lectores con alimentación improvisada, no inyectar 5 V y no probar comandos Flash/RAM. Los gates físicos requieren intervención explícita del usuario; esta fase no ejecuta ninguno.

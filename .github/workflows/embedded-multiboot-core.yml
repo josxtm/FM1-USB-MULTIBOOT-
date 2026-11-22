@@ -3,7 +3,9 @@ on:
   pull_request:
     paths:
       - 'src/embedded_multiboot.*'
-      - 'tests/embedded_multiboot_test.c'
+      - 'tests/**'
+      - 'scripts/validate_embedded_render.py'
+      - 'docs/goose/**'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
       - 'docs/goose/FASE-5A-RESULTADOS.md'
@@ -21,7 +23,11 @@ jobs:
         run: |
           make core-test | tee core-test-results.txt
           make render-demo | tee render-demo-results.txt
-          test -s build/embedded-coverflow-demo.svg
+          make render-matrix | tee render-matrix-results.txt
+          python3 scripts/validate_embedded_render.py build/embedded-coverflow-demo.svg
+          test -s build/embedded-e2e-trace.txt
+          make memory-report
+          make core-sanitize | tee sanitizer-results.txt
           make test | tee usb-test-results.txt
       - name: Compile core with strict host warnings
         run: cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
@@ -41,7 +47,11 @@ jobs:
           path: |
             core-test-results.txt
             render-demo-results.txt
+            render-matrix-results.txt
             build/embedded-coverflow-demo.svg
+            build/embedded-e2e-trace.txt
+            build/memory-budget.txt
+            sanitizer-results.txt
             usb-test-results.txt
             build/embedded_multiboot_pi32v2.o
             build/embedded_multiboot_pi32v2.elf
