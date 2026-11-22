@@ -55,6 +55,7 @@ jobs:
           make lcd-renderer-test | tee lcd-renderer-results.txt
           make ram-app-test | tee ram-app-results.txt
           make usb-storage-test | tee usb-storage-results.txt
+          make firmware-tools-test | tee firmware-tools-results.txt
           make launch-policy-test | tee launch-policy-results.txt
           make clock-test | tee clock-results.txt
           make timer-test | tee timer-results.txt
@@ -110,6 +111,7 @@ jobs:
             lcd-renderer-results.txt
             ram-app-results.txt
             usb-storage-results.txt
+            firmware-tools-results.txt
             launch-policy-results.txt
             clock-results.txt
             ram-image-validator-results.txt

@@ -10,7 +10,7 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage msc_bot usb_diag_log fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test usb-storage-test launch-policy-test clock-test timer-test ram-image-validator-test ram-minimal-test ram-minimal-pi32v2-object ram-minimal-image ram-app-pi32v2-image ram-app-pi32v2-full-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test usb-storage-test launch-policy-test firmware-tools-test clock-test timer-test ram-image-validator-test ram-minimal-test ram-minimal-pi32v2-object ram-minimal-image ram-app-pi32v2-image ram-app-pi32v2-full-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
@@ -205,6 +205,9 @@ usb-storage-test: build/embedded_usb_storage_test
 build/embedded_usb_storage_test: tests/embedded_usb_storage_test.c src/embedded_usb_msc_storage.c src/embedded_fat32_storage.c src/fat32.c src/embedded_multiboot.c
 	@mkdir -p build
 	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc $^ -o $@
+
+firmware-tools-test:
+	python3 -m unittest tests/firmware_tools_test.py
 
 launch-policy-test: build/mb_launch_policy_test
 	./build/mb_launch_policy_test
