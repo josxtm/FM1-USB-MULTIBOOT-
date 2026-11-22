@@ -25,9 +25,14 @@ static enum mb_io_result demo_read(void*ctx,const char*path,uint32_t off,uint8_t
  else if(eq(path,"FM1/FW/MELODEE.BIN")){data=melodee;size=sizeof melodee-1;}
  else if(eq(path,"FM1/FW/TESSERA.BIN")){data=tessera;size=sizeof tessera-1;}
  else return MB_IO_MISSING;
- if(off>size)return MB_IO_ERROR;if(off==size)return MB_IO_EOF;
+ if(off>size)return MB_IO_ERROR;
+ if(off==size)return MB_IO_EOF;
  if(cap>size-off)cap=(uint32_t)(size-off);
- for(uint32_t i=0;i<cap;i++)out[i]=data[off+i];*got=cap;return MB_IO_OK;
+ for(uint32_t i=0;i<cap;i++) {
+  out[i]=data[off+i];
+ }
+ *got=cap;
+ return MB_IO_OK;
 }
 struct mb_storage mb_demo_storage_hal(struct mb_demo_storage*s){return (struct mb_storage){s,demo_read};}
 void mb_demo_catalog_init(struct mb_core*c,struct mb_demo_storage*s,struct mb_renderer r)
