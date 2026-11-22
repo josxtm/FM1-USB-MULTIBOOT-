@@ -39,3 +39,4 @@ jobs:
             build/build-validation.txt
             build/SHA256SUMS.txt
           if-no-files-found: error
+          if: always()
