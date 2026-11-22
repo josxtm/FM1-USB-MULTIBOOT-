@@ -10,12 +10,39 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance core-pi32v2-object core-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
 
 core-pi32v2-sim: build/embedded_multiboot_pi32v2.elf
+
+fat32-pi32v2-object: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o
+
+fat32-pi32v2-sim: build/embedded_fat32_pi32v2.elf
+
+build/embedded_fat32_multiboot_pi32v2.o: src/embedded_multiboot.c src/embedded_multiboot.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_fat32_pi32v2.o: src/embedded_fat32_storage.c src/embedded_fat32_storage.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/fat32_pi32v2.o: src/fat32.c src/storage.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_fat32_pi32v2_sim.o: src/embedded_fat32_pi32v2_sim.c src/embedded_fat32_storage.h $(wildcard src/*.h)
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_fat32_pi32v2_runtime.o: src/runtime.c src/mbl.h
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/embedded_fat32_pi32v2.elf: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o src/embedded_multiboot.ld
+	$(LD) -nostdlib -Map build/embedded_fat32_pi32v2.map -T src/embedded_multiboot.ld -e embedded_fat32_sim_entry -o $@ $^
 
 build/embedded_multiboot_pi32v2.o: src/embedded_multiboot.c src/embedded_multiboot.h $(wildcard src/*.h)
 	@mkdir -p build
@@ -47,11 +74,16 @@ fat32-image:
 fat32-integration: build/fat32_multiboot_integration
 	@for count in 0 1 2 3 64; do \
 		python3 scripts/generate_fat32_image.py build/fat32-test.img $$count >/dev/null; \
-		./build/fat32_multiboot_integration build/fat32-test.img '' $$count; \
+		./build/fat32_multiboot_integration build/fat32-test.img '' $$count build/fat32-coverflow-$$count.svg; \
 	done
 	python3 scripts/generate_fat32_image.py build/fat32-test.img 3 >/dev/null
 	./build/fat32_multiboot_integration build/fat32-test.img disconnect
 	./build/fat32_multiboot_integration build/fat32-test.img timeout
+	./build/fat32_multiboot_integration build/fat32-test.img bad-bpb
+	./build/fat32_multiboot_integration build/fat32-test.img bad-volume
+	./build/fat32_multiboot_integration build/fat32-test.img cycle
+	./build/fat32_multiboot_integration build/fat32-test.img truncated
+	./build/fat32_multiboot_integration build/fat32-test.img hash
 
 build/fat32_multiboot_integration: tests/fat32_multiboot_integration.c src/embedded_fat32_storage.c src/embedded_fat32_storage.h src/embedded_multiboot.c src/embedded_multiboot.h src/fat32.c src/storage.c src/storage.h
 	@mkdir -p build

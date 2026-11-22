@@ -15,6 +15,10 @@ La arquitectura candidata de software es **C como objetivo de investigación**, 
 
 El bootloader observado es `2.4-395e6cc`; la región `[0x00000,0x04000)` se conserva como protegida. El ELF enlazado en `0x01C30000` es una hipótesis de linker. El core no ejecuta código cargado, no escribe Flash y no activa USB Host. Se desconoce si DARK-1 es reubicable, si depende de Flash/XIP, qué periféricos inicializa y cómo retorna.
 
+## Estado del cargador residente
+
+El diseño C sigue siendo el candidato principal de investigación y requeriría sustituir sólo el área de aplicación, preservar el m-bootloader, iniciar pantalla/controles, montar almacenamiento, validar la imagen y disponer de rollback. La memoria de software medida del core y FAT32 no determina si el cargador cabe en el área real ni si una imagen DARK-1 es reubicable. La recuperación sigue dependiendo de un método oficial externo; no hay prueba de restauración automática.
+
 ## Requisitos del primer experimento físico futuro
 
 Antes de cualquier sustitución: documentación independiente del mapa Flash, copia oficial reproducible de DARK-1, método oficial de restauración probado fuera del dispositivo, ABI/entry point, reservas SRAM/stack, watchdog, alimentación y procedimiento de interrupción. Después: revisión de seguridad específica y autorización expresa. Esta fase sólo aporta simulación, no una prueba de arranque.

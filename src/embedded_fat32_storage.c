@@ -19,8 +19,9 @@ static enum mb_io_result read_file(void *context, const char *path, uint32_t off
     struct mb_fat32_storage *storage = context;
     struct fat_file file;
     enum diag_result r;
+    if (!got) return MB_IO_ERROR;
     *got = 0;
-    if (!storage || !storage->fs || !path || !out || !capacity) return MB_IO_ERROR;
+    if (!storage || !storage->fs || !path || !capacity || !out) return MB_IO_ERROR;
     if (!same_path(path, "FM1/INDEX.CSV")) {
         const char *prefix = "FM1/FW/";
         unsigned i = 0;
@@ -30,7 +31,7 @@ static enum mb_io_result read_file(void *context, const char *path, uint32_t off
     } else {
         r = fat32_open_fm1_index(storage->fs, &file);
     }
-    if (r != DIAG_OK) return r == DIAG_END ? MB_IO_EOF : translate(r);
+    if (r != DIAG_OK) return r == DIAG_END ? MB_IO_MISSING : translate(r);
     if (offset > file.size) return MB_IO_ERROR;
     if (offset == file.size) return MB_IO_EOF;
     uint32_t available = file.size - offset;

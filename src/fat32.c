@@ -21,6 +21,7 @@ static int fat_boot(const u8 *b)
 
 enum diag_result fat32_mount(struct fat32 *fs, struct block_device disk)
 {
+    if (!fs) return DIAG_RANGE;
     fs->disk = disk;
     fs->sectors_per_cluster = 0;
     if (disk.count == 0 || !disk.read) return DIAG_RANGE;
@@ -230,6 +231,7 @@ static enum diag_result open_fm1_child(struct fat32 *fs, const char *short_name,
 
 enum diag_result fat32_open_fm1_index(struct fat32 *fs, struct fat_file *index)
 {
+    if (!fs || !index) return DIAG_RANGE;
     struct fat_file folder;
     enum diag_result r = find_short_entry(fs, fs->root, "FM1        ", 1, &folder);
     if (r != DIAG_OK) return r;
@@ -240,12 +242,14 @@ enum diag_result fat32_open_fm1_index(struct fat32 *fs, struct fat_file *index)
 
 enum diag_result fat32_open_fm1_file(struct fat32 *fs, const char *short_name, struct fat_file *file)
 {
+    if (!fs || !short_name || !file) return DIAG_RANGE;
     return open_fm1_child(fs, short_name, 0, file);
 }
 
 enum diag_result fat32_read_at(struct fat32 *fs, const struct fat_file *file, u32 offset,
                                u8 *output, u32 capacity, u32 *written)
 {
+    if (!fs || !file || !written || (capacity && !output)) return DIAG_RANGE;
     *written = 0;
     if (offset > file->size || capacity > file->size - offset) return DIAG_RANGE;
     if (!capacity) return DIAG_OK;
