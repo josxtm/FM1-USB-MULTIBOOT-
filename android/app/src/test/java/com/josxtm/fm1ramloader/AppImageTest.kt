@@ -9,12 +9,12 @@ internal fun diagnostic(): ByteArray = File(checkNotNull(System.getProperty("fm1
 class AppImageTest {
     @Test fun approvesThePhaseOneImage() {
         val result = ApprovedApp.inspect(diagnostic())
-        assertEquals(9788, result.size)
+        assertEquals(9796, result.size)
         assertEquals(1, result.board)
         assertEquals(AppSlot.SHA256, result.sha256)
         assertTrue(result.checks.all { it.second })
         assertNotNull(result.approved)
-        assertEquals(0x17bf, crc16(diagnostic(), result.size - 8))
+        assertEquals(0x828d, crc16(diagnostic(), result.size - 8))
     }
 
     @Test fun rejectsBadTrailerBoardAndVersion() {
