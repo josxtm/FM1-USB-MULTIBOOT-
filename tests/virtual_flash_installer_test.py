@@ -21,11 +21,13 @@ def app1(payload=b'candidate-pi32v2'):
 
 class VirtualInstallerTest(unittest.TestCase):
     def policy(self):
-        # Deliberately synthetic test profile: unknown regions on both sides
-        # remain protected; this is not the physical FM-1 map.
-        return MOD.FlashRegionPolicy([(0x8000, 0xF0000)])
+        return MOD.FlashRegionPolicy()
 
-    def test_default_policy_rejects_erase_without_documented_region(self):
+    def raw_flash(self, payload=b'candidate-flash'):
+        payload += b'\0' * ((-len(payload)) % MOD.SECTOR)
+        return b'\xff' * MOD.BOOTLOADER_END + payload
+
+    def test_app1_is_not_a_flash_image(self):
         self.assertEqual(MOD.VirtualInstaller().install(app1(), confirmed=True)['result'], 'REJECTED')
 
     def test_rejects_opaque_bin_and_bad_crc(self):
@@ -35,43 +37,44 @@ class VirtualInstallerTest(unittest.TestCase):
         self.assertEqual(installer.install(bytes(bad)).get('result'), 'REJECTED')
 
     def test_confirmation_commit_reboot_and_already_installed(self):
-        image = app1(b'new firmware')
+        image = self.raw_flash(b'new firmware')
         installer = MOD.VirtualInstaller(policy=self.policy())
-        self.assertEqual(installer.install(image)['result'], 'CONFIRMATION_REQUIRED')
-        result = installer.install(image, hashlib.sha256(image).hexdigest(), True)
+        self.assertEqual(installer.install(image, filename='flash.bin')['result'], 'CONFIRMATION_REQUIRED')
+        result = installer.install(image, hashlib.sha256(image).hexdigest(), True, filename='flash.bin')
         self.assertEqual(result['result'], 'COMMITTED')
         self.assertTrue(result['protected_unchanged'])
         self.assertFalse(result['reboot']['selector_available'])
-        self.assertEqual(installer.install(image, confirmed=True)['result'], 'ALREADY_INSTALLED')
+        self.assertEqual(installer.install(image, confirmed=True, filename='flash.bin')['result'], 'ALREADY_INSTALLED')
 
     def test_power_cuts_recover_and_protect_boot_region(self):
-        image = app1(b'power cut')
+        image = self.raw_flash(b'power cut')
         for fault in ('cut-before-commit', 'cut-after-erase', 'cut-after-program',
                       'corrupt-after-program'):
             installer = MOD.VirtualInstaller(policy=self.policy())
             before = bytes(installer.flash[:MOD.PROTECTED_END])
-            result = installer.install(image, confirmed=True, fault=fault)
+            result = installer.install(image, confirmed=True, fault=fault, filename='flash.bin')
             self.assertEqual(result['result'], 'RECOVERED')
             self.assertTrue(result['protected_unchanged'])
             self.assertEqual(bytes(installer.flash[:MOD.PROTECTED_END]), before)
 
     def test_recovery_unavailable_is_not_called_rollback(self):
         result = MOD.VirtualInstaller(recovery_available=False, policy=self.policy()).install(
-            app1(b'no rollback'), confirmed=True, fault='cut-after-program')
+            self.raw_flash(b'no rollback'), confirmed=True, fault='cut-after-program', filename='flash.bin')
         self.assertEqual(result['result'], 'RECOVERY_REQUIRED')
         self.assertEqual(result['state'], 'RECOVERY_REQUIRED')
         self.assertTrue(result['protected_unchanged'])
 
     def test_factory_and_configuration_regions_survive_commit(self):
         flash = bytearray(b'\xff' * MOD.FLASH_SIZE)
-        flash[0x4000:0x8000] = (b'FACTORY' * ((0x4000 + 6) // 7))[:0x4000]
-        flash[0xF0000:0x100000] = (b'CONFIG' * ((0x10000 + 5) // 6))[:0x10000]
+        flash[0x3FA0:0x4000] = b'FACTORY-CONFIG-CHIP-KEY'.ljust(0x60, b'X')
+        flash[0xF0000:0x100000] = (b'CALIBRATION' * ((0x10000 + 10) // 11))[:0x10000]
         installer = MOD.VirtualInstaller(flash=flash, policy=self.policy())
-        factory = bytes(flash[0x4000:0x8000])
+        factory = bytes(flash[0x3FA0:0x4000])
         config = bytes(flash[0xF0000:0x100000])
-        result = installer.install(app1(b'preserve regions'), confirmed=True)
+        image = self.raw_flash(b'preserve regions')
+        result = installer.install(image, confirmed=True, filename='flash.bin')
         self.assertEqual(result['result'], 'COMMITTED')
-        self.assertEqual(bytes(installer.flash[0x4000:0x8000]), factory)
+        self.assertEqual(bytes(installer.flash[0x3FA0:0x4000]), factory)
         self.assertEqual(bytes(installer.flash[0xF0000:0x100000]), config)
         self.assertTrue(result['protected_unchanged'])
 

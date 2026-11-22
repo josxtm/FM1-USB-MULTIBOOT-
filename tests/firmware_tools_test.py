@@ -10,7 +10,7 @@ class FirmwareTools(unittest.TestCase):
             f.write(b'opaque'); f.flush()
             self.assertEqual(self.invoke('inspect_firmware.py', f.name)['classification'], 'INSPECTION_ONLY')
     def test_opaque_container_names_are_not_executable(self):
-        for suffix, expected in (('.fwsc', 'FWSC-OPAQUE'), ('flash.bin', 'FLASH.BIN-OPAQUE'),
+        for suffix, expected in (('.fwsc', 'FWSC'), ('flash.bin', 'FLASH.BIN'),
                                  ('ota.bin', 'OTA.BIN-OPAQUE')):
             with tempfile.NamedTemporaryFile(suffix=suffix) as f:
                 f.write(b'opaque-container'); f.flush()

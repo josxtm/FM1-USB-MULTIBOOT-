@@ -24,6 +24,7 @@ on:
       - 'scripts/validate_ram_image.py'
       - 'scripts/decode_usb_diag_log.py'
       - 'scripts/virtual_flash_installer.py'
+      - 'scripts/boot_recovery_model.py'
       - 'docs/goose/**'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
@@ -62,6 +63,7 @@ jobs:
           make list-renderer-test | tee list-renderer-results.txt
           make firmware-tools-test | tee firmware-tools-results.txt
           make virtual-installer-test | tee virtual-installer-results.txt
+          make boot-recovery-test | tee boot-recovery-results.txt
           make launch-policy-test | tee launch-policy-results.txt
           make clock-test | tee clock-results.txt
           make timer-test | tee timer-results.txt
@@ -122,6 +124,7 @@ jobs:
             build/lcd-selector-list.ppm
             firmware-tools-results.txt
             virtual-installer-results.txt
+            boot-recovery-results.txt
             launch-policy-results.txt
             clock-results.txt
             ram-image-validator-results.txt

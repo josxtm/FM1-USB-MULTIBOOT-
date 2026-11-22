@@ -13,9 +13,11 @@ import struct
 
 FLASH_SIZE = 0x100000
 BOOTLOADER_END = 0x4000
+KEY_MAC_START = 0xFF000
 # Compatibility name used by the previous virtual recovery tests.
 PROTECTED_END = BOOTLOADER_END
 APP_MAX = 0x4FD80
+SECTOR = 0x1000
 
 
 def crc16(data):
@@ -54,14 +56,29 @@ def validate_app1(data):
     return report
 
 
+def validate_flash_bin(data):
+    """Validate the documented raw FM-1 flash.bin envelope only.
+
+    The boot bytes present in a raw package are deliberately not written by
+    the simulator.  Only the app-area prefix is a candidate destination.
+    """
+    report = {'format': 'FLASH.BIN', 'valid': False, 'reasons': []}
+    if len(data) <= BOOTLOADER_END or len(data) > KEY_MAC_START or len(data) % SECTOR:
+        report['reasons'].append('flash.bin must be sector-aligned, >0x4000 and <=0xFF000')
+    report['target'] = [BOOTLOADER_END, len(data)]
+    report['sha256'] = sha(data)
+    report['valid'] = not report['reasons']
+    return report
+
+
 class FlashRegionPolicy:
     """Explicit erase authorization; omitted regions remain protected.
 
-    `authorized_ranges` is intentionally empty by default.  The convenient
-    test profile is not a claim about the physical FM-1 map; callers must
-    provide evidence for any real range before this policy could be used.
+    The default models the documented app span [0x4000,0xFF000); callers
+    may narrow it further.  It is not permission to write a real device: the
+    simulator has no physical I/O and does not parse proprietary region data.
     """
-    def __init__(self, authorized_ranges=()):
+    def __init__(self, authorized_ranges=((BOOTLOADER_END, KEY_MAC_START),)):
         self.authorized = self._normalise(authorized_ranges)
         for start, end in self.authorized:
             if start < BOOTLOADER_END:
@@ -99,7 +116,8 @@ class FlashRegionPolicy:
 
     def description(self):
         return {'authorized': list(self.authorized), 'protected': list(self.protected),
-                'bootloader': [0, BOOTLOADER_END], 'evidence': 'caller-supplied; default none'}
+                'bootloader': [0, BOOTLOADER_END], 'key_mac': [KEY_MAC_START, FLASH_SIZE],
+                'evidence': 'm-flasher/m-bootloader public format model; unit validation pending'}
 
 
 class VirtualInstaller:
@@ -122,14 +140,24 @@ class VirtualInstaller:
                 'selector_available': False,
                 'recovery_entry': 'm-bootloader/reinstall or external recovery'}
 
-    def install(self, image, expected_sha256=None, confirmed=False, fault=None):
+    def install(self, image, expected_sha256=None, confirmed=False, fault=None,
+                filename='image.bin'):
         before = bytes(self.flash)
-        report = validate_app1(image)
+        if filename.lower().endswith('flash.bin'):
+            report = validate_flash_bin(image)
+            payload = image[BOOTLOADER_END:]
+            target = self.policy.target(len(payload)) if report['valid'] else None
+        else:
+            report = validate_app1(image)
+            if report['valid']:
+                report['valid'] = False
+                report['reasons'].append('APP1 is experimental RAM format, not a Flash image')
+            payload = b''
+            target = None
         result = {'state': 'REJECTED', 'result': 'REJECTED',
                   'protected_unchanged': True, 'operations': [],
                   'regions': self.policy.description()}
         result['validation'] = report
-        target = self.policy.target(len(image)) if report['valid'] else None
         if target is None and report['valid']:
             report['reasons'].append('no documented authorized erase region')
         if not report['valid'] or target is None:
@@ -140,7 +168,7 @@ class VirtualInstaller:
             return result
         result['target'] = list(target)
         current = bytes(self.flash[target[0]:target[1]])
-        if current == image:
+        if current == payload:
             result.update(state='ALREADY_INSTALLED', result='ALREADY_INSTALLED', sha256=image_sha)
             return result
         if not confirmed:
@@ -156,13 +184,13 @@ class VirtualInstaller:
         result['operations'].append('ERASED_AUTHORIZED_RANGE_ONLY')
         if fault == 'cut-after-erase':
             return self._recover(result, backup, target, before)
-        self.flash[target[0]:target[1]] = image
+        self.flash[target[0]:target[1]] = payload
         result['operations'].append('PROGRAMMED')
         if fault == 'cut-after-program':
             return self._recover(result, backup, target, before)
         if fault == 'corrupt-after-program':
             self.flash[target[0]] ^= 1
-        verified = bytes(self.flash[target[0]:target[1]]) == image
+        verified = bytes(self.flash[target[0]:target[1]]) == payload
         result['operations'].append('VERIFIED' if verified else 'VERIFY_FAILED')
         if not verified:
             return self._recover(result, backup, target, before)
@@ -195,7 +223,7 @@ def main():
         image = stream.read()
     policy = FlashRegionPolicy([tuple(args.authorize_range)] if args.authorize_range else ())
     print(json.dumps(VirtualInstaller(policy=policy).install(
-        image, args.sha256, args.confirm, args.fault), sort_keys=True))
+        image, args.sha256, args.confirm, args.fault, args.image), sort_keys=True))
 
 
 if __name__ == '__main__':

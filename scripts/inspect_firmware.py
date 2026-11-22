@@ -33,10 +33,16 @@ def inspect(path):
         out['requirements'] = ['load map, ABI, vectors, SRAM and entry validation']
         out['classification'] = 'INSPECTION_ONLY'
     elif path.lower().endswith('.fwsc'):
-        out['format'] = 'FWSC-OPAQUE'; out['requirements'] = ['public FWSC container, signature, target and recovery specification']
+        out['format'] = 'FWSC'
+        out['container_structure'] = 'UFW-with-identity-and-encrypted-file-list'
+        out['structural_valid'] = len(data) >= 0x1000 and len(data) % 0x30 == 0
+        out['requirements'] = ['decrypt/validate header and file-list CRC', 'chip-key and unit identity', 'region and recovery policy']
         out['classification'] = 'INSPECTION_ONLY'
     elif path.lower().endswith('flash.bin'):
-        out['format'] = 'FLASH.BIN-OPAQUE'; out['requirements'] = ['M-Flasher layout, target map, entry and recovery specification']
+        out['format'] = 'FLASH.BIN'
+        out['structural_valid'] = len(data) > 0x4000 and len(data) <= 0xff000 and len(data) % 0x1000 == 0
+        out['integrity'] = out['structural_valid']
+        out['requirements'] = ['unit-specific chip key', 'app table and VM/BTIF/USR region validation', 'boot/config preservation']
         out['classification'] = 'INSPECTION_ONLY'
     elif path.lower().endswith('ota.bin'):
         out['format'] = 'OTA.BIN-OPAQUE'; out['requirements'] = ['OTA manifest, signature, target map and recovery specification']
