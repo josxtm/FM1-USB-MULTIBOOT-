@@ -228,6 +228,17 @@ firmware-tools-test:
 virtual-installer-test:
 	python3 -m unittest tests/virtual_flash_installer_test.py
 
+.PHONY: virtual-slotfile-test virtual-slotfile-demo
+virtual-slotfile-test:
+	python3 -m unittest -v tests/virtual_slotfile_test.py
+
+virtual-slotfile-demo: build/msc_fat32_integration build/fat32_multiboot_integration
+	@set -e; work=$$(mktemp -d build/slotfile.XXXXXX); trap 'rm -rf "$$work"' EXIT; \
+		python3 scripts/virtual_slotfile.py demo "$$work/case" > build/virtual-slotfile-trace.json; \
+		python3 scripts/generate_fat32_image.py "$$work/card.img" --slotfile-card "$$work/case/card"; \
+		./build/msc_fat32_integration "$$work/card.img" 2; \
+		./build/fat32_multiboot_integration "$$work/card.img" '' 2
+
 boot-recovery-test:
 	python3 -m unittest tests/boot_recovery_model_test.py
 
