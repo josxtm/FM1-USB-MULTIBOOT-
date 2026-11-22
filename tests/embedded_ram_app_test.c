@@ -33,6 +33,14 @@ static enum mb_io_result ext_read(void *p,const char *path,uint32_t off,uint8_t 
     *got=cap;
     return MB_IO_OK;
 }
+struct host { u32 tick; unsigned step; int lcd; };
+static int host_timer(void *p){(void)p;return 1;}
+static int host_calibrated(void *p){(void)p;return 1;}
+static u32 host_rate(void *p){(void)p;return 48000;}
+static u32 host_now(void *p){struct host*h=p;u32 t=h->tick;h->tick+=960000u;return t;}
+static int host_lcd(void *p,u32 board){struct host*h=p;(void)board;h->lcd++;return 1;}
+static u32 host_keys(void *p){struct host*h=p;u32 r=0;if(h->step<3)r=MB_KEY_NEXT;else if(h->step<6)r=MB_KEY_PLAY;else if(h->step<9)r=MB_KEY_REC;++h->step;return r;}
+static void host_delay(void *p,u32 ms){(void)p;(void)ms;}
 static unsigned frames, cards, labels;
 static void begin(void *p){(void)p;frames++;}
 static void card(void *p,const struct mb_entry *e,int side,int focus){(void)p;(void)e;(void)side;(void)focus;cards++;}
@@ -58,6 +66,16 @@ int main(void)
         if(mb_verify_selected(&c)!=MB_IO_OK||c.state!=MB_READY_FOR_SIMULATION)return 10;
         if(mb_ram_app_init(&c,MB_APP_USB_MSC,(struct mb_storage){0,0},&s,r)||c.state!=MB_NO_STORAGE)return 11;
     }
-    puts("RAM-only Cover Flow app: demo/USB backends, navigation, inspection, cancel, verify, blocked launch: OK");
+    {
+        struct host h={0,0,0};
+        struct mb_ram_app_hooks hooks={&h,host_timer,host_calibrated,host_rate,host_now,host_lcd,host_keys,host_delay,r,MB_APP_DEMO,{0,0},10};
+        mb_ram_app_set_host_hooks(&hooks);
+        embedded_ram_app_entry(0x01c30000u);
+        if(mb_ram_app_last_result()!=0||h.lcd!=1||mb_ram_app_frame_count()<2||mb_ram_app_last_state()!=MB_BROWSE)return 12;
+        h=(struct host){0,0,0};hooks.context=&h;hooks.backend=MB_APP_USB_MSC;hooks.external_storage=(struct mb_storage){0,ext_read};hooks.max_steps=1;
+        mb_ram_app_set_host_hooks(&hooks);embedded_ram_app_entry(0x01c30000u);
+        if(mb_ram_app_last_result()!=0||mb_ram_app_last_state()!=MB_BROWSE)return 13;
+    }
+    puts("RAM-only Cover Flow app: full startup DEMO/USB, buttons, inspection, cancel, verify, blocked launch: OK");
     return 0;
 }

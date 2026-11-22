@@ -27,7 +27,7 @@ LCD scanline            480 bytes
 render framebuffer        0 bytes
 ```
 
-El `mb_core` contiene el catálogo completo y el buffer estático de carga de catálogo de 24577 bytes pertenece al core/código de carga. El renderer sólo conserva una scanline RGB565.
+El `mb_core` contiene el catálogo completo y el buffer estático de carga de catálogo de 24577 bytes pertenece al core/código de carga. El renderer sólo conserva una scanline RGB565. En 5N.1 el `mb_core`, renderer, adaptador y reloj de la aplicación se almacenan como estado estático controlado, evitando colocar aproximadamente 10 KB de core en el stack de `embedded_ram_app_entry`.
 
 ## Stack
 
