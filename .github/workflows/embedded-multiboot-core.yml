@@ -119,6 +119,9 @@ jobs:
         with:
           name: fm1-stg2-selector-experimental-hardware-unverified
           path: |
+            LICENSE
+            NOTICE.md
+            docs/goose/FASE-5Z-RESULTADOS.md
             build/stg2/fm1-multiboot-selector-stg2.bin
             build/stg2/fm1-multiboot-selector-stg2.elf
             build/stg2/fm1-multiboot-selector-stg2.map
