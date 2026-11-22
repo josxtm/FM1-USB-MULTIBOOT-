@@ -1,0 +1,179 @@
+name: Embedded multiboot core
+on:
+  pull_request:
+    paths:
+      - 'src/embedded_multiboot.*'
+      - 'tests/**'
+      - 'scripts/validate_embedded_render.py'
+      - 'scripts/generate_fat32_image.py'
+      - 'src/fat32.c'
+      - 'src/storage.h'
+      - 'src/embedded_fat32_storage.*'
+      - 'src/embedded_usb_msc_storage.*'
+      - 'src/storage.c'
+      - 'src/husb.*'
+      - 'src/msc_bot.*'
+      - 'src/embedded_lcd_renderer.*'
+      - 'src/embedded_lcd_list_renderer.*'
+      - 'src/embedded_presets.*'
+      - 'src/embedded_keys.*'
+      - 'src/embedded_ram_app.*'
+      - 'src/mb_launch_policy.*'
+      - 'src/multiboot_ram_start.S'
+      - 'src/multiboot_ram.ld'
+      - 'scripts/validate_ram_image.py'
+      - 'scripts/decode_usb_diag_log.py'
+      - 'scripts/virtual_flash_installer.py'
+      - 'scripts/boot_recovery_model.py'
+      - 'scripts/audit_flash_backup.py'
+      - 'docs/goose/**'
+      - 'Makefile'
+      - '.github/workflows/embedded-multiboot-core.yml'
+      - 'docs/goose/FASE-5A-RESULTADOS.md'
+      - 'docs/goose/EMBEDDED-MULTIBOOT-CORE.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run portable C99 core tests
+        run: |
+          set -o pipefail
+          make core-test | tee core-test-results.txt
+          make render-demo | tee render-demo-results.txt
+          make render-matrix | tee render-matrix-results.txt
+          python3 scripts/validate_embedded_render.py build/embedded-coverflow-demo.svg
+          test -s build/embedded-e2e-trace.txt
+          make memory-report
+          make core-sanitize | tee sanitizer-results.txt
+          make fm1cat-conformance | tee fm1cat-conformance-results.txt
+          make fat32-integration | tee fat32-integration-results.txt
+          for svg in build/fat32-coverflow-*.svg; do python3 scripts/validate_embedded_render.py "$svg"; done
+          make fat32-sanitize | tee fat32-sanitizer-results.txt
+          make test | tee usb-test-results.txt
+          make msc-bot-test | tee msc-bot-results.txt
+          make usb-diag-log-test | tee usb-diag-log-results.txt
+          make lcd-renderer-test | tee lcd-renderer-results.txt
+          make ram-app-test | tee ram-app-results.txt
+          make usb-storage-test | tee usb-storage-results.txt
+          make presets-test | tee presets-results.txt
+          make list-renderer-test | tee list-renderer-results.txt
+          make firmware-tools-test | tee firmware-tools-results.txt
+          make virtual-installer-test | tee virtual-installer-results.txt
+          make boot-recovery-test | tee boot-recovery-results.txt
+          make flash-backup-audit-test | tee flash-backup-audit-results.txt
+          make launch-policy-test | tee launch-policy-results.txt
+          make clock-test | tee clock-results.txt
+          make timer-test | tee timer-results.txt
+          make ram-minimal-test | tee ram-minimal-results.txt
+          make ram-image-validator-test | tee ram-image-validator-results.txt
+          make msc-fat32-test | tee msc-fat32-results.txt
+          make msc-fat32-sanitize | tee msc-fat32-sanitizer-results.txt
+      - name: Compile core with strict host warnings
+        run: |
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_multiboot.c -o embedded_multiboot.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/msc_bot.c -o msc_bot.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/usb_diag_log.c -o usb_diag_log.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_lcd_renderer.c -o embedded_lcd_renderer.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_keys.c -o embedded_keys.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_ram_app.c -o embedded_ram_app.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/mb_launch_policy.c -o mb_launch_policy.o
+          cc -std=c99 -pedantic -Wall -Wextra -Werror -Isrc -c src/embedded_clock.c -o embedded_clock.o
+      - name: Compile independent pi32v2 object
+        run: |
+          scripts/get-toolchain.sh toolchain
+          make TOOLCHAIN=toolchain core-pi32v2-object core-pi32v2-sim
+          make TOOLCHAIN=toolchain fat32-pi32v2-object fat32-pi32v2-sim
+          make TOOLCHAIN=toolchain ram-app-pi32v2-object ram-app-pi32v2-image
+          make TOOLCHAIN=toolchain ram-app-pi32v2-full-image
+          make TOOLCHAIN=toolchain ram-minimal-pi32v2-object ram-minimal-image
+          python3 scripts/ram_loader_dry_run.py build/ram_minimal.bin
+          python3 scripts/ram_loader_dry_run.py build/ram_minimal.bin --cancel-after 1
+          toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.o > pi32v2-core-elf-report.txt
+          toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.elf > pi32v2-core-linked-elf-report.txt
+          toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_multiboot_pi32v2.o > pi32v2-fat32-core-elf-report.txt
+          toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_pi32v2.elf > pi32v2-fat32-linked-elf-report.txt
+      - name: Verify physical launch paths remain absent
+        run: |
+          ! grep -nE 'lcd_init|husb_init|usb_enumerate|disk_read|0x25|0x30' src/embedded_multiboot.c
+          grep -n 'MB_LAUNCH_BLOCKED' src/embedded_multiboot.c
+      - uses: actions/upload-artifact@v4
+        with:
+          name: embedded-multiboot-core-results
+          path: |
+            core-test-results.txt
+            render-demo-results.txt
+            render-matrix-results.txt
+            build/embedded-coverflow-demo.svg
+            build/embedded-e2e-trace.txt
+            build/memory-budget.txt
+            sanitizer-results.txt
+            fm1cat-conformance-results.txt
+            fat32-integration-results.txt
+            fat32-sanitizer-results.txt
+            usb-test-results.txt
+            msc-bot-results.txt
+            usb-diag-log-results.txt
+            lcd-renderer-results.txt
+            ram-app-results.txt
+            usb-storage-results.txt
+            presets-results.txt
+            list-renderer-results.txt
+            build/lcd-selector-list.ppm
+            firmware-tools-results.txt
+            virtual-installer-results.txt
+            boot-recovery-results.txt
+            flash-backup-audit-results.txt
+            launch-policy-results.txt
+            clock-results.txt
+            ram-image-validator-results.txt
+            msc-fat32-results.txt
+            build/lcd-coverflow-*.ppm
+            msc-fat32-sanitizer-results.txt
+            build/fat32-test.img
+            build/fat32-coverflow-*.svg
+            build/embedded_multiboot_pi32v2.o
+            build/embedded_multiboot_pi32v2.elf
+            build/embedded_multiboot_pi32v2.map
+            build/embedded_fat32_multiboot_pi32v2.o
+            build/embedded_fat32_pi32v2.o
+            build/fat32_pi32v2.o
+            build/embedded_lcd_renderer_pi32v2.o
+            build/embedded_keys_pi32v2.o
+            build/embedded_ram_app_pi32v2.elf
+            build/embedded_ram_app_pi32v2.map
+            build/embedded_ram_app_pi32v2.flat.bin
+            build/embedded_ram_app_pi32v2.bin
+            build/embedded_ram_app_pi32v2.elf-report.txt
+            build/embedded_ram_app_pi32v2.o
+            build/ram-app-usb-full.pi32v2.elf
+            build/ram-app-usb-full.map
+            build/ram-app-usb-full.flat.bin
+            build/ram-app-usb-full.bin
+            build/ram-app-usb-full.elf-report.txt
+            build/ram-app-usb-full.SHA256SUMS.txt
+            build/embedded_ram_app_full_pi32v2.o
+            build/embedded_usb_msc_storage_pi32v2.o
+            build/husb_pi32v2.o
+            build/storage_pi32v2.o
+            build/msc_bot_pi32v2.o
+            build/fat32_pi32v2.o
+            build/embedded_ram_app_renderer_pi32v2.o
+            build/embedded_ram_app_keys_pi32v2.o
+            build/embedded_ram_app_physical_keys_pi32v2.o
+            build/embedded_ram_app_lcd_pi32v2.o
+            build/embedded_ram_app_timer_pi32v2.o
+            build/embedded_ram_app_runtime_pi32v2.o
+            build/mb_app_start_pi32v2.o
+            build/embedded_fat32_pi32v2_sim.o
+            build/embedded_fat32_pi32v2.elf
+            build/embedded_fat32_pi32v2.map
+            pi32v2-core-elf-report.txt
+            pi32v2-core-linked-elf-report.txt
+            pi32v2-fat32-core-elf-report.txt
+            pi32v2-fat32-linked-elf-report.txt
+          if-no-files-found: error

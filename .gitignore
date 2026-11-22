@@ -1,2 +1,10 @@
 /build/
 /toolchain/
+
+# Private FM-1 Flash backups and metadata; do not exclude project BIN assets.
+**/fm1-backup*.bin
+**/fm1-backup*.json
+**/*fm1*backup*.bin
+**/*fm1*backup*.json
+**/flash-backup*.bin
+**/flash-backup*.json

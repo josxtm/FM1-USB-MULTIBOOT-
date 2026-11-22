@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,43 +29,100 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import java.time.Instant
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import java.io.Closeable
 
 /**
  * Hardware command surface is intentionally read-only: exactly one static SysEx 0x12.
- * No generic command sender, backup or RAM execution in comp6.
+ * No generic command sender, backup or RAM execution in comp15.
  */
 class MbootMidiActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
+    private var pendingFailure: String? = null
+    private val queryController = MbootQueryController(
+        object : MbootQueryTimer {
+            override fun schedule(delayMs: Long, task: () -> Unit): MbootQueryCancellation {
+                handler.postDelayed(task, delayMs)
+                return MbootQueryCancellation { handler.removeCallbacks(task) }
+            }
+        },
+        onFinished = { result -> finishQuery(result) }
+    )
     private lateinit var manager: MidiManager
     private var device: MidiDevice? = null
+    private var midiInfo: MidiDeviceInfo? = null
     private var input: MidiInputPort? = null
     private var output: MidiOutputPort? = null
-    private var generation = 0
+
+    private val midiCallback = object : MidiManager.DeviceCallback() {
+        override fun onDeviceAdded(info: MidiDeviceInfo) {
+            runOnUiThread {
+                record("Dispositivo MIDI conectado; enumeración actualizada")
+                refreshDevices()
+            }
+        }
+
+        override fun onDeviceRemoved(info: MidiDeviceInfo) {
+            runOnUiThread {
+                refreshDevices()
+                if (midiInfo?.id == info.id) {
+                    record("Dispositivo MIDI retirado por Android")
+                    queryController.disconnected()
+                } else {
+                    record("Dispositivo MIDI retirado; enumeración actualizada")
+                }
+            }
+        }
+    }
     private var status by mutableStateOf("Sin consultar")
+    private var enumerationStatus by mutableStateOf("Enumeración MIDI: pendiente")
     private var identity by mutableStateOf<MbootIdentityProtocol.Identity?>(null)
     private var running by mutableStateOf(false)
+    private var appVersion by mutableStateOf("desconocida")
+    private var history by mutableStateOf(listOf<DiagnosticEvent>())
+    private val exportReport = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(DiagnosticReport.render(appVersion, "USB-MIDI", identity, history).toByteArray(Charsets.UTF_8))
+            } ?: error("No se pudo abrir el informe")
+            record("Informe técnico exportado (sin UID ni claves)")
+        }.onFailure { record("Error al exportar informe técnico") }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         manager = getSystemService(MidiManager::class.java)
+        appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "desconocida"
+        record("Actividad MIDI abierta · APK $appVersion")
+        manager.registerDeviceCallback(midiCallback, handler)
+        refreshDevices()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF65E8CD))) {
                 Surface(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("FM1 · M-BOOTLOADER MIDI", style = MaterialTheme.typography.headlineMedium)
-                        Text("Comp6 · Identificación 0x12 de solo lectura. Nunca borra ni escribe Flash.")
+                        Text("FM1 Manager · $appVersion · Identificación 0x12 de solo lectura. Nunca borra ni escribe Flash.")
                         Text("1. Desconecta el cargador. 2. Enciende el FM1 manteniendo PLAY. " +
                             "3. En su menú selecciona MIDI MODE. 4. Conecta la tablet por USB-C. " +
                             "5. Pulsa Consultar.")
                         Text("Estado: $status")
+                        Text(enumerationStatus)
+                        OutlinedButton(onClick = ::refreshDevices, enabled = !running,
+                            modifier = Modifier.fillMaxWidth()) { Text("Actualizar dispositivos MIDI") }
+                        if (history.isNotEmpty()) {
+                            Text("Historial de sesión", style = MaterialTheme.typography.titleMedium)
+                            history.takeLast(4).forEach { Text("${it.time} · ${it.message}") }
+                        }
                         identity?.let { info ->
                             Text(info.summary)
                             Text("Protocolo v1 · Carga RAM anunciada: " +
                                 if (info.ramApps) "SÍ (no probada)" else "NO")
+                            Text("Compatibilidad m-bootloader 2.x: " +
+                                if (info.compatible) "compatible preliminar por protocolo (no autoriza carga)" else "incompatible")
                             Text("Identificación verificada por estructura, no autenticación criptográfica.")
                         }
                         Button(onClick = ::identify, enabled = !running, modifier = Modifier.fillMaxWidth()) {
@@ -75,6 +133,9 @@ class MbootMidiActivity : ComponentActivity() {
                         }
                         Text("Copia completa, carga APP1 y programación Flash: bloqueadas. " +
                             "Solo se emite el mensaje de consulta 0x12 después de seleccionar MIDI MODE.")
+                        OutlinedButton(onClick = { exportReport.launch("fm1-midi-report.txt") }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Exportar informe técnico")
+                        }
                         OutlinedButton(onClick = { stop(); finish() }, modifier = Modifier.fillMaxWidth()) {
                             Text("Volver")
                         }
@@ -84,26 +145,41 @@ class MbootMidiActivity : ComponentActivity() {
         }
     }
 
+    private fun record(message: String) {
+        val time = Instant.now().toString()
+        history = (history + DiagnosticEvent(time, message)).takeLast(32)
+    }
+
+    private fun refreshDevices() {
+        if (!::manager.isInitialized) return
+        val candidates = MbootMidiDiscovery.candidates(manager.devices)
+        enumerationStatus = when (candidates.size) {
+            0 -> "Enumeración MIDI: 0 candidatos FM-1 disponibles"
+            1 -> "Enumeración MIDI: 1 candidato FM-1 disponible"
+            else -> "Enumeración MIDI: ${candidates.size} candidatos FM-1 disponibles"
+        }
+    }
+
     private fun identify() {
         stop()
+        record("Inicio de detección USB-MIDI; solo consulta 0x12")
         identity = null
-        val candidates = manager.devices.filter { info ->
-            val name = info.properties.getString(MidiDeviceInfo.PROPERTY_NAME).orEmpty()
-            val product = info.properties.getString(MidiDeviceInfo.PROPERTY_PRODUCT).orEmpty()
-            info.type == MidiDeviceInfo.TYPE_USB && info.inputPortCount > 0 && info.outputPortCount > 0 &&
-                (name.contains("FM-1 Update", true) || product.contains("FM-1 Update", true))
-        }
+        val candidates = MbootMidiDiscovery.candidates(manager.devices)
         if (candidates.size != 1) {
             status = "Detectados ${candidates.size} dispositivos FM-1 Update. " +
                 "Entra en MIDI MODE y deja solo un FM1 conectado."
+            record("Detección ambigua: ${candidates.size} dispositivos candidatos")
             return
         }
-        val token = ++generation
         val info = candidates.single()
+        midiInfo = info
+        val token = queryController.start()
+        pendingFailure = null
         running = true
-        status = "Abriendo el dispositivo USB-MIDI…"
+        status = "Abriendo el dispositivo USB-MIDI · consulta 0x12 de solo lectura…"
+        record("Dispositivo candidato seleccionado; abriendo puerto")
         manager.openDevice(info, { opened ->
-            if (token != generation || isDestroyed) {
+            if (!queryController.isActive(token) || isDestroyed) {
                 runCatching { opened?.close() }
                 return@openDevice
             }
@@ -121,12 +197,11 @@ class MbootMidiActivity : ComponentActivity() {
                     } else {
                         result.getOrNull()?.let { frame ->
                             runOnUiThread {
-                                if (token != generation) return@runOnUiThread
+                                if (!queryController.isActive(token)) return@runOnUiThread
                                 val parsed = runCatching { MbootIdentityProtocol.decodeFrame(frame) }
                                 if (parsed.isSuccess) {
                                     identity = parsed.getOrThrow()
-                                    status = "Consulta completada · ${identity?.version} · SIN escritura Flash"
-                                    closeConnection()
+                                    queryController.response(token)
                                 } else fail(token, "Respuesta incompatible: ${parsed.exceptionOrNull()?.message}")
                             }
                         }
@@ -149,34 +224,45 @@ class MbootMidiActivity : ComponentActivity() {
                 return@openDevice
             }
         }, handler)
-        handler.postDelayed({
-            if (token == generation && running) fail(token, "Tiempo agotado: sin identidad 0x12")
-        }, 8000)
     }
 
     private fun fail(token: Int, reason: String) {
-        if (token != generation) return
-        status = reason
+        if (!queryController.isActive(token)) return
+        pendingFailure = reason
+        queryController.error(token)
+    }
+
+    private fun finishQuery(result: MbootQueryController.Result) {
+        record("Consulta finalizada: ${result.name}")
+        status = when (result) {
+            MbootQueryController.Result.RESPONSE ->
+                "Consulta completada · ${identity?.version} · SIN escritura Flash"
+            MbootQueryController.Result.TIMEOUT -> "Tiempo agotado: sin identidad 0x12; conexión cerrada"
+            MbootQueryController.Result.CANCELLED -> "Consulta cancelada; conexión MIDI cerrada"
+            MbootQueryController.Result.DISCONNECTED -> "Dispositivo MIDI desconectado; sesión cerrada"
+            MbootQueryController.Result.ERROR -> pendingFailure ?: "Error MIDI; conexión cerrada"
+        }
+        pendingFailure = null
         closeConnection()
     }
 
     private fun closeConnection() {
         running = false
-        generation++
         runCatching { input?.close() }
         runCatching { output?.close() }
         runCatching { device?.close() }
         input = null
         output = null
         device = null
+        midiInfo = null
     }
 
     private fun stop() {
-        if (running) status = "Consulta cancelada"
-        closeConnection()
+        if (running) queryController.cancel() else closeConnection()
     }
 
     override fun onDestroy() {
+        manager.unregisterDeviceCallback(midiCallback)
         stop()
         super.onDestroy()
     }

@@ -42,6 +42,7 @@ class MbootIdentityProtocolTest {
         assertEquals(0x856014L, identity.jedec)
         assertTrue(identity.ramApps)
         assertEquals(1, identity.kind)
+        assertTrue(identity.compatible)
     }
 
     @Test fun rejectsCommandsOtherThanIdentityAndMalformedPayloads() {
@@ -70,5 +71,71 @@ class MbootIdentityProtocolTest {
         assertThrows(IllegalArgumentException::class.java) {
             MbootIdentityProtocol.decodeFrame(reply(version = ""))
         }
+    }
+
+    @Test fun rejectsNonCanonicalPaddingBits() {
+        val frame = reply().copyOf()
+        frame[frame.lastIndex - 1] = (frame[frame.lastIndex - 1].toInt() or 0x40).toByte()
+        assertThrows(IllegalArgumentException::class.java) {
+            MbootIdentityProtocol.decodeFrame(frame)
+        }
+    }
+
+    @Test fun rejectsTruncationAndBytesAfterTerminator() {
+        val frame = reply()
+        assertThrows(IllegalArgumentException::class.java) {
+            MbootIdentityProtocol.decodeFrame(frame.copyOf(frame.lastIndex))
+        }
+        val collector = MbootIdentityCollector()
+        assertThrows(IllegalArgumentException::class.java) {
+            collector.receive(frame + byteArrayOf(0x01))
+        }
+    }
+
+    @Test fun rejectsSecondStartWhileFirstMessageIsInFlight() {
+        val frame = reply()
+        val collector = MbootIdentityCollector()
+        assertNull(collector.receive(frame.copyOfRange(0, 4)))
+        assertThrows(IllegalArgumentException::class.java) {
+            collector.receive(byteArrayOf(0xf0.toByte()))
+        }
+    }
+
+    @Test fun enforcesOffsetCountAndMaximumCollectorFrame() {
+        val collector = MbootIdentityCollector()
+        assertThrows(IllegalArgumentException::class.java) {
+            collector.receive(byteArrayOf(1, 2), offset = 2, count = 1)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            collector.receive(ByteArray(193) { if (it == 0) 0xf0.toByte() else 0 })
+        }
+    }
+
+    @Test fun detectsOneBitOpcodeMutationEvenWithOriginalChecksum() {
+        val original = reply()
+        // Decode the frame only to model a wire mutation. The checksum covers
+        // the body, not opcode; the explicit command allow-list must catch it.
+        val decoded = decodePackedForTest(original)
+        decoded[2] = (decoded[2].toInt() xor 0x02).toByte() // 0x12 -> 0x10
+        val mutated = MbootIdentityProtocol.packFrame(decoded)
+        assertThrows(IllegalArgumentException::class.java) {
+            MbootIdentityProtocol.decodeFrame(mutated)
+        }
+    }
+
+    private fun decodePackedForTest(frame: ByteArray): ByteArray {
+        var acc = 0
+        var bits = 0
+        val out = java.io.ByteArrayOutputStream()
+        for (i in 1 until frame.lastIndex) {
+            acc = acc or ((frame[i].toInt() and 255) shl bits)
+            bits += 7
+            while (bits >= 8) {
+                out.write(acc and 255)
+                acc = acc ushr 8
+                bits -= 8
+            }
+        }
+        return out.toByteArray()
     }
 }

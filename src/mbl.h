@@ -9,7 +9,9 @@ typedef unsigned short u16;
 typedef unsigned int u32;
 typedef signed int s32;
 
+#ifndef NULL
 #define NULL ((void *)0)
+#endif
 
 /* Retained boot / update / application communication area, SPEC.md 6.1 */
 #define RET_BASE 0x01C7FD80u

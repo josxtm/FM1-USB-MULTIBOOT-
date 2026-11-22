@@ -8,7 +8,7 @@ internal object AppSlot {
     const val MAX_BYTES = (END - START).toInt()
     const val BLOCK_BYTES = 512
     const val DIAGNOSTIC = "fm1-usb-diagnostics-ram-experimental.bin"
-    const val SHA256 = "810bb3673ef2fc75964724e07d42bb751d1e3e5e49056cdaccad40c3764ea246"
+    const val SHA256 = "81b8bca62a007fc4b6e55450e603e6e29a593414c8d5022280a5f4231f58377e"
 
     fun contains(address: Long, size: Int): Boolean =
         address >= START && address < END && size > 0 && size.toLong() <= END - address
@@ -38,7 +38,8 @@ internal data class Inspection(
 
 internal class ApprovedApp private constructor(private val data: ByteArray) {
     val size: Int get() = data.size
-    fun chunk(offset: Int): ByteArray = data.copyOfRange(offset, minOf(offset + AppSlot.BLOCK_BYTES, data.size))
+    fun chunk(offset: Int, limit: Int = AppSlot.BLOCK_BYTES): ByteArray =
+        data.copyOfRange(offset, minOf(offset + limit, data.size))
 
     companion object {
         fun inspect(source: ByteArray): Inspection {

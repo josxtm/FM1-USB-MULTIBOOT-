@@ -10,9 +10,12 @@ import java.io.ByteArrayOutputStream
 internal object MbootIdentityProtocol {
     const val QUERY = 0x12
     private const val MAX_SYSEX_BYTES = 192
+    private val compatibleVersion = Regex("2\\.[0-9]+(?:[-.][A-Za-z0-9._-]+)?")
 
     data class Identity(val version: String, val capacity: Long, val jedec: Long,
                         val ramApps: Boolean, val kind: Int) {
+        /** Compatibility means m-bootloader 2.x with a numeric minor version. */
+        val compatible: Boolean get() = compatibleVersion.matches(version)
         val summary: String
             get() = "m-bootloader $version · Flash ${capacity / 1024} KiB · JEDEC 0x${jedec.toString(16).uppercase()}"
     }
@@ -57,6 +60,10 @@ internal object MbootIdentityProtocol {
             }
         }
         val decoded = raw.toByteArray()
+        // Reject non-canonical 7-bit encodings, including non-zero padding bits.
+        // This keeps a transport mutation from being normalized into a different
+        // command before the fixed-opcode check below.
+        require(packFrame(decoded).contentEquals(frame)) { "Codificación 8→7 no canónica" }
         require(decoded.size >= 7 && decoded[0] == 0.toByte() && decoded[1] == 0x59.toByte() &&
             decoded[5] == 0.toByte()) { "Cabecera M-UPGRADE desconocida" }
         val bodyLength = (decoded[3].toInt() and 0xff) or
@@ -94,30 +101,36 @@ internal class MbootIdentityCollector {
     private var receiving = false
 
     fun receive(bytes: ByteArray, offset: Int = 0, count: Int = bytes.size): ByteArray? {
-        require(offset >= 0 && count >= 0 && offset + count <= bytes.size)
+        require(offset >= 0 && count >= 0 && offset <= bytes.size - count)
+        var completed: ByteArray? = null
         for (i in offset until offset + count) {
             val b = bytes[i].toInt() and 0xff
             if (b == 0xf0) {
+                if (receiving) fail("Inicio SysEx simultáneo")
+                if (completed != null) fail("Datos después de una respuesta SysEx")
                 buffer.reset()
                 buffer.write(b)
                 receiving = true
             } else if (receiving && b == 0xf7) {
                 buffer.write(b)
+                completed = buffer.toByteArray()
                 receiving = false
-                return buffer.toByteArray()
+            } else if (!receiving && completed != null && b < 0xf8) {
+                fail("Datos después de una respuesta SysEx")
             } else if (receiving && b < 0x80) {
-                if (buffer.size() >= 190) {
-                    receiving = false
-                    buffer.reset()
-                    throw IllegalArgumentException("Respuesta SysEx excesiva")
-                }
+                // F0 + at most 190 data bytes + F7 = 192 bytes.
+                if (buffer.size() >= 191) fail("Respuesta SysEx excesiva")
                 buffer.write(b)
             } else if (receiving && b >= 0x80 && b < 0xf8) {
-                receiving = false
-                buffer.reset()
-                throw IllegalArgumentException("Estado MIDI inesperado dentro de SysEx")
+                fail("Estado MIDI inesperado dentro de SysEx")
             }
         }
-        return null
+        return completed
+    }
+
+    private fun fail(message: String): Nothing {
+        receiving = false
+        buffer.reset()
+        throw IllegalArgumentException(message)
     }
 }

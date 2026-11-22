@@ -21,6 +21,7 @@ static int fat_boot(const u8 *b)
 
 enum diag_result fat32_mount(struct fat32 *fs, struct block_device disk)
 {
+    if (!fs) return DIAG_RANGE;
     fs->disk = disk;
     fs->sectors_per_cluster = 0;
     if (disk.count == 0 || !disk.read) return DIAG_RANGE;
@@ -199,12 +200,79 @@ static enum diag_result find_short_entry(struct fat32 *fs, u32 parent,
     return DIAG_LIMIT;
 }
 
+static enum diag_result open_fm1_child(struct fat32 *fs, const char *short_name,
+                                         int directory, struct fat_file *file)
+{
+    char name[11];
+    u32 n = 0, i;
+    for (i = 0; short_name[i] && short_name[i] != '.' && n < 8; ++i) {
+        if (!((short_name[i] >= 'A' && short_name[i] <= 'Z') ||
+              (short_name[i] >= '0' && short_name[i] <= '9') || short_name[i] == '_')) return DIAG_FAT;
+        name[n++] = short_name[i];
+    }
+    if (!n || short_name[i] != '.') return DIAG_FAT;
+    ++i;
+    u32 ext = 0;
+    while (short_name[i] && ext < 3) {
+        if (!((short_name[i] >= 'A' && short_name[i] <= 'Z') ||
+              (short_name[i] >= '0' && short_name[i] <= '9'))) return DIAG_FAT;
+        name[8 + ext++] = short_name[i++];
+    }
+    if (short_name[i] || (directory ? ext != 0 : ext != 3)) return DIAG_FAT;
+    while (n < 8) name[n++] = ' ';
+    while (ext < 3) name[8 + ext++] = ' ';
+    struct fat_file folder, fw;
+    enum diag_result r = find_short_entry(fs, fs->root, "FM1        ", 1, &folder);
+    if (r != DIAG_OK) return r;
+    r = find_short_entry(fs, folder.cluster, "FW         ", 1, &fw);
+    if (r != DIAG_OK) return r;
+    return find_short_entry(fs, fw.cluster, name, directory, file);
+}
+
 enum diag_result fat32_open_fm1_index(struct fat32 *fs, struct fat_file *index)
 {
+    if (!fs || !index) return DIAG_RANGE;
     struct fat_file folder;
     enum diag_result r = find_short_entry(fs, fs->root, "FM1        ", 1, &folder);
     if (r != DIAG_OK) return r;
     r = find_short_entry(fs, folder.cluster, "INDEX   CSV", 0, index);
     if (r != DIAG_OK) return r;
     return index->size <= 24576u ? DIAG_OK : DIAG_LIMIT;
+}
+
+enum diag_result fat32_open_fm1_file(struct fat32 *fs, const char *short_name, struct fat_file *file)
+{
+    if (!fs || !short_name || !file) return DIAG_RANGE;
+    return open_fm1_child(fs, short_name, 0, file);
+}
+
+enum diag_result fat32_read_at(struct fat32 *fs, const struct fat_file *file, u32 offset,
+                               u8 *output, u32 capacity, u32 *written)
+{
+    if (!fs || !file || !written || (capacity && !output)) return DIAG_RANGE;
+    *written = 0;
+    if (offset > file->size || capacity > file->size - offset) return DIAG_RANGE;
+    if (!capacity) return DIAG_OK;
+    const u32 bytes_per_cluster = (u32)fs->sectors_per_cluster * 512u;
+    u32 cluster = file->cluster, skip = offset / bytes_per_cluster;
+    for (u32 step = 0; step < skip; ++step) {
+        enum diag_result r = next_cluster(fs, &cluster);
+        if (r != DIAG_OK) return r == DIAG_END ? DIAG_FAT : r;
+    }
+    u32 in_cluster = offset % bytes_per_cluster, remaining = capacity;
+    for (u32 steps = 0; remaining && steps <= fs->clusters; ++steps) {
+        u32 sector = in_cluster / 512u, in_sector = in_cluster % 512u;
+        enum diag_result r = data_sector(fs, cluster, sector);
+        if (r != DIAG_OK) return r;
+        u32 take = 512u - in_sector;
+        if (take > remaining) take = remaining;
+        for (u32 i = 0; i < take; ++i) output[*written + i] = fs->sector[in_sector + i];
+        *written += take; remaining -= take; in_cluster += take;
+        if (remaining && in_cluster == bytes_per_cluster) {
+            in_cluster = 0;
+            r = next_cluster(fs, &cluster);
+            if (r != DIAG_OK) return r == DIAG_END ? DIAG_FAT : r;
+        }
+    }
+    return remaining ? DIAG_FAT : DIAG_OK;
 }

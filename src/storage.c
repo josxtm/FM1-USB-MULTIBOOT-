@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "storage.h"
 #include "usbio.h"
+#include "msc_bot.h"
 
 #define ADDRESS 1u
 #define MASS_STORAGE 0x08u
@@ -131,21 +132,29 @@ static void recover(void)
 /* The only bulk OUT is the 31-byte command wrapper. Storage data travels IN. */
 static enum diag_result read_command(const u8 *cdb, u8 cdb_size, u8 *data, u32 size)
 {
-    u8 cbw[31] = {0}, csw[13];
+    u8 cbw[31], csw[13];
     u32 got = 0, status_size = 0;
-    st32(cbw, 0x43425355u);
-    st32(cbw + 4, ++tag);
-    st32(cbw + 8, size);
-    cbw[12] = size ? 0x80 : 0;
-    cbw[14] = cdb_size;
-    for (u8 i = 0; i < cdb_size; ++i) cbw[15 + i] = cdb[i];
+    mb_msc_build_cbw(cbw, ++tag, cdb, cdb_size, size, size != 0);
+    u32 command_lba = 0, command_bytes = 0;
+    u16 command_blocks = 0;
+    u8 command_len = 0;
+    int command_in = 0;
+    if (mb_msc_validate_cbw(cbw, sizeof cbw, &tag, &command_bytes, &command_in,
+                            &command_len) != MB_MSC_OK || command_len != cdb_size ||
+        !mb_msc_read_only_cdb(cdb, cdb_size, &command_lba, &command_blocks, &command_bytes) ||
+        command_bytes != size || (size && !command_in) || (!size && command_in))
+        return DIAG_UNSUPPORTED;
 
     enum husb_res res = husb_bulk_out(cbw, sizeof cbw, USB_TIMEOUT);
     if (res != HU_OK) goto bad;
     if (size) {
         res = husb_bulk_in(data, size, &got, USB_TIMEOUT);
-        if (res == HU_STALL) clear_halt(1);
-        else if (res != HU_OK) goto bad;
+        if (res == HU_STALL) {
+            clear_halt(1);
+            got = 0;
+            res = husb_bulk_in(data, size, &got, USB_TIMEOUT);
+        }
+        if (res != HU_OK) goto bad;
     }
     res = husb_bulk_in(csw, sizeof csw, &status_size, USB_TIMEOUT);
     if (res == HU_STALL) {
@@ -153,13 +162,18 @@ static enum diag_result read_command(const u8 *cdb, u8 cdb_size, u8 *data, u32 s
         res = husb_bulk_in(csw, sizeof csw, &status_size, USB_TIMEOUT);
     }
     if (res != HU_OK) goto bad;
-    if (status_size != sizeof csw || ld32(csw) != 0x53425355u || ld32(csw + 4) != tag ||
-        ld32(csw + 8) > size || csw[12] > 1) {
+    u8 status = 0;
+    enum mb_msc_result framing = mb_msc_validate_csw(csw, status_size, tag, size, got, &status);
+    if (framing == MB_MSC_MALFORMED) {
         recover();
         return DIAG_TRANSFER;
     }
-    if (csw[12]) return DIAG_SCSI;
-    if (got == size && ld32(csw + 8) == 0) return DIAG_OK;
+    if (framing == MB_MSC_DEVICE) return DIAG_SCSI;
+    if (framing != MB_MSC_OK) {
+        recover();
+        return DIAG_TRANSFER;
+    }
+    if (got == size) return DIAG_OK;
     recover();
     return DIAG_TRANSFER;
 
