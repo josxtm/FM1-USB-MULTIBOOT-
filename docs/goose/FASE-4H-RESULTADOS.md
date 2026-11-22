@@ -51,4 +51,11 @@ El informe original no se incorpora al repositorio: esta documentación conserva
 
 Antes de proponer cualquier prueba controlada faltan, como mínimo: documentación independiente de mapa RAM y ABI AC791N/pi32v2; confirmación de pila, BSS, clocks y periféricos; protocolo documentado de carga y retorno; imagen de recuperación comprobada; revisión eléctrica y de transporte; plan de abortar sin tocar `[0x00000,0x04000)`; y autorización explícita del usuario para un procedimiento físico reversible.
 
+## Validación CI comp15
+
+- Android/Kotlin, Lint, pruebas MIDI y APK comp15: ✅ [run 44965435916](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44965435916)
+- Diagnóstico RAM/pi32v2, USB/FAT32 y coherencia APP1: ✅ [run 44965438484](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44965438484)
+- Simulador Cover Flow: ✅ [run 44965441621](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/44965441621)
+- `make test` local USB/FAT32: ✅
+
 Hasta completar esos gates, `0x25`, `0x30`, Flash y ejecución APP1 permanecen deshabilitados. RAM solo se planifica y simula en software.
