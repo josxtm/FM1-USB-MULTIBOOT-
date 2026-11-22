@@ -10,7 +10,7 @@ CFLAGS = -target pi32v2 -mcpu=r3 -Os -std=c99 -ffreestanding -fno-builtin -fno-s
 C_FILES = main storage msc_bot usb_diag_log fat32 husb timer lcd keys watchdog runtime
 OBJECTS = $(addprefix build/,$(addsuffix .o,$(C_FILES))) build/start.o
 
-.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test launch-policy-test clock-test timer-test ram-image-validator-test ram-minimal-test ram-minimal-pi32v2-object ram-app-pi32v2-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
+.PHONY: all test core-test render-demo render-matrix memory-report core-sanitize fat32-image fat32-integration fat32-sanitize fm1cat-conformance msc-bot-test msc-fat32-test msc-fat32-sanitize usb-diag-log-test lcd-renderer-test ram-app-test launch-policy-test clock-test timer-test ram-image-validator-test ram-minimal-test ram-minimal-pi32v2-object ram-minimal-image ram-app-pi32v2-image core-pi32v2-object core-pi32v2-sim fat32-pi32v2-object fat32-pi32v2-sim ram-app-pi32v2-object ram-app-pi32v2-sim clean
 all: build/SHA256SUMS.txt
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
@@ -191,9 +191,24 @@ build/ram_minimal_test: tests/ram_minimal_test.c src/ram_minimal.c src/mbl.h
 
 ram-minimal-pi32v2-object: build/ram_minimal_pi32v2.o
 
+ram-minimal-image: build/ram_minimal_pi32v2.elf scripts/app_trailer.py scripts/validate.py
+	$(OBJCOPY) -O binary -j .image build/ram_minimal_pi32v2.elf build/ram_minimal.flat.bin
+	python3 scripts/app_trailer.py build/ram_minimal.flat.bin build/ram_minimal.bin fm1
+	$(READELF) -h -l -S -s build/ram_minimal_pi32v2.elf > build/ram_minimal.elf-report.txt
+	$(OBJDUMP) -d build/ram_minimal_pi32v2.elf > build/ram_minimal.dis
+	python3 scripts/validate.py build/ram_minimal_pi32v2.elf build/ram_minimal.flat.bin build/ram_minimal.bin
+	sha256sum build/ram_minimal.bin build/ram_minimal_pi32v2.elf > build/ram_minimal.SHA256SUMS.txt
+
 build/ram_minimal_pi32v2.o: src/ram_minimal.c src/mbl.h
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/ram_minimal_start_pi32v2.o: src/ram_minimal_start.S
+	@mkdir -p build
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+build/ram_minimal_pi32v2.elf: build/ram_minimal_pi32v2.o build/ram_minimal_start_pi32v2.o src/ram_minimal.ld
+	$(LD) --gc-sections --no-undefined -Map build/ram_minimal.map -T src/ram_minimal.ld -o $@ $(filter %.o,$^)
 
 build/embedded_clock_test: tests/embedded_clock_test.c src/embedded_clock.c src/embedded_clock.h src/mbl.h
 	@mkdir -p build

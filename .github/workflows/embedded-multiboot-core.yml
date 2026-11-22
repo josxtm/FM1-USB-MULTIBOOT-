@@ -74,7 +74,9 @@ jobs:
           make TOOLCHAIN=toolchain core-pi32v2-object core-pi32v2-sim
           make TOOLCHAIN=toolchain fat32-pi32v2-object fat32-pi32v2-sim
           make TOOLCHAIN=toolchain ram-app-pi32v2-object ram-app-pi32v2-image
-          make TOOLCHAIN=toolchain ram-minimal-pi32v2-object
+          make TOOLCHAIN=toolchain ram-minimal-pi32v2-object ram-minimal-image
+          python3 scripts/ram_loader_dry_run.py build/ram_minimal.bin
+          python3 scripts/ram_loader_dry_run.py build/ram_minimal.bin --cancel-after 1
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.o > pi32v2-core-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.elf > pi32v2-core-linked-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_multiboot_pi32v2.o > pi32v2-fat32-core-elf-report.txt
