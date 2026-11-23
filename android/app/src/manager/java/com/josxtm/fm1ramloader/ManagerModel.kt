@@ -33,6 +33,11 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
     private val network = Executors.newFixedThreadPool(3).asCoroutineDispatcher()
     private val storage = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
     private val pauseFlag = AtomicBoolean(false)
+    private val copyCancelled = AtomicBoolean(false)
+    private val mutableProgress = kotlinx.coroutines.flow.MutableStateFlow<CopyProgress?>(null)
+    val copyProgress: kotlinx.coroutines.flow.StateFlow<CopyProgress?> = mutableProgress
+    var omitted by mutableStateOf(prefs.getStringSet("omittedUpdates", emptySet()).orEmpty().toSet())
+        private set
     private var active = 0
     private var cardUri: Uri? = prefs.getString("card", null)?.let(Uri::parse)
     val jobs = mutableStateMapOf<String, QueueItem>()
@@ -48,6 +53,8 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
     var cardStatus by mutableStateOf("Sin carpeta FM1")
         private set
     var status by mutableStateOf("Cargando catálogo…")
+        private set
+    var refreshing by mutableStateOf(false)
         private set
     var busy by mutableStateOf(false)
         private set
@@ -73,21 +80,67 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
                     .onSuccess { result -> withContext(Dispatchers.Main) { showCard(result) } }
                     .onFailure { withContext(Dispatchers.Main) { cardStatus = "Carpeta no disponible; vuelve a seleccionarla" } }
             }
+            withContext(Dispatchers.Main) {
+                if (System.currentTimeMillis() - prefs.getLong("checkedCatalogue", 0) > 6 * 60 * 60 * 1000L) {
+                    checkUpdates(quiet = true)
+                }
+            }
         }
     }
 
-    fun loadManifest(uri: Uri) = task {
-        val bytes = requireNotNull(app.contentResolver.openInputStream(uri)).use { it.bounded(MAX_MANIFEST) }
+    fun loadManifest(uris: List<Uri>) = task {
+        require(uris.size in 1..2) { "Selecciona discovery.json y discovery.sha256 del mismo artefacto" }
+        val files = uris.map { uri ->
+            requireNotNull(app.contentResolver.openInputStream(uri)).use { it.bounded(MAX_MANIFEST) }
+        }
+        val bytes = files.singleOrNull { it.decodeToString().trimStart().startsWith("{") }
+            ?: error("Falta discovery.json")
         val parsed = Discovery.decode(bytes)
+        if (parsed.generated != null) {
+            val digest = files.firstOrNull { it !== bytes }?.decodeToString()?.trim()
+            require(digest == sha256(bytes)) { "Selecciona discovery.json y discovery.sha256 del mismo artefacto" }
+            ManifestRefresh.requireFresh(parsed, discovery)
+        } else {
+            require(discovery?.generated == null) { "Usa un catálogo con fecha y SHA-256 verificados" }
+        }
+        useManifest(bytes, parsed)
+    }
+
+    fun checkUpdates(quiet: Boolean = false) {
+        if (refreshing) return
+        refreshing = true
+        val previous = discovery
+        if (!quiet) status = "Comprobando el catálogo publicado…"
+        viewModelScope.launch {
+            try {
+                val (bytes, parsed) = withContext(network) { ManifestRefresh.check(previous) }
+                // Wait until other storage operations finish before replacing the active snapshot.
+                while (busy) kotlinx.coroutines.delay(100)
+                task {
+                    ManifestRefresh.requireFresh(parsed, discovery)
+                    useManifest(bytes, parsed)
+                    prefs.edit().putLong("checkedCatalogue", System.currentTimeMillis()).apply()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (!quiet) status = "Se conserva el catálogo activo · ${error.message ?: "sin conexión"}"
+            } finally {
+                refreshing = false
+            }
+        }
+    }
+
+    private suspend fun useManifest(bytes: ByteArray, parsed: Discovery) {
         save(manifest, bytes)
         withContext(Dispatchers.Main) {
             // An explicitly refreshed manifest can requalify links.
-            if (discovery?.updated != parsed.updated) {
+            if (discovery?.generated != parsed.generated || discovery?.updated != parsed.updated) {
                 blockedUrls = emptySet()
                 prefs.edit().remove("unavailableUrls").apply()
             }
             discovery = parsed
-            status = "Manifiesto cargado · ${parsed.entries.size} fichas"
+            status = "Catálogo comprobado · ${parsed.entries.size} fichas · ${parsed.generated?.toString()?.take(10) ?: parsed.updated}"
         }
     }
 
@@ -97,6 +150,7 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
         val result = CardLibrary(store).scan()
         withContext(Dispatchers.Main) {
             cardUri = uri
+            mutableProgress.value = null
             prefs.edit().putString("card", uri.toString()).apply()
             showCard(result)
         }
@@ -111,6 +165,7 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
             } catch (error: Exception) {
                 withContext(Dispatchers.Main) {
                     card = null
+                    mutableProgress.value = null
                     cardStatus = "Tarjeta no disponible o índice ilegible"
                 }
                 throw error
@@ -191,10 +246,7 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
                 } catch (_: DownloadPaused) {
                     jobs[key] = item.copy(state = if (paused) "Pausado" else "En cola")
                 } catch (error: DownloadHttpFailure) {
-                    if (error.permanent) {
-                        blockedUrls = blockedUrls + item.link.url
-                        prefs.edit().putStringSet("unavailableUrls", blockedUrls).apply()
-                    }
+                    blockIfPermanent(item.link, error)
                     val prefix = if (error.permanent) "No disponible" else "Error"
                     jobs[key] = item.copy(state = "$prefix · ${error.message}", attempts = item.attempts + 1)
                 } catch (error: Exception) {
@@ -206,6 +258,92 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
             }
         }
     }
+
+    private fun blockIfPermanent(link: PackageLink, error: DownloadHttpFailure) {
+        if (!error.permanent) return
+        blockedUrls = blockedUrls + link.url
+        prefs.edit().putStringSet("unavailableUrls", blockedUrls).apply()
+    }
+
+    fun omit(update: FirmwareUpdate) {
+        if (update.candidate == null) return
+        omitted = omitted + update.key
+        prefs.edit().putStringSet("omittedUpdates", omitted).apply()
+    }
+
+    fun restoreOmitted() {
+        omitted = emptySet()
+        prefs.edit().remove("omittedUpdates").apply()
+    }
+
+    fun cancelCopy() {
+        if (copyProgress.value?.phase in setOf(CopyPhase.PREPARING, CopyPhase.SPACE, CopyPhase.COPYING, CopyPhase.VERIFYING)) {
+            copyCancelled.set(true)
+        }
+    }
+
+    fun update(requested: List<FirmwareUpdate>) {
+        val uri = cardUri ?: return
+        if (busy || requested.isEmpty()) return
+        if (active > 0) {
+            status = "Espera a que terminen las descargas de la cola antes de actualizar"
+            return
+        }
+        val chosen = requested.mapTo(hashSetOf()) { it.key }
+        copyTask { copy ->
+            val library = CardLibrary(SafCardStore(app, uri))
+            val actual = library.scan()
+            val updates = withContext(Dispatchers.Main) {
+                firmwareUpdates(discovery, actual.records, blockedUrls, omitted).filter { it.key in chosen }
+            }
+            require(updates.size == chosen.size && updates.all { it.candidate != null }) {
+                "La tarjeta o las versiones cambiaron. Recarga el índice antes de continuar."
+            }
+            val assets = updates.distinctBy { it.candidate!!.sha256 }.map { item ->
+                copy.check()
+                val link = requireNotNull(item.candidate)
+                val key = link.sha256
+                withContext(Dispatchers.Main) {
+                    jobs[key] = QueueItem(item.row, link, "Descargando actualización")
+                    mutableProgress.value = CopyProgress(file = "${item.row.name} · ${link.version}")
+                    status = "Preparando actualización · ${item.row.name} ${link.version}"
+                }
+                val verified = try {
+                    withContext(network) {
+                        var next = 0L
+                        cache.obtain(link, copyCancelled::get) { done ->
+                            if (done >= next) {
+                                next = done + 256 * 1024
+                                viewModelScope.launch {
+                                    jobs[key]?.takeIf { it.state == "Descargando actualización" }?.let {
+                                        jobs[key] = it.copy(progress = done)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (error: Exception) {
+                    withContext(Dispatchers.Main) {
+                        if (error is DownloadHttpFailure) blockIfPermanent(link, error)
+                        jobs[key] = QueueItem(item.row, link, "Error · ${error.message}", attempts = 1)
+                    }
+                    if (error is DownloadPaused) throw CopyCancelled()
+                    throw error
+                }
+                withContext(Dispatchers.Main) {
+                    cached = cached + key
+                    jobs[key] = QueueItem(item.row, link, "Verificado", link.size)
+                }
+                cachedAsset(item.row, link, verified)
+            }
+            library.publish(assets, copy)
+        }
+    }
+
+    private fun cachedAsset(listing: Listing, link: PackageLink, item: CachedPackage): CardAsset =
+        CardAsset(record(listing.id, listing.name, link.version, link.file, item, link.url, listing.author)) {
+            item.file.inputStream().use { it.bounded(MAX_ASSET) }
+        }
 
     fun importFiles(uris: List<Uri>) = task {
         var accepted = 0
@@ -238,20 +376,33 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
     fun export(listings: List<Listing>, manual: List<ImportItem>) {
         val uri = cardUri ?: return
         val selected = listings.flatMap { row -> row.packages.filter { it.sha256 in cached }.map { row to it } }
-        task {
+        copyTask { copy ->
             val library = CardLibrary(SafCardStore(app, uri))
             val items = manual.map { CardAsset(it.record) { it.file.inputStream().use { input -> input.bounded(MAX_ASSET) } } } +
                 selected.map { (listing, link) ->
-                    val item = cache.existing(link)
-                    CardAsset(record(listing.id, listing.name, link.version, link.file, item, link.url, listing.author)) {
-                        item.file.inputStream().use { it.bounded(MAX_ASSET) }
-                    }
+                    copy.check()
+                    cachedAsset(listing, link, cache.existing(link))
                 }
             require(items.isNotEmpty()) { "Selecciona paquetes verificados o importados" }
-            val result = library.publish(items)
-            withContext(Dispatchers.Main) {
-                showCard(result)
-                status = "Copia e índice comprobados · ${result.records.size} registros"
+            library.publish(items, copy)
+        }
+    }
+
+    private fun copyTask(action: suspend (CardCopy) -> CardSnapshot) {
+        if (busy) return
+        copyCancelled.set(false)
+        mutableProgress.value = CopyProgress()
+        task {
+            val copy = CardCopy({ update -> mutableProgress.value = update }, copyCancelled::get)
+            try {
+                val result = action(copy)
+                withContext(Dispatchers.Main) {
+                    showCard(result)
+                    status = "Copia e índice comprobados · ${result.records.size} registros"
+                }
+            } catch (error: Exception) {
+                copy.failed(error)
+                throw error
             }
         }
     }
@@ -266,6 +417,8 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
 
     fun exportV1(records: List<CardRecord>) {
         val uri = cardUri ?: return
+        if (busy) return
+        mutableProgress.value = null
         task {
             val count = CardLibrary(SafCardStore(app, uri)).exportLegacy(records)
             withContext(Dispatchers.Main) { status = "FM1CAT v1 comprobado · $count nuevas entradas" }
@@ -274,6 +427,8 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
 
     fun reorganizeCard() {
         val uri = cardUri ?: return
+        if (busy) return
+        mutableProgress.value = null
         task {
             val result = CardLibrary(SafCardStore(app, uri)).reorganize()
             withContext(Dispatchers.Main) {
@@ -285,6 +440,8 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
 
     fun recoverV1() {
         val uri = cardUri ?: return
+        if (busy) return
+        mutableProgress.value = null
         task {
             CardLibrary(SafCardStore(app, uri)).recoverLegacy()
             withContext(Dispatchers.Main) { status = "INDEX.CSV validado" }
@@ -339,6 +496,7 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
 
     override fun onCleared() {
         pauseFlag.set(true)
+        copyCancelled.set(true)
         network.close()
         storage.close()
     }

@@ -28,9 +28,9 @@ def main():
     assert path_license("GPL-3.0") == path_license("GPL-3.0-only") and path_license("NOASSERTION") is None
     reference = {"name": "original.fwsc", "digest": "sha256:" + "0" * 64, "state": "uploaded", "size": 100,
                  "browser_download_url": "https://github.com/author/repo/releases/download/v1/original.fwsc"}
-    release = "https://github.com/author/repo/releases/tag/v1"
+    release = {"html_url": "https://github.com/author/repo/releases/tag/v1"}
     assert asset(reference, "v1", release, "AUTHOR", "Author/Repo")
-    assert not asset(reference, "v1", release + "wrong", "AUTHOR", "Author/Repo")
+    assert not asset(reference, "v1", {"html_url": release["html_url"] + "wrong"}, "AUTHOR", "Author/Repo")
     assert not asset(reference, "v1", release, "AUTHOR", "Unrelated/Repo")
     assert not asset({**reference, "digest": None}, "v1", release, "AUTHOR", "Author/Repo")
     print(json.dumps({"historical_rows": len(before["entries"]), "historical_distinct_packages": len(old),

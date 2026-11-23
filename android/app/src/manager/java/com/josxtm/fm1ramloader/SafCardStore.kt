@@ -4,12 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.os.SystemClock
 import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 
 internal class SafCardStore(private val context: Context, uri: Uri) : CardStore {
     private val treeUri = uri
     private var flatFiles: MutableMap<String, DocumentFile>? = null
+    private var spaceQueried = false
+    private var remaining: Long? = null
     private val provider = context.contentResolver
     private val root = requireNotNull(DocumentFile.fromTreeUri(context, uri)) { "Tarjeta inaccesible" }
 
@@ -62,7 +65,37 @@ internal class SafCardStore(private val context: Context, uri: Uri) : CardStore 
         return requireNotNull(provider.openInputStream(file.uri)).use { it.bounded(max) }
     }
 
-    override fun write(path: String, data: ByteArray, replace: Boolean) {
+    override fun write(path: String, data: ByteArray, replace: Boolean) =
+        writeDocument(path, data, replace, {}, {})
+
+    override fun writePackage(path: String, data: ByteArray, check: () -> Unit, written: (Int) -> Unit) =
+        writeDocument(path, data, false, check, written)
+
+    override fun availableBytes(): Long? {
+        if (spaceQueried) return remaining
+        spaceQueried = true
+        val authority = treeUri.authority
+        if (authority != "com.android.externalstorage.documents") return null
+        val volume = DocumentsContract.getTreeDocumentId(treeUri).substringBefore(':')
+        if (volume == "primary" || volume.isEmpty()) return null
+        val roots = DocumentsContract.buildRootsUri(authority)
+        // Documents providers need not grant querying roots with a tree grant.
+        remaining = runCatching {
+            provider.query(roots, arrayOf(DocumentsContract.Root.COLUMN_ROOT_ID,
+                DocumentsContract.Root.COLUMN_AVAILABLE_BYTES), null, null, null)?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(0) == volume && !cursor.isNull(1)) {
+                        return@use cursor.getLong(1).takeIf { it >= 0 }
+                    }
+                }
+                null
+            }
+        }.getOrNull()
+        return remaining
+    }
+
+    private fun writeDocument(path: String, data: ByteArray, replace: Boolean,
+                              check: () -> Unit, written: (Int) -> Unit) {
         val (dir, leaf) = requireNotNull(parent(path, true))
         val flat = path.startsWith("FW/")
         val old = fileAt(dir, leaf, flat)
@@ -75,10 +108,30 @@ internal class SafCardStore(private val context: Context, uri: Uri) : CardStore 
         try {
             require(file.name == leaf) { "Nombre modificado por Android: $leaf" }
             requireNotNull(provider.openOutputStream(file.uri, "wt")).use { stream ->
-                stream.write(data)
-                stream.flush()
+                var offset = 0
+                var pending = 0
+                var lastReport = SystemClock.elapsedRealtime()
+                try {
+                    while (offset < data.size) {
+                        check()
+                        val count = minOf(64 * 1024, data.size - offset)
+                        stream.write(data, offset, count)
+                        offset += count
+                        pending += count
+                        val now = SystemClock.elapsedRealtime()
+                        if (offset == data.size || now - lastReport >= 90) {
+                            written(pending)
+                            pending = 0
+                            lastReport = now
+                        }
+                    }
+                    stream.flush()
+                } finally {
+                    if (pending > 0) written(pending)
+                }
             }
             if (flat) flatFiles?.set(leaf, file)
+            if (old == null) remaining = remaining?.let { (it - data.size).coerceAtLeast(0) }
         } catch (error: Exception) {
             if (old == null) runCatching { file.delete() }
             throw error

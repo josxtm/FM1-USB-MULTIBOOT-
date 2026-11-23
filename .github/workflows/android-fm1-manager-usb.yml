@@ -5,7 +5,8 @@ on:
       - 'android/**'
       - 'scripts/update_manager_catalog.py'
       - 'scripts/verify_manager_card.py'
-      - 'scripts/audit_manager_alpha02.py'
+      - 'scripts/audit_manager_alpha0*.py'
+      - '.github/workflows/fm1-discovery-refresh.yml'
       - 'docs/FM1-MANAGER-USB*.md'
       - '.github/workflows/android-fm1-manager-usb.yml'
   workflow_dispatch:
@@ -40,29 +41,52 @@ jobs:
           root=android/app/build/manager-contract-card
           python3 scripts/verify_manager_card.py "$root/FM1" --files --flat | tee dist/FM1CAT-v2.json
           cp "$root/MATRIX.json" dist/validation-matrix.json
+          cp "$root/COPY-MATRIX.json" dist/copy-progress-matrix.json
           git show 88fcd29ca41f531e123d662f5b1707b2711defad:android/app/src/manager/assets/discovery.json > build/alpha01-manifest.json
-          python3 scripts/audit_manager_alpha02.py build/alpha01-manifest.json android/app/src/manager/assets/discovery.json > dist/catalogue-audit.json
+          git show 7f515c9c4d98e003930fed223af18d430866135f:android/app/src/manager/assets/discovery.json > build/alpha02-manifest.json
+          python3 scripts/audit_manager_alpha02.py build/alpha01-manifest.json build/alpha02-manifest.json > dist/catalogue-alpha02-audit.json
+          python3 scripts/audit_manager_alpha03.py android/app/src/manager/assets/discovery.json > dist/catalogue-audit.json
           make build/fat32_multiboot_integration
           python3 scripts/generate_fat32_image.py build/android-manager-test.img --slotfile-card "$root"
           ./build/fat32_multiboot_integration build/android-manager-test.img '' 2 | tee dist/FM1CAT-v1.txt
       - name: Verify signing, manifest and storage-only package scope
+        env:
+          MANAGER_KEYSTORE_BASE64: ${{ secrets.MANAGER_KEYSTORE_BASE64 }}
+          MANAGER_KEYSTORE_PASSWORD: ${{ secrets.MANAGER_KEYSTORE_PASSWORD }}
+          MANAGER_KEY_ALIAS: ${{ secrets.MANAGER_KEY_ALIAS }}
+          MANAGER_KEY_PASSWORD: ${{ secrets.MANAGER_KEY_PASSWORD }}
         run: |
-          cp android/app/build/outputs/apk/manager/debug/app-manager-debug.apk dist/FM1_Manager_To_USB_v1.0-alpha02.apk
+          set -euo pipefail
+          cp android/app/build/outputs/apk/manager/debug/app-manager-debug.apk dist/FM1_Manager_To_USB_v1.1-alpha03.apk
           cp android/app/build/test-results/testManagerDebugUnitTest/TEST-*.xml dist/test-results/
           cp android/app/build/reports/lint-results-managerDebug.html dist/
-          cp android/app/src/manager/assets/discovery.json dist/
+          cp android/app/src/manager/assets/discovery.{json,sha256} dist/
           cp docs/FM1-MANAGER-USB*.md dist/
           cd dist
-          apk=FM1_Manager_To_USB_v1.0-alpha02.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          apk=FM1_Manager_To_USB_v1.1-alpha03.apk
+          tool="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          if [[ -n "${MANAGER_KEYSTORE_BASE64:-}${MANAGER_KEYSTORE_PASSWORD:-}${MANAGER_KEY_ALIAS:-}${MANAGER_KEY_PASSWORD:-}" ]]; then
+            : "${MANAGER_KEYSTORE_BASE64:?}" "${MANAGER_KEYSTORE_PASSWORD:?}" "${MANAGER_KEY_ALIAS:?}" "${MANAGER_KEY_PASSWORD:?}"
+            umask 077
+            store="$(mktemp)"
+            trap 'rm -f "$store"' EXIT
+            printf '%s' "$MANAGER_KEYSTORE_BASE64" | base64 --decode > "$store"
+            "$tool" sign --ks "$store" --ks-key-alias "$MANAGER_KEY_ALIAS" \
+              --ks-pass env:MANAGER_KEYSTORE_PASSWORD --key-pass env:MANAGER_KEY_PASSWORD --out signed.apk "$apk"
+            mv signed.apk "$apk"
+          fi
+          "$tool" verify --verbose --print-certs "$apk" | tee apk-signing.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree "$apk" AndroidManifest.xml > apk-manifest.txt
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
+          from hashlib import sha256
           root = Path('apk-manifest.txt').read_text()
           assert 'com.josxtm.fm1managerusb' in root and 'ManagerActivity' in root
+          assert '1.1-alpha03' in root and '(type 0x10)0x3' in root
+          assert sha256(Path('discovery.json').read_bytes()).hexdigest() == Path('discovery.sha256').read_text().strip()
           assert all(x not in root for x in ('usb.host', 'software.midi', 'MainActivity', 'MbootMidiActivity'))
-          with ZipFile('FM1_Manager_To_USB_v1.0-alpha02.apk') as apk:
+          with ZipFile('FM1_Manager_To_USB_v1.1-alpha03.apk') as apk:
               assert 'assets/discovery.json' in apk.namelist()
               assert not any('diagnostics-ram' in f for f in apk.namelist())
               dex = [apk.read(f) for f in apk.namelist() if f.endswith('.dex')]
@@ -76,6 +100,49 @@ jobs:
           sha256sum -c SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: FM1_Manager_To_USB_v1.0-alpha02
+          name: FM1_Manager_To_USB_v1.1-alpha03
           path: dist/
           if-no-files-found: error
+
+  compose-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - screen: tablet
+            size: 1600x1000
+            density: 160
+          - screen: compact
+            size: 1080x1920
+            density: 420
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-35 build-tools;35.0.0
+      - name: Enable emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: adb shell wm size ${{ matrix.size }} && adb shell wm density ${{ matrix.density }} && cd android && ./gradlew --no-daemon :app:connectedManagerDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fm1-alpha03-compose-${{ matrix.screen }}
+          path: android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore

@@ -5,13 +5,15 @@ import argparse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
+from datetime import datetime, timezone
+from hashlib import sha256
 import json
 from pathlib import Path
 import re
 import subprocess
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import quote, unquote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 HUB = "https://thefirmwarehub.com"
@@ -58,7 +60,8 @@ def public_url(value, base=None):
     return None
 
 
-def asset(a, version, release, kind, publisher):
+def asset(a, version, publication, kind, publisher):
+    release = publication["html_url"]
     digest = DIGEST.fullmatch(a.get("digest") or "")
     name, size = a.get("name", ""), a.get("size", 0)
     url = public_url(a.get("browser_download_url"))
@@ -75,7 +78,9 @@ def asset(a, version, release, kind, publisher):
             release_path[4:] != components[4:5] or urlsplit(url).query or urlsplit(url).fragment):
         return None
     return {"version": version[:80], "file": name, "size": size, "sha256": digest[1], "url": url,
-            "format": name.rsplit(".", 1)[-1].upper(), "provenance": kind, "release": release}
+            "format": name.rsplit(".", 1)[-1].upper(), "provenance": kind, "release": release,
+            "publishedAt": publication.get("published_at") or "", "prerelease": bool(publication.get("prerelease")),
+            "notes": " ".join((publication.get("body") or "").split())[:300]}
 
 
 def get_web(url):
@@ -138,42 +143,74 @@ def probe(package):
 
 
 def verify_links(result):
-    pairs = [(row, package) for row in result["entries"] for package in row["packages"]]
+    pairs = [(row, package) for row in result["entries"] for package in row["packages"] if not package.get("historical")]
     with ThreadPoolExecutor(max_workers=8) as pool:
         states = list(pool.map(probe, (p for _, p in pairs)))
     for (row, package), state in zip(pairs, states):
         package["availability"] = state
         package["distribution"] = "AUTHOR_OPEN_RELEASE" if row["status"] == "AUTHOR" else "COMMUNITY_OPEN_BUILD"
     for row in result["entries"]:
-        if row["packages"] and not any(p["availability"] == "AVAILABLE" for p in row["packages"]):
+        if row["status"] in ("AUTHOR", "COMMUNITY") and row["packages"] and not any(p["availability"] == "AVAILABLE" for p in row["packages"]):
             states_for_row = [p["availability"] for p in row["packages"]]
             row["status"] = "TEMPORARY" if "TEMPORARY" in states_for_row else states_for_row[0]
+        if row["status"] == "AUTHOR":
+            available = [p for p in row["packages"] if p["availability"] == "AVAILABLE"]
+            candidates = [p for p in available if not p.get("prerelease")] or available
+            latest = max(candidates, key=lambda p: p.get("publishedAt", ""), default=None)
+            if latest:
+                row["version"] = latest["version"]
+                for p in row["packages"]:
+                    p["current"] = p is latest or p in candidates and p.get("publishedAt") == latest.get("publishedAt")
     result["counts"] = dict(sorted(Counter(r["status"] for r in result["entries"]).items()))
     result["assetAvailability"] = dict(sorted(Counter(states).items()))
     result["uniquePackages"] = len({p["sha256"] for (_, p), state in zip(pairs, states) if state == "AVAILABLE"})
 
 
-def published_author(row, releases):
-    """Match the hub's public asset ID or verbatim digest; never guess an asset."""
+def published_author(row, releases, previous=()):
+    """Anchor an asset to the verified registry. Reuse only an exact, unique asset name for other tags."""
     reference = (row.get("asset") or "").split(" ", 1)[0]
-    versions = []
+    published = [(release, a) for release in releases if not release.get("draft")
+                 for a in release.get("assets", [])]
+    anchors = [(release, a) for release, a in published
+               if (reference and str(a.get("id")) == reference)
+               or a.get("digest") == f"sha256:{row.get('sha256', '')}"]
+    def family(name, tag):
+        version = tag.lstrip("vV")
+        if re.fullmatch(r"\d+(?:\.\d+){0,2}(?:-[A-Za-z0-9.-]+)?", version):
+            return re.sub(r"([_ -])v?" + re.escape(version) + r"(?=\.[^.]+$)", r"\1VERSION", name, flags=re.I)
+        return name
+
+    names = {a["name"] for _, a in anchors}
+    names.update(p["file"] for p in previous if p.get("distribution") == "AUTHOR_OPEN_RELEASE")
+    families = {family(a["name"], release["tag_name"]) for release, a in anchors}
+    if not anchors:
+        families.update(family(p["file"], unquote(urlsplit(p["release"]).path).split("/")[-1])
+                        for p in previous if p.get("distribution") == "AUTHOR_OPEN_RELEASE")
+    if not names:
+        return []
+    result = []
     for release in releases:
         if release.get("draft"):
             continue
-        for a in release.get("assets", []):
-            if ((reference and str(a.get("id")) == reference) or
-                    a.get("digest") == f"sha256:{row.get('sha256', '')}"):
-                candidate = asset(a, row["version"], release["html_url"], "AUTHOR", row["repo"])
-                if candidate:
-                    versions.append(candidate)
-    return versions[:1]
+        explicit = [a for rel, a in anchors if rel == release]
+        matching = explicit or [a for a in release.get("assets", [])
+                                if a.get("name") in names or family(a.get("name", ""), release["tag_name"]) in families]
+        if len(matching) != 1:
+            continue
+        a = matching[0]
+        version = row.get("version") if explicit else release.get("tag_name")
+        candidate = asset(a, version or release["tag_name"], release, "AUTHOR", row["repo"])
+        if candidate and all(p["sha256"] != candidate["sha256"] for p in result):
+            result.append(candidate)
+    return result[:12]
 
 
-def manifest(hub, collection, builds, coll_releases, editor, author):
+def manifest(hub, collection, builds, coll_releases, editor, author, previous):
     known = {r["repo"].lower(): r for r in collection["firmwares"] if REPO.fullmatch(r.get("repo", ""))}
     links = EditorLinks()
     links.feed(editor)
     rows = []
+    previous_by_id = {row["id"]: row for row in previous.get("entries", [])}
     repo_ids = set()
     seen_hashes = set()
     coll_assets = {}
@@ -181,7 +218,7 @@ def manifest(hub, collection, builds, coll_releases, editor, author):
         if rel.get("draft"):
             continue
         for a in rel.get("assets", []):
-            candidate = asset(a, rel["tag_name"], rel["html_url"], "COMMUNITY", COLLECTION)
+            candidate = asset(a, rel["tag_name"], rel, "COMMUNITY", COLLECTION)
             if candidate:
                 coll_assets.setdefault(a["name"], candidate)
     for row in hub["firmwares"]:
@@ -192,14 +229,15 @@ def manifest(hub, collection, builds, coll_releases, editor, author):
         upstream_license = known.get(repo.lower(), {}).get("license")
         declared = path_license(lic)
         license_ok = declared is not None and (not upstream_license or path_license(upstream_license) == declared)
-        packages = [] if row.get("linkOnly") or not license_ok else published_author(row, author.get(repo.lower(), []))
+        prior = previous_by_id.get("hub/" + row["id"], {})
+        history = prior.get("packages", []) if prior.get("repo") == repo and prior.get("author") == row["author"] else []
+        packages = [] if row.get("linkOnly") or not license_ok else published_author(row, author.get(repo.lower(), []), history)
         status = "AUTHOR" if packages else "RESTRICTED" if row.get("linkOnly") else "LICENSE_UNKNOWN" if not license_ok else "NO_DIRECT"
         if packages:
-            if packages[0]["sha256"] in seen_hashes:
-                packages = []
+            packages = [p for p in packages if p["sha256"] not in seen_hashes]
+            if not packages:
                 status = "DUPLICATE"
-            else:
-                seen_hashes.add(packages[0]["sha256"])
+            seen_hashes.update(p["sha256"] for p in packages)
         repo_ids.add(repo.lower())
         kinds = row.get("kind", [])
         rows.append({"id": "hub/" + row["id"], "name": row["name"], "author": row["author"],
@@ -259,16 +297,37 @@ def manifest(hub, collection, builds, coll_releases, editor, author):
                      "license":"NOASSERTION", "description":"Development Kit y Workbench publicados por M-VAVE.",
                      "genres":[], "status":"TOOL", "version":"V14", "compatibility":"Kit de desarrollo",
                      "identity":"", "image":None, "demo":None, "packages":[], "variantOf":None, "discovered":["M-VAVE"]})
+    for row in rows:
+        prior = previous_by_id.get(row["id"], {})
+        if (prior.get("repo"), prior.get("author")) != (row["repo"], row["author"]):
+            continue
+        hashes = {p["sha256"] for p in row["packages"]}
+        for link in prior.get("packages", []):
+            if len(row["packages"]) >= 20:
+                break
+            if link["sha256"] not in hashes:
+                row["packages"].append({**link, "availability": "UNVERIFIED", "historical": True})
     rows.sort(key=lambda r: (r["name"].casefold(), r["id"]))
     counts = dict(sorted(Counter(r["status"] for r in rows).items()))
     return {"schema": 2, "updated": hub["updated"], "attribution": "Firmware list: The Firmware Hub – thefirmwarehub.com (CC BY 4.0; normalizada)",
             "collection": COLLECTION_URL, "counts": counts, "uniquePackages": len(seen_hashes), "entries": rows}
 
 
+def write_manifest(result, output):
+    result["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    data = (json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    if len(data) > 6 * 1024 * 1024:
+        raise ValueError("descubrimiento supera el límite Android")
+    output.write_bytes(data)
+    output.with_suffix(".sha256").write_text(sha256(data).hexdigest() + "\n", encoding="ascii")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--previous", type=Path)
     args = parser.parse_args()
     d = args.snapshot_dir
     d.mkdir(parents=True, exist_ok=True)
@@ -292,21 +351,36 @@ def main():
                            and not r.get("linkOnly") and LICENSE.fullmatch(r.get("lic") or "")})
 
     unavailable = []
+    previous = json.loads(args.previous.read_bytes()) if args.previous else {}
+    review = {}
+    for row in previous.get("entries", []):
+        repo = row["repo"].lower()
+        for link in row.get("packages", []):
+            if link.get("distribution") == "AUTHOR_OPEN_RELEASE" and link.get("current", True):
+                release = urlsplit(link["release"])
+                parts = release.path.strip("/").split("/")
+                if release.hostname == "github.com" and len(parts) == 5 and "/".join(parts[:2]).lower() == repo:
+                    review.setdefault(repo, set()).add(unquote(parts[-1]))
 
     def author(repo):
         try:
-            return repo, load("gh-" + repo.replace("/", "__") + ".json",
-                              lambda: json.dumps(gh(f"repos/{repo}/releases?per_page=12")).encode())
+            result = load("gh-" + repo.replace("/", "__") + ".json",
+                          lambda: json.dumps(gh(f"repos/{repo}/releases?per_page=12")).encode())
+            known_tags = {release["tag_name"] for release in result}
+            for tag in sorted(review.get(repo, set()) - known_tags)[:8]:
+                fallback = gh(f"repos/{repo}/releases/tags/{quote(tag, safe='')}")
+                if fallback and fallback["tag_name"] == tag:
+                    result.append(fallback)
+            return repo, result
         except (RuntimeError, subprocess.TimeoutExpired):
             unavailable.append(repo)
             return repo, []
 
     with ThreadPoolExecutor(max_workers=6) as pool:
-        result = manifest(hub, coll, builds, releases, editor, dict(pool.map(author, repositories)))
+        result = manifest(hub, coll, builds, releases, editor, dict(pool.map(author, repositories)), previous)
     result["unavailableSources"] = sorted(unavailable)
     verify_links(result)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+    write_manifest(result, args.output)
     print(json.dumps({"entries": len(result["entries"]), "counts": result["counts"],
                       "uniquePackages": result["uniquePackages"]}, sort_keys=True))
 

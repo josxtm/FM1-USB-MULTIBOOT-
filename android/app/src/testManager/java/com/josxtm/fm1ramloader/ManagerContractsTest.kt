@@ -201,7 +201,7 @@ class ManagerContractsTest {
         assertEquals(129, snapshot.entries.count { DownloadFilter.COMMUNITY.matches(it, emptySet()) })
         assertEquals(504, snapshot.entries.count { DownloadFilter.UNAVAILABLE.matches(it, emptySet()) })
         val author = available.first { it.status == "AUTHOR" }
-        val p = author.downloads().single()
+        val p = author.downloads().first()
         for (broken in listOf(p.copy(url = "https://example.org/file"), p.copy(sha256 = ""),
             p.copy(distribution = ""), p.copy(availability = "REMOVED"), p.copy(availability = "TEMPORARY"))) {
             assertTrue(author.copy(packages = listOf(broken)).downloads().isEmpty())
