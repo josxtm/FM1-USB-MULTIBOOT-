@@ -27,6 +27,7 @@ on:
       - 'scripts/validate_stg2.py'
       - 'scripts/validate_rom_diag.py'
       - 'scripts/fm1_hardware_preflight.py'
+      - 'scripts/strict_rom_transport.py'
       - 'scripts/decode_usb_diag_log.py'
       - 'scripts/virtual_flash_installer.py'
       - 'scripts/virtual_slotfile.py'
@@ -35,6 +36,7 @@ on:
       - 'docs/goose/**'
       - 'docs/FASE-6A-*.md'
       - 'docs/FASE-6B-*.md'
+      - 'docs/FASE-6C-*.md'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
       - 'docs/goose/FASE-5A-RESULTADOS.md'
@@ -155,6 +157,27 @@ jobs:
           assert result['software_status'] == 'PASS'
           assert result['physical_status'] == 'BLOCKED'
           assert not result['hardware_io'] and not result['physical_launch_available']
+          assert result['strict_rom_transport']['result'] == 'JUMP_ACKNOWLEDGED_IN_MODEL'
+          assert result['strict_rom_transport']['blocks'] == 9 and result['strict_rom_transport']['jumps'] == 1
+          PY
+      - name: Exercise strict ROM transport with the frozen APP1
+        run: |
+          image=build/romdiag/fm1-rom-hardware-test.bin
+          python3 scripts/strict_rom_transport.py "$image" > strict-rom-model.json
+          set +e
+          python3 scripts/strict_rom_transport.py "$image" --fault short-out > strict-rom-short-out.json
+          short_status=$?
+          python3 scripts/strict_rom_transport.py "$image" --fault probe-timeout > strict-rom-probe-timeout.json
+          probe_status=$?
+          set -e
+          test "$short_status" -eq 1 && test "$probe_status" -eq 1
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for name, reason, count in [('short-out', 'SHORT_WRITE', 4), ('probe-timeout', 'TIMEOUT', 2)]:
+              stopped = json.loads(Path(f'strict-rom-{name}.json').read_text())
+              assert stopped['result'] == reason and len(stopped['attempted']) == count
+              assert not stopped['hardware_io'] and stopped['jumps'] == 0
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -169,10 +192,24 @@ jobs:
             build/romdiag/SHA256SUMS.txt
             docs/FASE-6B-*.md
             scripts/fm1_hardware_preflight.py
+            scripts/strict_rom_transport.py
             scripts/validate.py
             scripts/validate_rom_diag.py
             scripts/validate_stg2.py
             tests/fm1_hardware_preflight_test.py
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-6c-strict-rom-simulation
+          path: |
+            LICENSE
+            docs/FASE-6C-*.md
+            strict-rom-*.json
+            fm1-6b-preflight.json
+            python-regression-results.txt
+            scripts/strict_rom_transport.py
+            scripts/validate.py
+            tests/strict_rom_transport_test.py
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:

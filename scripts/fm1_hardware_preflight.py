@@ -17,11 +17,10 @@ import zipfile
 
 from validate import APP
 from validate_rom_diag import validate as validate_rom
+from strict_rom_transport import IMAGE_DIGEST, IMAGE_SIZE, Session
 
 PR12_ZIP = "0a3f63a247e13bada70da3f8d2f5e4dca6549a29efe78cc4d652d4a8eb0a7e5f"
 IMAGE_NAME = "fm1-rom-hardware-test"
-IMAGE_DIGEST = "a0012d9f32b414ee38aa8b76e0f412b64a77c4163001037a44b77ac8eda91cbb"
-IMAGE_SIZE = 4100
 ROM_DIR = "build/romdiag/"
 ARTIFACTS = {
     IMAGE_NAME + ".bin": IMAGE_DIGEST,
@@ -217,6 +216,7 @@ def simulate_policy():
 
 def report(package, source=None, asset=None):
     checks = {}
+    transport = None
 
     def verify(name, operation):
         try:
@@ -242,11 +242,15 @@ def report(package, source=None, asset=None):
             verify("elf_ram_and_entry", lambda: check_link(read(ROM_DIR + IMAGE_NAME + ".elf"),
                    read(ROM_DIR + IMAGE_NAME + ".bin"), read(ROM_DIR + "disassembly.txt")))
             verify("regression_evidence", lambda: check_regression_logs(read))
+            if all(checks[k]["status"] == "PASS" for k in ("reference_files", "app1", "elf_ram_and_entry")):
+                transport = Session().run(read(ROM_DIR + IMAGE_NAME + ".bin"))
+                status = "PASS" if transport["result"] == "JUMP_ACKNOWLEDGED_IN_MODEL" else "FAIL"
+                checks["strict_rom_model"] = {"status": status, "detail": transport["result"]}
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
         checks["package"] = {"status": "FAIL", "detail": str(exc)}
-    for name in ("reference_files", "app1", "elf_ram_and_entry", "regression_evidence"):
+    for name in ("reference_files", "app1", "elf_ram_and_entry", "regression_evidence", "strict_rom_model"):
         if name not in checks:
-            unavailable(name, "package could not be inspected")
+            unavailable(name, "required package evidence unavailable or failed")
 
     profile = host_profile()
     checks["python_dependencies"] = {"status": "PASS", "detail": "Python standard library only"}
@@ -277,7 +281,7 @@ def report(package, source=None, asset=None):
         "software_status": software, "physical_status": "BLOCKED", "checks": checks,
         "reference": {"pr": 12, "size": IMAGE_SIZE, "load_address": f"0x{APP:08X}", "sha256": IMAGE_DIGEST,
                       "crc16": "0xB786", "mflasher_commit": MFLASHER_COMMIT, "mflasher_version": MFLASHER_VERSION},
-        "simulation": simulate_policy(), "physical_blockers": STOPS,
+        "simulation": simulate_policy(), "strict_rom_transport": transport, "physical_blockers": STOPS,
     }
 
 
