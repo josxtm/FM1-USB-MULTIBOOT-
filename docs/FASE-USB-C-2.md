@@ -1,5 +1,7 @@
 # FM1 MULTIBOOT OS — Fase USB-C 2
 
+**Estado comunicado por el propietario (23-11-2026): SKIFF instalado en el FM1; DARK-1 ya desinstalado.** No se ha verificado físicamente el arranque de SKIFF ni la versión actual de m-bootloader.
+
 ## Alcance de este PR
 
 **Entrega de ingeniería, no prueba física realizada.** Se ha desarrollado una ruta Android de laboratorio con **sólo** INQUIRY, FC40, FB06 (escritura a SRAM) y FB08 (salto único). Reutiliza el controlador USB existente, el explorador FM1CAT v2 del PR #21 y la aplicación Android RAM Loader. El gestor Android FM1 Manager To USB permanece sin cambios.
@@ -35,7 +37,7 @@ La confirmación humana en la interfaz **no equivale a una medición independien
 
 **No comenzar el ensayo si falta cualquier evidencia.** Este procedimiento no constituye autorización para alterar el firmware musical.
 
-1. **Línea de base:** verificar que DARK-1 arranca normalmente, que las teclas y el audio funcionan, y que el m-bootloader muestra `2.4-395E6CC`, `FLASH 856014 1024K`, `APP OK` y `UPDATE NONE`. Si hay errores o una actualización pendiente, detenerse.
+1. **Línea de base:** verificar que SKIFF arranca normalmente, que las teclas y el audio funcionan, y que el m-bootloader muestra `2.4-395E6CC`, `FLASH 856014 1024K`, `APP OK` y `UPDATE NONE`. Si hay errores o una actualización pendiente, detenerse.
 2. **Copia y recuperación:** conservar fuera del sintetizador y fuera de GitHub una copia de Flash íntegra, comprobada y atribuible a esta unidad, con recuperación ensayada por separado. Los hashes del respaldo, claves o serie del dispositivo no se registran en repos públicos.
 3. **Conexión:** comprobar por procedimientos externos cualificados los roles USB-C/CC, 5 V VBUS bajo carga, corriente, protección contra retorno y alimentación del lector específico. No inyectar 5 V ni improvisar cableados.
 4. **ROM fría:** desde apagado, mantener PLAY para entrar en recuperación; tras comprobar el estado, seleccionar `DOWNLOAD MODE` mediante el menú. No seleccionar funciones de actualización, instalación MIDI o Flash. Registrar la transición real desde el hardware. `WL82 / UBOOT1.00` por sí sola no prueba ROM limpia.
@@ -44,7 +46,7 @@ La confirmación humana en la interfaz **no equivale a una medición independien
 7. **Autorización por intento:** tras completar las verificaciones independientes, registrar su cumplimiento en los controles de laboratorio, autorizar una única carga SRAM y, sólo si es imprescindible y seguro, el reclamo exclusivo. Pulsar **una vez** `Ejecutar prueba USB-C2 en RAM`.
 8. **Interpretación:** `JUMP_ACKNOWLEDGED` confirma solamente el acuse ROM. `JUMP_UNCONFIRMED` implica **no repetir**; observar la pantalla del FM1. Para este APP1 el código de entrada actual mantiene USB Host deshabilitado (se espera `USB POWER UNVERIFIED` o el error equivalente), por lo que no debe afirmarse lectura de microSD.
 9. **Salida:** REC si el diagnóstico responde, o parada mediante interruptor según [plan de recuperación 6B](FASE-6B-RECOVERY.md). Desconectar datos y realizar un apagado real. No ejecutar un segundo APP1, OTA, restauración automática ni comandos de prueba de Flash.
-10. **Verificación posterior:** arrancar DARK-1, comprobar LCD, controles y audio, volver a entrar al m-bootloader para verificar identificación y `UPDATE NONE`, y regresar al arranque normal. Cualquier anomalía bloquea nuevas pruebas hasta investigación.
+10. **Verificación posterior:** arrancar SKIFF, comprobar LCD, controles y audio, volver a entrar al m-bootloader para verificar identificación y `UPDATE NONE`, y regresar al arranque normal. Cualquier anomalía bloquea nuevas pruebas hasta investigación.
 
 **Condición para pasar a lectura física:** además de un APP1 iniciado realmente, hace falta comprobar eléctricamente el rol host del FM1 y habilitar el controlador sólo mediante un procedimiento experimental expresamente revisado. El APP1 actual **no** habilita USB Host con una casilla Android; el canal cambia de dispositivo a Host cuando el Android se desconecta. La arquitectura futura debe resolver también el arranque autónomo, ya que `SD CARD` en el bootloader 2.4 usa SPI1 y no el puerto USB-C.
 
@@ -64,4 +66,4 @@ En GitHub Actions se ejecuta `assembleLoaderDebug`, `testLoaderDebugUnitTest` y 
 | Montaje real de la microSD | NO VERIFICADO |
 | Persistencia del selector entre firmwares | NO IMPLEMENTADA |
 
-Esta fase no contiene instrucciones para flashear ni modificar m-bootloader, DARK-1 o zonas de calibración.
+Esta fase no contiene instrucciones para flashear ni modificar m-bootloader, SKIFF o zonas de calibración.
