@@ -10,6 +10,8 @@ on:
       - 'src/mb_sha256.h'
       - 'scripts/audit_usbc_image.py'
       - 'docs/FASE-USB-C-1.md'
+      - 'docs/FASE-USB-C-2.md'
+      - 'android/app/src/loader/java/com/josxtm/fm1ramloader/UsbcRamTransport.kt'
       - 'tests/**'
       - 'scripts/validate_embedded_render.py'
       - 'scripts/generate_fat32_image.py'
@@ -125,6 +127,19 @@ jobs:
           make usbc-test usbc-sanitize | tee usbc-test-results.txt
           make TOOLCHAIN=toolchain usbc-explorer
           (cd build/usbc && sha256sum -c SHA256SUMS.txt)
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          import re
+          source = Path('android/app/src/loader/java/com/josxtm/fm1ramloader/UsbcRamTransport.kt').read_text()
+          matches = re.findall(r'HARDWARE_PINNED_SHA256 = "([0-9a-f]{64})"', source)
+          assert len(matches) == 1, 'physical loader must pin exactly one approved SHA-256'
+          data = Path('build/usbc/FM1_USB_C_SD_READER_READONLY.bin').read_bytes()
+          actual = sha256(data).hexdigest()
+          assert matches[0] == actual, f'Android image pin mismatch: {matches[0]} != {actual}'
+          assert data[-8:-4] == b'APP1' and data[-2:] == bytes([1, 1])
+          print(f'USB-C2 Android image pin verified: {actual} ({len(data)} B)')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: fm1-usbc-explorer-experimental-hardware-blocked

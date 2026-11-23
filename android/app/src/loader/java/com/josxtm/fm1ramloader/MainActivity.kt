@@ -24,6 +24,9 @@ class MainActivity : ComponentActivity() {
     private var fileSize by mutableStateOf<Int?>(null)
     private var imageState by mutableStateOf("Selecciona un archivo APP1")
     private var operationState by mutableStateOf("Carga física bloqueada")
+    private var usbcEvidence by mutableStateOf(UsbcLabEvidence())
+    private var usbcImageOk by mutableStateOf(false)
+    private var usbcImageState by mutableStateOf("Selecciona el diagnóstico USB-C del PR #21")
     private var busy by mutableStateOf(false)
     private var progress by mutableFloatStateOf(0f)
     private var lines by mutableStateOf<List<String>>(emptyList())
@@ -47,6 +50,11 @@ class MainActivity : ComponentActivity() {
                 fileSize = fileSize,
                 imageState = imageState,
                 operation = operationState,
+                usbcEvidence = usbcEvidence,
+                usbcImageApproved = usbcImageOk,
+                usbcImageState = usbcImageState,
+                updateUsbcEvidence = { usbcEvidence = it },
+                launchUsbc = ::launchUsbc,
                 progress = progress,
                 busy = busy,
                 lines = lines,
@@ -80,6 +88,9 @@ class MainActivity : ComponentActivity() {
         progress = 0f
         operationState = "Carga física bloqueada"
         imageState = "Leyendo archivo"
+        usbcImageOk = false
+        usbcImageState = "Sin validar"
+        usbcEvidence = UsbcLabEvidence()
         worker.execute {
             val result = runCatching {
                 checkNotNull(open()).use(::readBounded)
@@ -118,10 +129,18 @@ class MainActivity : ComponentActivity() {
                 inspection = result
                 busy = false
                 val approved = result.approved != null
-                imageState = if (approved) "Archivo aprobado para simulación" else "Archivo rechazado"
-                record(if (approved) "APP1 · huella y tráiler verificados" else {
-                    "APP1 · rechazado · " + result.checks.filterNot { it.second }.joinToString { it.first }
-                })
+                val usbChecks = UsbcRamImage.checks(data)
+                usbcImageOk = usbChecks.all { it.second }
+                usbcImageState = if (usbcImageOk) "Diagnóstico USB-C2 exacto, CRC/SHA válidos"
+                    else "USB-C2 rechazado: " + usbChecks.filterNot { it.second }.joinToString { it.first }
+                imageState = when {
+                    usbcImageOk -> "APP1 USB-C2 aprobado; simulador antiguo no aplicable"
+                    approved -> "Archivo aprobado para simulación"
+                    else -> "Archivo rechazado"
+                }
+                record(if (usbcImageOk) "USB-C2 · APP1 exacto verificado · sólo SRAM"
+                    else if (approved) "APP1 · huella y tráiler verificados para simulación"
+                    else "APP1 · rechazado · " + result.checks.filterNot { it.second }.joinToString { it.first })
             }
         }
     }
@@ -151,6 +170,27 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun launchUsbc() {
+        val candidate = bytes ?: return
+        if (busy || !usbcImageOk || !UsbcRamImage.approved(candidate) || !usbcEvidence.complete()) {
+            record("USB-C2 · BLOQUEADO: imagen, permisos o condiciones de laboratorio pendientes")
+            return
+        }
+        busy = true
+        progress = 0f
+        operationState = "USB-C2 · transporte RAM en curso"
+        record("USB-C2 · autorización de un solo intento; no se envían comandos Flash")
+        usb.launchUsbcRam(candidate.copyOf(), usbcEvidence,
+            onProgress = { done, total ->
+                if (total > 0) progress = done.toFloat() / total
+            }, onDone = { result ->
+                busy = false
+                operationState = "USB-C2 · ${result.result}"
+                record("USB-C2 · ${result.result}: ${result.blocks} bloques, ${result.bytes} B · ${result.detail}")
+                usbcEvidence = UsbcLabEvidence() // Requiere nueva autorización tras cada intento.
+            })
     }
 
     private fun export(uri: Uri) {
