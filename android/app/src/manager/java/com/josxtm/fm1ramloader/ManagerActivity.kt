@@ -4,6 +4,8 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +31,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -40,6 +44,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,8 +79,8 @@ class ManagerActivity : ComponentActivity() {
     private val choosePackages = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) model.importFiles(uris)
     }
-    private val chooseManifest = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(model::loadManifest)
+    private val chooseManifest = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { files ->
+        if (files.isNotEmpty()) model.loadManifest(files)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,6 +93,10 @@ class ManagerActivity : ComponentActivity() {
                         choose = { chooseFolder.launch(null) },
                         import = { choosePackages.launch(arrayOf("*/*")) },
                         refresh = { chooseManifest.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                        systemStorage = {
+                            runCatching { startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)) }
+                                .recoverCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                        },
                         open = { link ->
                             if (https(link)) runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
                         })
@@ -118,7 +128,7 @@ private val genreLabels = mapOf("synth" to "Síntesis", "groove" to "Groovebox",
 
 @Composable
 private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () -> Unit,
-                          refresh: () -> Unit, open: (String) -> Unit) {
+                          refresh: () -> Unit, systemStorage: () -> Unit, open: (String) -> Unit) {
     var tab by rememberSaveable { mutableStateOf("Catálogo") }
     var query by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf("") }
@@ -133,6 +143,14 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
     val staged = model.cached
     val library = model.card?.records.orEmpty()
     val onCard = remember(library) { library.map { it.sha }.toSet() }
+    val updates = remember(model.discovery, library, blocked, model.omitted) {
+        firmwareUpdates(model.discovery, library, blocked, model.omitted)
+    }
+    val updateReady = remember(updates) { updates.filter { it.candidate != null } }
+    val updateProjects = remember(updateReady) { updateReady.mapTo(hashSetOf()) { it.row.id } }
+    val downloadedCount = remember(entries, blocked) { entries.count { it.downloads(blocked).isNotEmpty() } }
+    var updateSelection by remember { mutableStateOf(setOf<String>()) }
+    var toolsOpen by remember { mutableStateOf(false) }
     val filtered = remember(entries, query, category, filter, blocked) {
         val term = query.trim()
         entries.filter { row ->
@@ -141,8 +159,10 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
         }
     }
     val selected = remember(entries, selection) { entries.filter { it.id in selection } }
-    val selectedForDownload = filtered.filter { it.id in selection && it.downloads(blocked).isNotEmpty() }
-    val selectedRow = filtered.find { it.id == inspected } ?: filtered.firstOrNull()
+    val selectedForDownload = remember(filtered, selection, blocked) {
+        filtered.filter { it.id in selection && it.downloads(blocked).isNotEmpty() }
+    }
+    val selectedRow = remember(filtered, inspected) { filtered.find { it.id == inspected } ?: filtered.firstOrNull() }
 
     AdaptiveScreen {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
@@ -153,17 +173,35 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
             }
             OutlinedButton(onClick = choose, enabled = !model.busy) { Text("Elegir carpeta FM1") }
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Catálogo", "Descargas", "MicroSD").forEach { name ->
-                FilterChip(selected = tab == name, onClick = { tab = name }, label = { Text(name) })
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            listOf("Catálogo", "Descargas", "MicroSD", "Actualizaciones").forEach { name ->
+                val count = when (name) {
+                    "Descargas" -> model.jobs.values.count { it.state in setOf("En cola", "Pausado", "Descargando", "Descargando actualización", "Pendiente de actualización") }
+                    "Actualizaciones" -> updateReady.size
+                    else -> 0
+                }
+                FilterChip(selected = tab == name, onClick = { tab = name },
+                    label = { Text(if (count > 0) "$name ($count)" else name) })
             }
-            TextButton(onClick = import, enabled = !model.busy) { Text("Importar originales") }
-            TextButton(onClick = refresh, enabled = !model.busy) { Text("Cargar manifiesto") }
+            TextButton(onClick = { tab = "Actualizaciones"; model.checkUpdates() }, enabled = !model.refreshing) {
+                Text("Buscar actualizaciones")
+            }
+            Box {
+                TextButton(onClick = { toolsOpen = true }) { Text("Más") }
+                DropdownMenu(expanded = toolsOpen, onDismissRequest = { toolsOpen = false }) {
+                    DropdownMenuItem(text = { Text("Importar originales") }, enabled = !model.busy,
+                        onClick = { toolsOpen = false; import() })
+                    DropdownMenuItem(text = { Text("Cargar manifiesto") }, enabled = !model.busy,
+                        onClick = { toolsOpen = false; refresh() })
+                    DropdownMenuItem(text = { Text("Manifiestos en GitHub") },
+                        onClick = { toolsOpen = false; open(ManifestRefresh.PORTAL) })
+                }
+            }
         }
-        Surface(color = disk, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
-            Text(model.status, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                color = pale, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-        }
+        Text("${library.size} firmwares en microSD · $downloadedCount fichas descargables · ${model.status}",
+            color = pale, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+        CopyStatus(model, tab, systemStorage)
 
         when (tab) {
             "Catálogo" -> {
@@ -189,34 +227,33 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                         }
                     }
                 }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { model.enqueue(selectedForDownload); tab = "Descargas" }, enabled = selectedForDownload.isNotEmpty()) {
-                        Text("Descargar selección")
-                    }
-                    OutlinedButton(onClick = { model.enqueue(filtered); tab = "Descargas" }, enabled = filtered.any { it.downloads(blocked).isNotEmpty() }) {
-                        Text("Descargar nuevos del filtro")
-                    }
-                    OutlinedButton(onClick = { selection = filtered.filter { it.downloads(blocked).isNotEmpty() }.map { it.id }.toSet() }) {
+                    Button(onClick = { model.enqueue(selectedForDownload); tab = "Descargas" },
+                        enabled = selectedForDownload.isNotEmpty() && !model.busy) { Text("Descargar selección") }
+                    OutlinedButton(onClick = { model.enqueue(filtered); tab = "Descargas" },
+                        enabled = !model.busy && filtered.any { it.downloads(blocked).isNotEmpty() }) { Text("Nuevos del filtro") }
+                    TextButton(onClick = { selection = filtered.filter { it.downloads(blocked).isNotEmpty() }.mapTo(hashSetOf()) { it.id } }) {
                         Text("Todos los descargables")
                     }
-                    TextButton(onClick = { selection = emptySet() }) { Text("Limpiar selección") }
-                    Text("${filtered.size} fichas · ${selection.size} seleccionadas", color = pale)
+                    if (selection.isNotEmpty()) TextButton(onClick = { selection = emptySet() }) { Text("Limpiar") }
+                    Text("${filtered.size} fichas · ${selection.size} marcadas", color = pale,
+                        style = MaterialTheme.typography.labelMedium)
                 }
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                    if (maxWidth >= 900.dp) {
+                    if (maxWidth >= 760.dp) {
                         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, blocked, Modifier.weight(0.78f), {
+                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, blocked, updateProjects, Modifier.weight(0.35f), {
                                 inspected = it.id
                             }, { selection = toggle(selection, it.id) })
-                            DetailPanel(selectedRow, blocked, Modifier.weight(1.42f), open)
+                            DetailPanel(selectedRow, blocked, updates.firstOrNull { it.row.id == selectedRow?.id }, Modifier.weight(0.65f), open)
                         }
                     } else {
                         Column(Modifier.fillMaxSize()) {
-                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, blocked, Modifier.weight(1.2f), {
+                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, blocked, updateProjects, Modifier.weight(1f), {
                                 inspected = it.id
                             }, { selection = toggle(selection, it.id) })
-                            DetailPanel(selectedRow, blocked, Modifier.weight(1f), open)
+                            DetailPanel(selectedRow, blocked, updates.firstOrNull { it.row.id == selectedRow?.id }, Modifier.weight(1.15f), open)
                         }
                     }
                 }
@@ -227,8 +264,8 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
 
             "Descargas" -> {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = model::changePause) { Text(if (model.paused) "Reanudar" else "Pausar") }
-                    OutlinedButton(onClick = model::retry) { Text("Reintentar fallos") }
+                    OutlinedButton(onClick = model::changePause, enabled = !model.busy) { Text(if (model.paused) "Reanudar" else "Pausar") }
+                    OutlinedButton(onClick = model::retry, enabled = !model.busy) { Text("Reintentar fallos") }
                     Button(onClick = {
                         model.export(selected, model.imports.values.filter { it.record.sha in copySelection })
                     }, enabled = !model.busy && model.card != null) { Text("Copiar selección a microSD") }
@@ -247,7 +284,7 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                     items(model.jobs.values.sortedBy { it.listing.name.lowercase() }, key = { it.link.sha256 }) { job ->
                         QueueRow("${job.listing.name} · ${job.link.version}", job.state,
                             job.listing.id in selection || job.link.sha256 in onCard,
-                            if (job.state == "Descargando") job.progress.toFloat() / job.link.size else null) {
+                            if (job.state.startsWith("Descargando")) job.progress.toFloat() / job.link.size else null) {
                             selection = toggle(selection, job.listing.id)
                         }
                     }
@@ -256,6 +293,28 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                         key = Listing::id) { row ->
                         QueueRow(row.name, "Caché existente · se releerá antes de exportar",
                             row.id in selection, null) { selection = toggle(selection, row.id) }
+                    }
+                }
+            }
+
+            "Actualizaciones" -> {
+                val active = updateReady.filter { it.key in updateSelection }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { model.update(active) }, enabled = !model.busy && active.isNotEmpty()) {
+                        Text("Actualizar selección")
+                    }
+                    OutlinedButton(onClick = { model.update(updateReady) }, enabled = !model.busy && updateReady.isNotEmpty()) {
+                        Text("Actualizar todas (${updateReady.size})")
+                    }
+                    if (model.omitted.isNotEmpty()) TextButton(onClick = model::restoreOmitted) { Text("Recuperar omitidas") }
+                }
+                if (updates.isEmpty()) Text(if (model.card == null) "Elige la carpeta FM1 para comparar sus versiones."
+                    else "No hay versiones nuevas verificables en el catálogo activo.", color = pale)
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(updates, key = { it.row.id }) { item ->
+                        UpdateCard(item, updateSelection, model.cached, model.jobs, model.busy,
+                            select = { updateSelection = toggle(updateSelection, item.key) },
+                            update = { model.update(listOf(item)) }, omit = { model.omit(item) })
                     }
                 }
             }
@@ -270,6 +329,7 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                     OutlinedButton(onClick = { model.exportV1(library.filter { it.sha in copySelection }) },
                         enabled = !model.busy && library.any { it.sha in copySelection }) { Text("Exportar selección FM1CAT v1") }
                     TextButton(onClick = model::recoverV1, enabled = !model.busy) { Text("Recuperar índice v1") }
+                    TextButton(onClick = systemStorage, enabled = !model.busy) { Text("Ajustes de almacenamiento") }
                 }
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(library, key = CardRecord::sha) { row ->
@@ -293,14 +353,25 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
 }
 
 @Composable
+private fun CopyStatus(model: ManagerModel, tab: String, settings: () -> Unit) {
+    val copy by model.copyProgress.collectAsState()
+    val progress = copy
+    if (progress != null && (model.busy || tab != "Catálogo")) {
+        CopyBanner(progress, model.busy, model::cancelCopy, settings)
+    } else if (model.busy && tab == "MicroSD") {
+        Text("No desconectes la microSD: operación en curso.", color = mint)
+    }
+}
+
+@Composable
 private fun AdaptiveScreen(content: @Composable ColumnScope.() -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
         // A bounded viewport keeps the lazy lists usable when the header takes most of a short window.
-        val layout = if (maxHeight < 600.dp) {
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).height(600.dp)
+        val layout = if (maxHeight < 555.dp) {
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).height(555.dp)
         } else Modifier.fillMaxSize()
-        Column(layout.padding(horizontal = 20.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        Column(layout.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp), content = content)
     }
 }
 
@@ -308,11 +379,12 @@ private fun toggle(keys: Set<String>, key: String) = if (key in keys) keys - key
 
 @Composable
 private fun CatalogList(rows: List<Listing>, selected: Set<String>, current: String?, cached: Set<String>,
-                        onCard: Set<String>, blocked: Set<String>, modifier: Modifier, open: (Listing) -> Unit, check: (Listing) -> Unit) {
+                        onCard: Set<String>, blocked: Set<String>, updates: Set<String>, modifier: Modifier, open: (Listing) -> Unit, check: (Listing) -> Unit) {
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         items(rows, key = Listing::id) { row ->
             val link = row.downloads(blocked).firstOrNull()
             val state = when {
+                row.id in updates -> "Actualización disponible"
                 row.packages.any { it.sha256 in onCard } -> "En índice microSD"
                 row.packages.any { it.sha256 in cached } -> "En caché"
                 else -> availabilityLabel(row, blocked)
@@ -325,9 +397,9 @@ private fun CatalogList(rows: List<Listing>, selected: Set<String>, current: Str
                         Text(row.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(listOf(row.author, row.version).filter(String::isNotBlank).joinToString(" · "),
                             color = pale, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        Text(state, color = if (link != null) mint else pale,
+                            style = MaterialTheme.typography.labelSmall)
                     }
-                    Text(state, color = if (link != null) mint else pale,
-                        style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 6.dp), maxLines = 2)
                 }
             }
         }
@@ -335,22 +407,26 @@ private fun CatalogList(rows: List<Listing>, selected: Set<String>, current: Str
 }
 
 @Composable
-private fun DetailPanel(row: Listing?, blocked: Set<String>, modifier: Modifier, open: (String) -> Unit) {
+internal fun DetailPanel(row: Listing?, blocked: Set<String>, update: FirmwareUpdate?, modifier: Modifier, open: (String) -> Unit) {
     Surface(modifier.fillMaxSize(), color = disk, shape = MaterialTheme.shapes.large) {
         if (row == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No hay fichas para este filtro") }
-        } else {
+        } else key(row.id) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text(row.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                Text("${row.author} · ${row.license}", color = mint, style = MaterialTheme.typography.bodyLarge)
+                Text(listOf(row.author, row.version, row.license).filter(String::isNotBlank).joinToString(" · "),
+                    color = mint, style = MaterialTheme.typography.bodyLarge)
+                Text(update?.candidate?.let { "Actualización disponible · ${it.version}" } ?:
+                    availabilityLabel(row, blocked), color = pale)
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val showSideBySide = maxWidth >= 540.dp && row.image != null
+                    val imageSize = minOf(maxWidth * .48f, 320.dp)
                     val summary = row.description.ifBlank { "El autor no ha publicado una descripción." }
                     if (showSideBySide) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.Top) {
-                            CardPhoto(row.image!!, row.name, Modifier.size(240.dp))
+                            CardPhoto(row.image, row.name, Modifier.size(imageSize))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("DESCRIPCIÓN", style = MaterialTheme.typography.labelMedium, color = mint)
                                 Text(summary, style = MaterialTheme.typography.bodyLarge)
@@ -360,7 +436,8 @@ private fun DetailPanel(row: Listing?, blocked: Set<String>, modifier: Modifier,
                         }
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            row.image?.let { CardPhoto(it, row.name, Modifier.fillMaxWidth().height(220.dp)) }
+                            if (row.image != null) CardPhoto(row.image, row.name, Modifier.fillMaxWidth().height(240.dp))
+                            else CardPhoto(null, row.name, Modifier.fillMaxWidth().height(64.dp))
                             Text("DESCRIPCIÓN", style = MaterialTheme.typography.labelMedium, color = mint)
                             Text(summary, style = MaterialTheme.typography.bodyLarge)
                             val genres = row.genres.map { genreLabels[it] ?: it }
@@ -370,14 +447,19 @@ private fun DetailPanel(row: Listing?, blocked: Set<String>, modifier: Modifier,
                 }
                 row.variantOf?.let { Text("Variante de $it", color = pale, style = MaterialTheme.typography.labelSmall) }
                 HorizontalDivider()
-                Text(availabilityLabel(row, blocked), color = mint)
                 if (row.downloads(blocked).isEmpty()) Text("Sin descarga directa. Puedes importar un original obtenido por tu cuenta.", color = pale)
                 Text("Perfil publicado: ${row.compatibility} · arranque sin verificar", style = MaterialTheme.typography.bodySmall)
                 if (row.identity.isNotBlank()) Text(row.identity, style = MaterialTheme.typography.labelSmall)
                 for (link in row.packages) {
                     Text("${link.version} · ${link.format} · ${link.size} B" +
-                        if (link in row.downloads(blocked)) "" else " · no descargable", fontWeight = FontWeight.Medium)
+                        when {
+                            link in row.downloads(blocked) -> ""
+                            !link.current && link.availability == "AVAILABLE" -> " · versión histórica"
+                            else -> " · no descargable"
+                        }, fontWeight = FontWeight.Medium)
                     Text(link.sha256, color = pale, style = MaterialTheme.typography.labelSmall)
+                    link.publishedAt?.let { Text(it.toString().take(10), color = pale) }
+                    if (link.notes.isNotBlank()) Text(link.notes, style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { open(link.release) }) { Text("Versión publicada") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -392,35 +474,46 @@ private fun DetailPanel(row: Listing?, blocked: Set<String>, modifier: Modifier,
     }
 }
 
+private val photoCache = object : LruCache<String, ImageBitmap>(24 * 1024) {
+    override fun sizeOf(key: String, value: ImageBitmap) = maxOf(1, value.width * value.height / 256)
+}
+
 @Composable
-private fun CardPhoto(url: String, title: String, modifier: Modifier) {
-    var picture by remember(url) { mutableStateOf<ImageBitmap?>(null) }
+internal fun CardPhoto(url: String?, title: String, modifier: Modifier) {
+    var picture by remember(url) { mutableStateOf(url?.let(photoCache::get)) }
+    var loading by remember(url) { mutableStateOf(url != null && picture == null) }
     LaunchedEffect(url) {
-        picture = withContext(Dispatchers.IO) {
-            runCatching {
-                val c = URL(url).openConnection() as HttpURLConnection
-                c.connectTimeout = 7000
-                c.readTimeout = 7000
-                c.instanceFollowRedirects = false
-                try {
-                    if (c.responseCode != 200) return@runCatching null
-                    val data = c.inputStream.use { it.bounded(360 * 1024) }
-                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(data, 0, data.size, opts)
-                    if (opts.outHeight !in 1..1024 || opts.outWidth !in 1..1024) return@runCatching null
-                    BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap()
-                } finally { c.disconnect() }
-            }.getOrNull()
+        if (url != null && picture == null) {
+            picture = withContext(Dispatchers.IO) {
+                runCatching {
+                    val connection = URL(url).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 7000
+                    connection.readTimeout = 7000
+                    connection.instanceFollowRedirects = false
+                    try {
+                        if (connection.responseCode != 200) return@runCatching null
+                        val data = connection.inputStream.use { it.bounded(2 * 1024 * 1024) }
+                        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeByteArray(data, 0, data.size, opts)
+                        if (opts.outHeight !in 1..8192 || opts.outWidth !in 1..8192) return@runCatching null
+                        opts.inJustDecodeBounds = false
+                        opts.inSampleSize = 1
+                        while (maxOf(opts.outWidth, opts.outHeight) / opts.inSampleSize > 1280) opts.inSampleSize *= 2
+                        BitmapFactory.decodeByteArray(data, 0, data.size, opts)?.asImageBitmap()?.also {
+                            photoCache.put(url, it)
+                        }
+                    } finally { connection.disconnect() }
+                }.getOrNull()
+            }
         }
+        loading = false
     }
     Surface(modifier, color = Color(0xFF071311), shape = MaterialTheme.shapes.medium) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            if (picture == null) {
-                Text("Cargando imagen…", color = pale, style = MaterialTheme.typography.labelSmall)
-            } else {
-                Image(picture!!, "Captura de $title", Modifier.fillMaxSize().padding(8.dp),
-                    contentScale = ContentScale.Fit)
-            }
+            val image = picture
+            if (image == null) Text(if (loading) "Cargando imagen…" else "Imagen no disponible",
+                color = pale, style = MaterialTheme.typography.labelSmall)
+            else Image(image, "Captura de $title", Modifier.fillMaxSize().padding(4.dp), contentScale = ContentScale.Fit)
         }
     }
 }

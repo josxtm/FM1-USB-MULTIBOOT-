@@ -1,5 +1,6 @@
 name: Refresh FM1 discovery manifest
 on:
+  workflow_dispatch:
   schedule:
     - cron: '37 18 * * *'
 permissions:
@@ -18,7 +19,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p dist
-          python3 scripts/update_manager_catalog.py --snapshot-dir "$RUNNER_TEMP/fm1-discovery" --output dist/discovery.json
+          python3 scripts/update_manager_catalog.py --snapshot-dir "$RUNNER_TEMP/fm1-discovery" --previous android/app/src/manager/assets/discovery.json --output dist/discovery.json
           (cd dist && sha256sum discovery.json > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:

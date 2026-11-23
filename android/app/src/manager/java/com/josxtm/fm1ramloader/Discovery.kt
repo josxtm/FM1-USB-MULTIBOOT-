@@ -10,7 +10,9 @@ internal val HASH64 = Regex("[a-f0-9]{64}")
 internal data class PackageLink(
     val version: String, val file: String, val size: Long, val sha256: String,
     val url: String, val format: String, val provenance: String, val release: String,
-    val availability: String = "UNVERIFIED", val distribution: String = ""
+    val availability: String = "UNVERIFIED", val distribution: String = "",
+    val publishedAt: java.time.Instant? = null, val notes: String = "", val revision: String = "",
+    val prerelease: Boolean = false, val current: Boolean = true
 )
 
 internal data class Listing(
@@ -39,7 +41,7 @@ private val openLicenses = Regex("(?:GPL-[23]\\.0(?:-only|-or-later)?|MPL-2\\.0|
 
 internal fun Listing.downloads(blocked: Set<String> = emptySet()): List<PackageLink> =
     packages.filter { link ->
-        status in setOf("AUTHOR", "COMMUNITY") && status == link.provenance &&
+        link.current && status in setOf("AUTHOR", "COMMUNITY") && status == link.provenance &&
             link.availability == "AVAILABLE" && link.url !in blocked && openLicenses.matches(license) &&
             HASH64.matches(link.sha256) && link.size in 1..MAX_ASSET.toLong() && validBaseName(link.file) &&
             link.format in setOf("FWSC", "UFW", "BIN") && link.file.substringAfterLast('.').uppercase() == link.format &&
@@ -63,7 +65,8 @@ private fun publicationMatches(row: Listing, link: PackageLink): Boolean {
         release.subList(2, 4) == listOf("releases", "tag") && release[4] == segments[4]
 }
 
-internal data class Discovery(val updated: String, val entries: List<Listing>) {
+internal data class Discovery(val updated: String, val entries: List<Listing>,
+                              val generated: java.time.Instant? = null) {
     companion object {
         private val states = setOf("AUTHOR", "COMMUNITY", "SOURCE", "RESTRICTED", "INCOMPATIBLE",
             "UNVERIFIED", "TOOL", "FORK", "DUPLICATE", "NO_DIRECT", "LICENSE_UNKNOWN",
@@ -97,7 +100,9 @@ internal data class Discovery(val updated: String, val entries: List<Listing>) {
                     val provenance = link.field("provenance", 20)
                     require(provenance in setOf("AUTHOR", "COMMUNITY"))
                     PackageLink(link.field("version", 80), original, size, hash, url, format, provenance, release,
-                        link.optString("availability", "UNVERIFIED"), link.optString("distribution", ""))
+                        link.optString("availability", "UNVERIFIED"), link.optString("distribution", ""),
+                        publishedInstant(link.optString("publishedAt")), link.optString("notes").take(300),
+                        link.optString("revision").take(40), link.optBoolean("prerelease"), link.optBoolean("current", true))
                     }.getOrNull()
                 }
                 val id = row.field("id", 180)
@@ -116,7 +121,7 @@ internal data class Discovery(val updated: String, val entries: List<Listing>) {
                     row.optString("variantOf", "").takeIf { it != "null" && it.length in 1..180 }, versions)
             }
             require(rows.map { it.id }.toSet().size == rows.size) { "IDs duplicados" }
-            return Discovery(root.field("updated", 100), rows)
+            return Discovery(root.field("updated", 100), rows, publishedInstant(root.optString("generatedAt")))
         }
     }
 }

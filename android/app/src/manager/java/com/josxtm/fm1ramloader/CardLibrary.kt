@@ -6,6 +6,12 @@ import org.json.JSONObject
 internal interface CardStore {
     fun read(path: String, max: Int): ByteArray?
     fun write(path: String, data: ByteArray, replace: Boolean)
+    fun writePackage(path: String, data: ByteArray, check: () -> Unit, written: (Int) -> Unit) {
+        check()
+        write(path, data, replace = false)
+        written(data.size)
+    }
+    fun availableBytes(): Long? = null
     fun deleteStagingLegacy()
 }
 
@@ -69,21 +75,47 @@ internal class CardLibrary(private val store: CardStore) {
         return good.maxBy { it.sequence }.copy(recovered = candidates.any { it.isFailure })
     }
 
-    fun publish(assets: List<CardAsset>): CardSnapshot {
+    fun publish(assets: List<CardAsset>, copy: CardCopy = CardCopy()): CardSnapshot {
+        val result = publishChecked(assets, copy)
+        copy.phase(CopyPhase.DONE)
+        return result
+    }
+
+    private fun publishChecked(assets: List<CardAsset>, copy: CardCopy): CardSnapshot {
+        copy.check()
         val current = scan()
         val have = current.records.associateBy { it.sha }
-        val added = assets.distinctBy { it.record.sha }.filter { it.record.sha !in have }
-        if (added.isEmpty()) return current
+        val selected = assets.distinctBy { it.record.sha }
+        copy.plan(selected.size, selected.sumOf { it.record.size })
+        val added = selected.filter { it.record.sha !in have }
         require(added.size + have.size <= MAX_RECORDS) { "Biblioteca llena" }
-        val additions = added.map { CardRecord.decode(it.record.copy(nested = false).json()) }
-        val records = (current.records + additions).sortedBy { it.sha }
+        val additions = added.associate { it.record.sha to CardRecord.decode(it.record.copy(nested = false).json()) }
+        val records = (current.records + additions.values).sortedBy { it.sha }
         rejectCollisions(records)
-        added.zip(additions).forEach { (item, record) ->
-            val bytes = item.load()
-            assertPayload(record, bytes)
-            immutable(record.path, bytes, MAX_ASSET)
+        for (item in selected) {
+            copy.check()
+            val record = additions[item.record.sha] ?: have.getValue(item.record.sha)
+            copy.phase(CopyPhase.SPACE, record)
+            val prior = store.read(record.path, MAX_ASSET)
+            if (prior == null) {
+                require(record.sha !in have) { "Copia registrada ausente: ${record.path}" }
+                require((store.availableBytes() ?: Long.MAX_VALUE) >= record.size) { "Espacio insuficiente para ${record.original}" }
+                val bytes = item.load()
+                assertPayload(record, bytes)
+                copy.check()
+                copy.phase(CopyPhase.COPYING)
+                store.writePackage(record.path, bytes, copy::check, copy::written)
+            }
+            copy.check()
+            copy.phase(CopyPhase.VERIFYING)
+            val output = prior ?: requireNotNull(store.read(record.path, MAX_ASSET)) { "No se pudo releer ${record.path}" }
+            assertPayload(record, output)
+            copy.verified(if (prior == null) 0 else record.size)
         }
-        return commit(current, records)
+        copy.check()
+        if (added.isNotEmpty()) return commit(current, records, copy)
+        copy.phase(CopyPhase.INDEX_VERIFY)
+        return scan().also { require(it == current) { "El catálogo cambió durante la comprobación" } }
     }
 
     fun reorganize(): CardSnapshot {
@@ -105,7 +137,8 @@ internal class CardLibrary(private val store: CardStore) {
         require(collision == null) { "Colisión 8.3: ${collision?.key}; se conservan ambos originales" }
     }
 
-    private fun commit(current: CardSnapshot, records: List<CardRecord>): CardSnapshot {
+    private fun commit(current: CardSnapshot, records: List<CardRecord>, copy: CardCopy = CardCopy()): CardSnapshot {
+        copy.phase(CopyPhase.INDEX)
         val pages = records.chunked(PAGE_SIZE).mapIndexed { page, group ->
             ("FM1CAT|2|PAGE|${page + 1}\n" + group.joinToString("\n", postfix = "\n") { it.json().toString() })
                 .encodeToByteArray().also { require(it.size <= MAX_PAGE) }
@@ -119,7 +152,9 @@ internal class CardLibrary(private val store: CardStore) {
             .put("count", records.size).put("pages", JSONArray(hashes)).toString().encodeToByteArray()
         val wire = "FM1CAT|2\n${sha256(body)}\n".encodeToByteArray() + body
         val path = slots[target]
+        require(scan() == current) { "El catálogo cambió durante la copia; vuelve a cargarlo" }
         store.write(path, wire, replace = current.slot >= 0)
+        copy.phase(CopyPhase.INDEX_VERIFY)
         val reloaded = decodeIndex(requireNotNull(store.read(path, MAX_INDEX)), target)
         require(reloaded.records == records) { "La relectura del índice no coincide" }
         return reloaded
