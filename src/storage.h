@@ -14,7 +14,7 @@ struct usb_device {
 enum diag_result {
     DIAG_OK, DIAG_DISCONNECTED, DIAG_TIMEOUT, DIAG_TRANSFER, DIAG_DESCRIPTOR,
     DIAG_UNSUPPORTED, DIAG_SCSI, DIAG_BLOCK_SIZE, DIAG_RANGE, DIAG_FAT,
-    DIAG_END, DIAG_LIMIT
+    DIAG_END, DIAG_LIMIT, DIAG_EXFAT, DIAG_NO_VBUS, DIAG_POWER_UNVERIFIED
 };
 
 enum diag_result usb_enumerate(struct usb_device *device);
@@ -40,6 +40,8 @@ struct fat_cursor { u32 cluster, offset, in_cluster; };
 struct fat_dir { u32 cluster, transitions; u8 sector, entry, end; };
 
 enum diag_result fat32_mount(struct fat32 *fs, struct block_device disk);
+enum diag_result fat32_mount_explorer(struct fat32 *, struct block_device);
+enum diag_result fat32_open_fm1_path(struct fat32 *, const char *, struct fat_file *);
 void fat32_root(const struct fat32 *fs, struct fat_dir *dir);
 /* Only FM1/INDEX.CSV, read-only; no generic path traversal. */
 enum diag_result fat32_open_fm1_index(struct fat32 *fs, struct fat_file *index);

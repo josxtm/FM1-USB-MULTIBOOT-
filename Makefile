@@ -536,3 +536,56 @@ test:
 
 clean:
 	rm -rf build
+
+USBC_TARGET = build/usbc/FM1_USB_C_SD_READER_READONLY
+USBC_C = usbc_platform usbc_connect usbc_explorer fm1cat_v2 fat32 storage msc_bot husb \
+         embedded_multiboot embedded_fat32_storage rom_diag_platform rom_diag $(ROM_DIAG_SHARED)
+USBC_OBJECTS = $(addprefix build/usbc/,$(addsuffix .o,$(sort $(USBC_C)))) build/usbc/usbc_start.o
+
+.PHONY: usbc-explorer
+usbc-explorer: $(USBC_TARGET).bin
+
+build/usbc/%.o: src/%.c $(wildcard src/*.h) Makefile
+	@mkdir -p build/usbc
+	$(CLANG) $(CFLAGS) -DFM1_USBC_EXPLORER -fstack-usage -c $< -o $@
+
+build/usbc/usbc_start.o: src/usbc_start.S
+	@mkdir -p build/usbc
+	$(CLANG) -target pi32v2 -mcpu=r3 -c $< -o $@
+
+$(USBC_TARGET).elf: $(USBC_OBJECTS) src/usbc_explorer.ld
+	$(LD) --gc-sections --no-undefined -Map $(USBC_TARGET).map -T src/usbc_explorer.ld -o $@ $(filter %.o,$^)
+
+$(USBC_TARGET).bin: $(USBC_TARGET).elf scripts/app_trailer.py scripts/validate.py scripts/audit_usbc_image.py Makefile
+	$(OBJCOPY) -O binary -j .image $< $(USBC_TARGET).flat
+	$(READELF) -h -l -S -s $< > build/usbc/elf-report.txt
+	$(OBJDUMP) -d $< > build/usbc/disassembly.txt
+	python3 scripts/app_trailer.py $(USBC_TARGET).flat $@.tmp fm1
+	python3 scripts/validate.py $< $(USBC_TARGET).flat $@.tmp > build/usbc/ABI.txt
+	python3 scripts/audit_usbc_image.py $@.tmp build/usbc/disassembly.txt $(patsubst %.o,%.su,$(filter-out build/usbc/usbc_start.o,$(USBC_OBJECTS))) > build/usbc/SAFETY.txt
+	mv $@.tmp $@
+	cd build/usbc && sha256sum FM1_USB_C_SD_READER_READONLY.bin FM1_USB_C_SD_READER_READONLY.elf > SHA256SUMS.txt
+
+USBC_BOT_HOST = src/storage.c src/msc_bot.c src/usbc_connect.c tests/usbc_mock_reader.c
+USBC_HOST = $(USBC_BOT_HOST) src/usbc_explorer.c src/fm1cat_v2.c src/fat32.c src/embedded_multiboot.c \
+            src/embedded_fat32_storage.c src/embedded_lcd_list_renderer.c src/embedded_keys.c
+
+.PHONY: usbc-test usbc-sanitize
+build/usbc-explorer-test: tests/usbc_explorer_test.c $(USBC_HOST) $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc -DFM1_USBC_EXPLORER $(filter %.c,$^) -o $@
+
+build/usbc-storage-test: tests/usb_storage_test.c src/storage.c src/msc_bot.c src/fat32.c src/usbc_connect.c $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc -DFM1_USBC_EXPLORER $(filter %.c,$^) -o $@
+
+build/usbc-explorer-sanitize: tests/usbc_explorer_test.c $(USBC_HOST) $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O1 -g -Wall -Wextra -Werror -Isrc -DFM1_USBC_EXPLORER -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie $(filter %.c,$^) -o $@
+
+usbc-test: build/usbc-explorer-test build/usbc-storage-test
+	./build/usbc-storage-test
+	bash tests/usbc_suite.sh build/usbc-explorer-test
+
+usbc-sanitize: build/usbc-explorer-sanitize
+	bash tests/usbc_suite.sh build/usbc-explorer-sanitize

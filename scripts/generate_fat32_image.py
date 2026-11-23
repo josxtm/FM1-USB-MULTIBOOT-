@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a deterministic, read-only FAT32 test image for the host harness."""
 import argparse
-import hashlib, stat, struct
+import hashlib, re, stat, struct
 from pathlib import Path
 
 SECTOR = 512
@@ -28,11 +28,16 @@ def main():
     parser.add_argument('count', type=int, nargs='?', default=3)
     parser.add_argument('--slotfile-card', type=Path, help='use the same synthetic catalog and files as a 5Y demo')
     parser.add_argument('--spi-package', type=Path, help='verified EMPTY or SYNTHETIC 6D ZIP; output is a test file')
+    parser.add_argument('--manager-fixture', type=Path, help='synthetic FM1 Manager folder with DOS 8.3 paths')
     parser.add_argument('--mbr', action='store_true', help='place a 6D test volume in the first MBR partition')
     args = parser.parse_args()
     out, count = args.output, args.count
-    if (args.mbr and not args.spi_package) or (args.spi_package and args.slotfile_card):
-        parser.error('--mbr requires --spi-package, which is exclusive of --slotfile-card')
+    if sum(bool(x) for x in (args.manager_fixture, args.spi_package, args.slotfile_card)) > 1:
+        parser.error('fixture sources are mutually exclusive')
+    if args.mbr and not (args.spi_package or args.manager_fixture):
+        parser.error('--mbr requires a SPI or Manager fixture')
+    if args.manager_fixture and (not args.manager_fixture.is_dir() or args.manager_fixture.is_symlink()):
+        parser.error('expected a synthetic fixture directory')
     if not 0 <= count <= 64: raise SystemExit('count must be 0..64')
     menu = None
     if args.spi_package:
@@ -40,6 +45,9 @@ def main():
         _, menu, index, firmware, _ = read_package(args.spi_package)
         sources = [(ident, f'{ident}.BIN', data) for ident, data in firmware.items()]
         count = len(sources)
+    elif args.manager_fixture:
+        index = b""
+        sources = []
     elif args.slotfile_card:
         from virtual_slotfile import candidate, parse_catalog, read_file
         folder = args.slotfile_card / 'FM1'
@@ -85,6 +93,7 @@ def main():
         chunks = [data[i:i+SECTOR] for i in range(0, len(data), SECTOR)] or [b'']
         # Deliberately leave gaps between allocations to exercise fragmented chains.
         chain = list(range(next_cluster, next_cluster + len(chunks) * 2, 2)); next_cluster += len(chunks) * 2
+        if chain[-1] >= len(fat): raise ValueError("fixture exceeds volume capacity")
         for a, z in zip(chain, chain[1:] + [0x0fffffff]): fat[a] = z
         for c, chunk in zip(chain, chunks):
             start = (data_start + c - 2) * SECTOR
@@ -134,6 +143,32 @@ def main():
             put32(fsinfo, offset, value)
         for relative in (1, 7):
             image[(base+relative)*SECTOR:(base+relative+1)*SECTOR] = fsinfo
+    if args.manager_fixture:
+        total_bytes = 0
+
+        def fixture_dir(folder, level=0):
+            nonlocal total_bytes
+            if level > 5: raise ValueError("fixture exceeds directory depth")
+            children = sorted(folder.iterdir())
+            if len(children) > 8192: raise ValueError("too many fixture children")
+            rows = []
+            for item in children:
+                if not re.fullmatch(r"[A-Z0-9_]{1,8}(\.[A-Z0-9]{1,3})?", item.name) or item.is_symlink():
+                    raise ValueError(f"invalid fixture path: {item.name}")
+                if item.is_dir():
+                    rows.append(entry(item.name, fixture_dir(item, level + 1), 0, True))
+                else:
+                    st = item.stat()
+                    if not stat.S_ISREG(st.st_mode) or st.st_size > 16 * 1024 * 1024:
+                        raise ValueError("fixture must contain bounded regular files")
+                    total_bytes += st.st_size
+                    if total_bytes > 12 * 1024 * 1024:
+                        raise ValueError("synthetic fixture exceeds 12 MiB")
+                    cluster, size = alloc_chain(item.read_bytes())
+                    rows.append(entry(item.name, cluster, size))
+            return dir_chain(rows)[0]
+
+        write_cluster(root_cluster, entry("FM1", fixture_dir(args.manager_fixture), 0, True) + bytes(32))
     # FAT copies.
     fat_bytes = b''.join(struct.pack('<I', x) for x in fat)
     fat_bytes += b'\0' * (FAT_SECTORS * SECTOR - len(fat_bytes))
@@ -144,7 +179,7 @@ def main():
     # Sparse fixture. 6D creates only a previously nonexistent regular output file.
     if (out.exists() or out.is_symlink()) and not stat.S_ISREG(out.lstat().st_mode):
         parser.error('output must be a regular file, never a device or symbolic link')
-    with out.open('xb' if args.spi_package else 'wb') as stream:
+    with out.open('xb' if args.spi_package or args.manager_fixture else 'wb') as stream:
         for start in range(0, len(image), 65536):
             chunk = image[start:start + 65536]
             if chunk.strip(b'\0'):

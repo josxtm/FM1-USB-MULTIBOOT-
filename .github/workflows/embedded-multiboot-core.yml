@@ -5,6 +5,11 @@ on:
       - 'src/embedded_multiboot.*'
       - 'src/stg2_*'
       - 'src/rom_diag*'
+      - 'src/usbc_*'
+      - 'src/fm1cat_v2.*'
+      - 'src/mb_sha256.h'
+      - 'scripts/audit_usbc_image.py'
+      - 'docs/FASE-USB-C-1.md'
       - 'tests/**'
       - 'scripts/validate_embedded_render.py'
       - 'scripts/generate_fat32_image.py'
@@ -114,6 +119,30 @@ jobs:
           toolchain/bin/llvm-readelf -h -S -s build/embedded_multiboot_pi32v2.elf > pi32v2-core-linked-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_multiboot_pi32v2.o > pi32v2-fat32-core-elf-report.txt
           toolchain/bin/llvm-readelf -h -S -s build/embedded_fat32_pi32v2.elf > pi32v2-fat32-linked-elf-report.txt
+      - name: Test the USB-C explorer and build the electrically gated APP1
+        run: |
+          set -euo pipefail
+          make usbc-test usbc-sanitize | tee usbc-test-results.txt
+          make TOOLCHAIN=toolchain usbc-explorer
+          (cd build/usbc && sha256sum -c SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-usbc-explorer-experimental-hardware-blocked
+          path: |
+            LICENSE
+            NOTICE.md
+            docs/FASE-USB-C-1.md
+            build/usbc/FM1_USB_C_SD_READER_READONLY.bin
+            build/usbc/FM1_USB_C_SD_READER_READONLY.elf
+            build/usbc/FM1_USB_C_SD_READER_READONLY.map
+            build/usbc/ABI.txt
+            build/usbc/SAFETY.txt
+            build/usbc/SHA256SUMS.txt
+            build/usbc/elf-report.txt
+            build/usbc/disassembly.txt
+            build/usbc-explorer.ppm
+            usbc-test-results.txt
+          if-no-files-found: error
       - name: Check out the exact installed bootloader's source for its host loader
         uses: actions/checkout@v4
         with:
