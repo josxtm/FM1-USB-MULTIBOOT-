@@ -31,7 +31,7 @@ static void lab_screen(struct mb_lcd_list_renderer *display, const char *message
     mb_lcd_list_row(display, 14, "FLASH: NO WRITES", C_YELLOW);
 }
 
-static int wait_for_lab_operator(struct rom_diag_state *clock_state,
+static __attribute__((noinline)) int wait_for_lab_operator(struct rom_diag_state *clock_state,
                                  struct mb_lcd_list_renderer *display)
 {
     struct usbc_lab_gate gate;
@@ -67,7 +67,7 @@ static int wait_for_lab_operator(struct rom_diag_state *clock_state,
     return 0;
 }
 
-static void explorer_session_lab(struct rom_diag_state *time,
+static __attribute__((noinline)) void explorer_session_lab(struct rom_diag_state *time,
                                   struct mb_lcd_list_renderer *display)
 {
     struct usb_device identity = {0};
@@ -101,12 +101,11 @@ static void explorer_session_lab(struct rom_diag_state *time,
             if (!chord_started) {
                 chord_started = 1;
                 chord_ms = time->clock.now_ms;
-            } else if (time->clock.now_ms - chord_ms >= 900u) {
+            } else if (chord_started == 1 && time->clock.now_ms - chord_ms >= 900u) {
                 diagnostic = !diagnostic;
                 if (diagnostic) usbc_draw_diag(&explorer, &identity, display);
                 else usbc_draw(&explorer, display);
-                chord_started = 0;
-                chord_ms = time->clock.now_ms + 60000u;
+                chord_started = 2; /* one toggle per continuous hold; rearm on release */
             }
             enum mb_event ignored;
             (void)mb_keys_poll(&keys, 0, time->clock.now_ms, &ignored);
