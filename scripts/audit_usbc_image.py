@@ -17,7 +17,8 @@ def instructions(disassembly, name):
 
 
 def audit(candidate, disassembly, frames):
-    base = candidate.parent / "FM1_USB_C_SD_READER_READONLY"
+    lab = "FM1_USB_C_SD_READER_LAB" in candidate.name
+    base = candidate.parent / ("FM1_USB_C_SD_READER_LAB" if lab else "FM1_USB_C_SD_READER_READONLY")
     elf, flat = [base.with_suffix(ext).read_bytes() for ext in (".elf", ".flat")]
     app = candidate.read_bytes()
     validate(elf, flat, app)
@@ -45,9 +46,18 @@ def audit(candidate, disassembly, frames):
             and entry[5].endswith("<fm1_usbc_explorer_main>") and
             entry[6] == "goto -2 <fm1_usbc_explorer_entry+0x1a>", "unexpected ROM entry")
     main = instructions(disassembly, "fm1_usbc_explorer_main")
-    connects = [i for i, op in enumerate(main) if op.endswith("<usbc_connect>")]
-    require(len(connects) == 1 and connects[0] > 0 and main[connects[0] - 1] == "r2 = 0",
-            "the ROM entry must supply only USB_POWER_UNKNOWN")
+    if lab:
+        require("usbc_lab_poll" in symbols and "explorer_session_lab" in symbols and
+                "wait_for_lab_operator" in symbols, "laboratory arm guard is missing")
+        lab_main = instructions(disassembly, "explorer_session_lab")
+        require(any(op.endswith("<usbc_connect>") for op in lab_main),
+                "lab has no guarded USB entry")
+        require(not any(op.endswith("<usbc_connect>") for op in main),
+                "lab main bypasses the arm guard")
+    else:
+        connects = [i for i, op in enumerate(main) if op.endswith("<usbc_connect>")]
+        require(len(connects) == 1 and connects[0] > 0 and main[connects[0] - 1] == "r2 = 0",
+                "the ROM entry must supply only USB_POWER_UNKNOWN")
     all_calls = re.findall(r"\bcall [-\d]+ <usbc_connect>", disassembly)
     require(len(all_calls) == 1, "unexpected explorer USB entry")
     frames_by_name = {}
@@ -67,7 +77,11 @@ def audit(candidate, disassembly, frames):
     print(f"ROM entry 0x{APP:08X}, image {len(app)} B, BSS {end-start} B, work incl. stacks {memsz} B")
     print(f"Stack: linked C frames sum {linked} B / 9216 B, SSP 1024 B, top 0x{exception:08X}")
     print("Entry disables interrupts, preserves r0 and parks after peripheral shutdown; no ROM return.")
-    print("Power decision supplied by the ROM entry: USB_POWER_UNKNOWN. USB0 Host is blocked by default.")
+    if lab:
+        print("SEPARATE LAB ARTIFACT: USB Host is available only after manual release/chord gate.")
+        print("A key gesture is not electrical evidence; externally qualified CC/VBUS is REQUIRED.")
+    else:
+        print("Power decision supplied by the ROM entry: USB_POWER_UNKNOWN. USB0 Host is blocked by default.")
     print("No linked Flash/eFuse driver or known SPI0/SFC direct literals. SCSI OUT only carries read-only CBWs.")
     print("Hardware not tested. No physical deployment is authorized.")
 
