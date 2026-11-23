@@ -39,8 +39,8 @@ internal data class UsbcRamReport(
  * Se rellenará después de auditar el artefacto pi32v2 exacto de CI.
  */
 internal object UsbcRamImage {
-    const val HARDWARE_PINNED_SHA256 = "cb04c2cef8ef9641603c68b2942c8d094fa87a9b5debec72d24cf7115bfd2025"
-    const val LAB_PINNED_SHA256 = "d090ff7d49f7324ee8c06c3eaee5e6d4cf7e2ec55a54d2f48287f76a4247c009"
+    const val HARDWARE_PINNED_SHA256 = "628cf2976fefbcbac55b3f0dcb403d9eafd7e1b46409d0467dc82ab6f8e11270"
+    const val LAB_PINNED_SHA256 = "fcc660d34017a48a85a4ffe96b2317876b79268d778d2835e9377e50f11041d4"
     private const val MAX_IMAGE = 32768
     private fun digest(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes)
