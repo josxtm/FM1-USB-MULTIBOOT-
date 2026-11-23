@@ -78,7 +78,7 @@ class UsbcRamTransportTest {
         val remote = FakeRom("short-payload")
         val outcome = UsbcRamTransport(remote, { true }, approveImage = { true })
             .launch(fakeApp(), evidence)
-        assertEquals(UsbcRamResult.ROM_UNQUALIFIED, outcome.result)
+        assertEquals(UsbcRamResult.TRANSFER_FAILED, outcome.result)
         assertFalse("FB08" in remote.operations)
         assertEquals(1, remote.operations.count { it == "FB06" })
     }
@@ -138,7 +138,7 @@ class UsbcRamTransportTest {
             expectOut = if (last == "FB06") length else 0
             if (expectOut != 0) {
                 assertEquals(0, flags)
-                assertEquals(512 >= length, true)
+                assertTrue(length in 1..512)
             }
             return data.size
         }
