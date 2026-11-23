@@ -26,6 +26,7 @@ on:
       - 'scripts/validate_ram_image.py'
       - 'scripts/validate_stg2.py'
       - 'scripts/validate_rom_diag.py'
+      - 'scripts/fm1_hardware_preflight.py'
       - 'scripts/decode_usb_diag_log.py'
       - 'scripts/virtual_flash_installer.py'
       - 'scripts/virtual_slotfile.py'
@@ -33,6 +34,7 @@ on:
       - 'scripts/audit_flash_backup.py'
       - 'docs/goose/**'
       - 'docs/FASE-6A-*.md'
+      - 'docs/FASE-6B-*.md'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
       - 'docs/goose/FASE-5A-RESULTADOS.md'
@@ -133,6 +135,45 @@ jobs:
           assert full['result'] == 'READY_FOR_SIMULATION' and full['jump_recorded'] and not full['hardware_io']
           assert timed['result'] == 'TIMEOUT' and timed['blocks'] == 1 and 'jump_recorded' not in timed
           PY
+      - name: Check out the audited M-Flasher sources
+        uses: actions/checkout@v4
+        with:
+          repository: jvitkauskas/m-flasher
+          ref: 8fbece7348d758ac284325eed455781675ac95ff
+          path: build/m-flasher-reference
+          persist-credentials: false
+      - name: Verify the 6A reference and 6B offline preflight
+        run: |
+          asset=build/m-flasher-0.12.1-linux-x86_64.tar.gz
+          curl -fLsS --retry 3 https://github.com/jvitkauskas/m-flasher/releases/download/v0.12.1/m-flasher-0.12.1-linux-x86_64.tar.gz -o "$asset"
+          python3 scripts/fm1_hardware_preflight.py . --mflasher-source build/m-flasher-reference \
+            --mflasher-release "$asset" > fm1-6b-preflight.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('fm1-6b-preflight.json').read_text())
+          assert result['software_status'] == 'PASS'
+          assert result['physical_status'] == 'BLOCKED'
+          assert not result['hardware_io'] and not result['physical_launch_available']
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-6b-preflight-offline-hardware-blocked
+          path: |
+            LICENSE
+            NOTICE.md
+            fm1-6b-preflight.json
+            python-regression-results.txt
+            rom-diagnostic-build-results.txt
+            rom-diagnostic-host-results.txt
+            build/romdiag/SHA256SUMS.txt
+            docs/FASE-6B-*.md
+            scripts/fm1_hardware_preflight.py
+            scripts/validate.py
+            scripts/validate_rom_diag.py
+            scripts/validate_stg2.py
+            tests/fm1_hardware_preflight_test.py
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: fm1-rom-hardware-test-experimental-hardware-unverified
