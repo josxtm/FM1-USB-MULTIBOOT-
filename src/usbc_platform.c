@@ -96,6 +96,13 @@ static __attribute__((noinline)) void explorer_session_lab(struct rom_diag_state
         const u32 raw = plat_menu_scan() | (plat_boot_keys() & K_REC);
         rom_diag_input_poll(time, tick, raw);
         if (time->result != ROM_DIAG_ACTIVE) break;
+        /* A removed reader invalidates every cached catalogue entry; never
+         * reuse stale sector pointers or report a mounted volume after detach. */
+        if (explorer.transport == DIAG_OK && !husb_attached()) {
+            usbc_media_lost(&explorer);
+            diagnostic = 1;
+            usbc_draw_diag(&explorer, &identity, display);
+        }
         /* OCT- + PLAY toggles the diagnostic panel; no accidental file action. */
         if (raw == (K_PREV | K_SEL)) {
             if (!chord_started) {
