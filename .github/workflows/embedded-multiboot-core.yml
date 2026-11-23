@@ -137,7 +137,7 @@ jobs:
           data = Path('build/usbc/FM1_USB_C_SD_READER_READONLY.bin').read_bytes()
           actual = sha256(data).hexdigest()
           assert matches[0] == actual, f'Android image pin mismatch: {matches[0]} != {actual}'
-          assert data[-8:-4] == b'APP1' and data[-2:] == b'\\x01\\x01'
+          assert data[-8:-4] == b'APP1' and data[-2:] == bytes([1, 1])
           print(f'USB-C2 Android image pin verified: {actual} ({len(data)} B)')
           PY
       - uses: actions/upload-artifact@v4
