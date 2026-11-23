@@ -122,6 +122,7 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
     var tab by rememberSaveable { mutableStateOf("Catálogo") }
     var query by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf("") }
+    var showGenres by rememberSaveable { mutableStateOf(false) }
     var filterName by rememberSaveable { mutableStateOf(DownloadFilter.AVAILABLE.name) }
     val filter = DownloadFilter.valueOf(filterName)
     val blocked = model.blockedUrls
@@ -166,18 +167,26 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
 
         when (tab) {
             "Catálogo" -> {
-                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text("Buscar por firmware, autor o función") })
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(query, { query = it }, Modifier.weight(1f), singleLine = true,
+                        label = { Text("Buscar firmware, autor o función") })
+                    FilterChip(selected = showGenres || category.isNotEmpty(),
+                        onClick = { showGenres = !showGenres },
+                        label = { Text(if (category.isEmpty()) "Géneros" else genreLabels[category] ?: category) })
+                }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DownloadFilter.entries.forEach { option ->
                         FilterChip(selected = filter == option, onClick = { filterName = option.name },
                             label = { Text(option.label) })
                     }
                 }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for ((tag, name) in genreLabels) {
-                        FilterChip(selected = category == tag, onClick = { category = if (category == tag) "" else tag },
-                            label = { Text(name) })
+                if (showGenres) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for ((tag, name) in genreLabels) {
+                            FilterChip(selected = category == tag, onClick = { category = if (category == tag) "" else tag },
+                                label = { Text(name) })
+                        }
                     }
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -195,12 +204,12 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                     Text("${filtered.size} fichas · ${selection.size} seleccionadas", color = pale)
                 }
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                    if (maxWidth >= 750.dp) {
+                    if (maxWidth >= 900.dp) {
                         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, blocked, Modifier.weight(1f), {
+                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, blocked, Modifier.weight(0.78f), {
                                 inspected = it.id
                             }, { selection = toggle(selection, it.id) })
-                            DetailPanel(selectedRow, blocked, Modifier.weight(0.9f), open)
+                            DetailPanel(selectedRow, blocked, Modifier.weight(1.42f), open)
                         }
                     } else {
                         Column(Modifier.fillMaxSize()) {
@@ -211,9 +220,9 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                         }
                     }
                 }
-                TextButton(onClick = { open("https://thefirmwarehub.com/") }) {
-                    Text("Firmware list: The Firmware Hub · CC BY 4.0 · catálogo normalizado")
-                }
+                Text("Catálogo: The Firmware Hub · CC BY 4.0", color = pale,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.clickable { open("https://thefirmwarehub.com/") }.padding(vertical = 2.dp))
             }
 
             "Descargas" -> {
@@ -333,12 +342,32 @@ private fun DetailPanel(row: Listing?, blocked: Set<String>, modifier: Modifier,
         } else {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text(row.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text("${row.author} · ${row.license}", color = mint, style = MaterialTheme.typography.labelLarge)
-                row.image?.let { CardPhoto(it, row.name) }
-                if (row.description.isNotBlank()) Text(row.description, style = MaterialTheme.typography.bodyMedium)
-                val genres = row.genres.map { genreLabels[it] ?: it }
-                if (genres.isNotEmpty()) Text(genres.joinToString(" · "), color = pale, style = MaterialTheme.typography.labelMedium)
+                Text(row.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                Text("${row.author} · ${row.license}", color = mint, style = MaterialTheme.typography.bodyLarge)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val showSideBySide = maxWidth >= 540.dp && row.image != null
+                    val summary = row.description.ifBlank { "El autor no ha publicado una descripción." }
+                    if (showSideBySide) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.Top) {
+                            CardPhoto(row.image!!, row.name, Modifier.size(240.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("DESCRIPCIÓN", style = MaterialTheme.typography.labelMedium, color = mint)
+                                Text(summary, style = MaterialTheme.typography.bodyLarge)
+                                val genres = row.genres.map { genreLabels[it] ?: it }
+                                if (genres.isNotEmpty()) Text(genres.joinToString(" · "), color = pale)
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.image?.let { CardPhoto(it, row.name, Modifier.fillMaxWidth().height(220.dp)) }
+                            Text("DESCRIPCIÓN", style = MaterialTheme.typography.labelMedium, color = mint)
+                            Text(summary, style = MaterialTheme.typography.bodyLarge)
+                            val genres = row.genres.map { genreLabels[it] ?: it }
+                            if (genres.isNotEmpty()) Text(genres.joinToString(" · "), color = pale)
+                        }
+                    }
+                }
                 row.variantOf?.let { Text("Variante de $it", color = pale, style = MaterialTheme.typography.labelSmall) }
                 HorizontalDivider()
                 Text(availabilityLabel(row, blocked), color = mint)
@@ -364,7 +393,7 @@ private fun DetailPanel(row: Listing?, blocked: Set<String>, modifier: Modifier,
 }
 
 @Composable
-private fun CardPhoto(url: String, title: String) {
+private fun CardPhoto(url: String, title: String, modifier: Modifier) {
     var picture by remember(url) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(url) {
         picture = withContext(Dispatchers.IO) {
@@ -384,7 +413,16 @@ private fun CardPhoto(url: String, title: String) {
             }.getOrNull()
         }
     }
-    picture?.let { Image(it, "Captura de $title", Modifier.size(144.dp), contentScale = ContentScale.Fit) }
+    Surface(modifier, color = Color(0xFF071311), shape = MaterialTheme.shapes.medium) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            if (picture == null) {
+                Text("Cargando imagen…", color = pale, style = MaterialTheme.typography.labelSmall)
+            } else {
+                Image(picture!!, "Captura de $title", Modifier.fillMaxSize().padding(8.dp),
+                    contentScale = ContentScale.Fit)
+            }
+        }
+    }
 }
 
 @Composable
