@@ -34,6 +34,14 @@ class UsbcRamTransportTest {
         assertFalse(UsbcRamImage.checks(bytes, digest).all { it.second })
     }
 
+    @Test fun onlyTwoAuditedApp1HashesAreAccepted() {
+        assertEquals(64, UsbcRamImage.HARDWARE_PINNED_SHA256.length)
+        assertEquals(64, UsbcRamImage.LAB_PINNED_SHA256.length)
+        assertNotEquals(UsbcRamImage.HARDWARE_PINNED_SHA256, UsbcRamImage.LAB_PINNED_SHA256)
+        assertNull(UsbcRamImage.profile(fakeApp()))
+        assertFalse(UsbcRamImage.approved(fakeApp()))
+    }
+
     @Test fun evidenceAndImageGateSendNoUsbCommands() {
         val image = fakeApp()
         val r = FakeRom()

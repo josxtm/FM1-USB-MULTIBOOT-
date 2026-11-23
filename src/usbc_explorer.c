@@ -199,3 +199,52 @@ void usbc_draw(const struct usbc_explorer *e, struct mb_lcd_list_renderer *lcd)
     }
     mb_lcd_list_row(lcd, 14, e->detail ? "REC: VOLVER" : "REC: SALIR", C_GREY);
 }
+
+/* Read-only technical panel: no SCSI command or Flash operation is triggered
+ * by rendering. All numbers originate from successful enumeration / mounting. */
+static void hex16(char *out, u16 value)
+{
+    static const char digits[] = "0123456789ABCDEF";
+    for (u32 i = 0; i < 4; ++i)
+        out[i] = digits[(value >> ((3u - i) * 4u)) & 15u];
+    out[4] = 0;
+}
+
+void usbc_draw_diag(const struct usbc_explorer *e, const struct usb_device *identity,
+                    struct mb_lcd_list_renderer *lcd)
+{
+    char text[21];
+    u32 n = 0;
+    for (u32 i = 0; i < 15; ++i) mb_lcd_list_row(lcd, i, "", C_WHITE);
+    mb_lcd_list_row(lcd, 0, "FM1 USB-C DIAGNOSTIC", C_GREEN);
+    mb_lcd_list_row(lcd, 1, "RAM / SOLO LECTURA", C_YELLOW);
+    if (identity && identity->vid && identity->pid) {
+        append(text, &n, "VID:", sizeof text);
+        hex16(text + n, identity->vid); n += 4;
+        append(text, &n, " PID:", sizeof text);
+        hex16(text + n, identity->pid); n += 4;
+        text[n] = 0;
+        mb_lcd_list_row(lcd, 3, text, C_WHITE);
+    } else mb_lcd_list_row(lcd, 3, "USB SIN IDENTIFICAR", C_GREY);
+    mb_lcd_list_row(lcd, 4, identity && identity->bulk_mps ? "MSC / SCSI / BOT OK" :
+                    "MSC: SIN CONFIRMAR", C_WHITE);
+    n = 0;
+    append(text, &n, "SECTORES: ", sizeof text);
+    if (e->media == DIAG_OK && e->fs.disk.count)
+        decimal(text, &n, e->fs.disk.count, sizeof text);
+    else append(text, &n, "?", sizeof text);
+    mb_lcd_list_row(lcd, 5, text, C_WHITE);
+    mb_lcd_list_row(lcd, 6, e->media == DIAG_OK ? "FAT32: MONTADA" : diag_error(e->media),
+                    e->media == DIAG_OK ? C_GREEN : C_RED);
+    mb_lcd_list_row(lcd, 7, e->version == 2 ? "CATALOGO: FM1CAT V2" :
+                    e->version == 1 ? "CATALOGO: INDEX V1" : "CATALOGO: SIN LEER",
+                    C_WHITE);
+    n = 0;
+    append(text, &n, "FIRMWARES: ", sizeof text);
+    decimal(text, &n, e->count, sizeof text);
+    mb_lcd_list_row(lcd, 8, text, C_WHITE);
+    mb_lcd_list_row(lcd, 10, "FLASH: SIN ESCRITURA", C_YELLOW);
+    mb_lcd_list_row(lcd, 12, "PLAY: EXPLORADOR", C_GREEN);
+    mb_lcd_list_row(lcd, 13, "REC: TERMINAR", C_GREY);
+    mb_lcd_list_row(lcd, 14, "OCT-+PLAY: PANEL", C_GREY);
+}

@@ -26,5 +26,6 @@ struct usbc_explorer {
 };
 void usbc_mount(struct usbc_explorer *, struct block_device, enum diag_result);
 void usbc_draw(const struct usbc_explorer *, struct mb_lcd_list_renderer *);
+void usbc_draw_diag(const struct usbc_explorer *, const struct usb_device *, struct mb_lcd_list_renderer *);
 void usbc_event(struct usbc_explorer *, enum mb_event);
 #endif

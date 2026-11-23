@@ -26,8 +26,13 @@ Desde `android/`, con JDK 17 y SDK Android 35 y Build Tools 35.0.0:
 ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-El APK local se genera en `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions distribuye `FM1_RAM_Loader_v1.0_comp16.apk`, con firma de depuración, SHA‑256 y resultados. Identificador de aplicación `com.josxtm.fm1ramloader`. API mínima 30, objetivo 35, diseño horizontal adaptable.
+El APK local se genera en `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions distribuye `FM1_RAM_Loader_v1.0_comp17.apk`, con firma de depuración, SHA‑256 y resultados. Identificador de aplicación `com.josxtm.fm1ramloader`. API mínima 30, objetivo 35, diseño horizontal adaptable.
 
 ## FM1 Manager To USB
 
 La variante `manager` del módulo existente genera el gestor de catálogo y microSD con otro ID de aplicación. El APK `loader` permanece en su variante histórica. [Guía de Manager](../docs/FM1-MANAGER-USB.md) · [Descubrimiento y FM1CAT v2](../docs/FM1-MANAGER-USB-CATALOGO.md)
+
+
+## Laboratorio USB-C — fases 3–5
+
+La variante **loader comp17** acepta dos imágenes APP1 de SHA-256 exacto: diagnóstico seguro `READONLY` y experimento `HOST LAB`. El segundo archivo permite iniciar, sólo cuando haya caracterización externa previa y autorización del propietario, el modo Host en el FM1 desde RAM mediante el gesto **OCT+ + PLAY durante 2 s** después de desconectar Android. El gesto no sustituye la comprobación de VBUS, CC y protección eléctrica. No se accede a Flash. Más información: [Fases USB-C 3–5](../docs/FASE-USB-C-3-5.md).

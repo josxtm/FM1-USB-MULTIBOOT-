@@ -124,9 +124,10 @@ jobs:
       - name: Test the USB-C explorer and build the electrically gated APP1
         run: |
           set -euo pipefail
-          make usbc-test usbc-sanitize | tee usbc-test-results.txt
-          make TOOLCHAIN=toolchain usbc-explorer
+          make usbc-test usbc-sanitize usbc-lab-test | tee usbc-test-results.txt
+          make TOOLCHAIN=toolchain usbc-explorer usbc-lab
           (cd build/usbc && sha256sum -c SHA256SUMS.txt)
+          (cd build/usbc_lab && sha256sum -c SHA256SUMS.txt)
           python3 - <<'PY'
           from hashlib import sha256
           from pathlib import Path
@@ -138,7 +139,15 @@ jobs:
           actual = sha256(data).hexdigest()
           assert matches[0] == actual, f'Android image pin mismatch: {matches[0]} != {actual}'
           assert data[-8:-4] == b'APP1' and data[-2:] == bytes([1, 1])
-          print(f'USB-C2 Android image pin verified: {actual} ({len(data)} B)')
+          lab = Path('build/usbc_lab/FM1_USB_C_SD_READER_LAB.bin').read_bytes()
+          lab_pin = re.findall(r'LAB_PINNED_SHA256 = "([0-9a-f]{64})"', source)
+          assert len(lab_pin) == 1, 'lab loader must pin exactly one approved SHA-256'
+          lab_actual = sha256(lab).hexdigest()
+          assert lab_pin[0] == lab_actual, f'Android LAB image pin mismatch: {lab_pin[0]} != {lab_actual}'
+          assert lab[-8:-4] == b'APP1' and lab[-2:] == bytes([1, 1])
+          assert lab_actual != actual, 'lab and safe images must be different'
+          print(f'USB-C2 Android safe pin verified: {actual} ({len(data)} B)')
+          print(f'USB-C3 Android lab pin verified: {lab_actual} ({len(lab)} B)')
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -156,6 +165,24 @@ jobs:
             build/usbc/elf-report.txt
             build/usbc/disassembly.txt
             build/usbc-explorer.ppm
+            usbc-test-results.txt
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-usbc-host-lab-experimental-NOT-PHYSICALLY-VERIFIED
+          path: |
+            LICENSE
+            NOTICE.md
+            docs/FASE-USB-C-1.md
+            docs/FASE-USB-C-3-5.md
+            build/usbc_lab/FM1_USB_C_SD_READER_LAB.bin
+            build/usbc_lab/FM1_USB_C_SD_READER_LAB.elf
+            build/usbc_lab/FM1_USB_C_SD_READER_LAB.map
+            build/usbc_lab/ABI.txt
+            build/usbc_lab/SAFETY.txt
+            build/usbc_lab/SHA256SUMS.txt
+            build/usbc_lab/elf-report.txt
+            build/usbc_lab/disassembly.txt
             usbc-test-results.txt
           if-no-files-found: error
       - name: Check out the exact installed bootloader's source for its host loader

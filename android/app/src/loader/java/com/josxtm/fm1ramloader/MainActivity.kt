@@ -129,10 +129,11 @@ class MainActivity : ComponentActivity() {
                 inspection = result
                 busy = false
                 val approved = result.approved != null
+                val usbProfile = UsbcRamImage.profile(data)
+                usbcImageOk = usbProfile != null
                 val usbChecks = UsbcRamImage.checks(data)
-                usbcImageOk = usbChecks.all { it.second }
-                usbcImageState = if (usbcImageOk) "Diagnóstico USB-C2 exacto, CRC/SHA válidos"
-                    else "USB-C2 rechazado: " + usbChecks.filterNot { it.second }.joinToString { it.first }
+                usbcImageState = if (usbcImageOk) "APP1 $usbProfile aprobado, CRC/SHA válidos"
+                    else "APP1 USB-C rechazado: " + usbChecks.filterNot { it.second }.joinToString { it.first }
                 imageState = when {
                     usbcImageOk -> "APP1 USB-C2 aprobado; simulador antiguo no aplicable"
                     approved -> "Archivo aprobado para simulación"
