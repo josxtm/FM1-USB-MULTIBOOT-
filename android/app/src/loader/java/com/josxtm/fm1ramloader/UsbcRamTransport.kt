@@ -38,7 +38,7 @@ internal data class UsbcRamReport(
  * Se rellenará después de auditar el artefacto pi32v2 exacto de CI.
  */
 internal object UsbcRamImage {
-    const val HARDWARE_PINNED_SHA256 = "UNQUALIFIED"
+    const val HARDWARE_PINNED_SHA256 = "cb04c2cef8ef9641603c68b2942c8d094fa87a9b5debec72d24cf7115bfd2025"
     private const val MAX_IMAGE = 32768
     private fun digest(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes)
@@ -71,7 +71,9 @@ internal object UsbcRamImage {
 internal class UsbcRamTransport(
     private val connection: RomConnection,
     private val linkValid: () -> Boolean,
-    private val progress: (Int, Int) -> Unit = { _, _ -> }
+    private val progress: (Int, Int) -> Unit = { _, _ -> },
+    // Internal seam for hermetic tests; the physical Android backend always uses the default.
+    private val approveImage: (ByteArray) -> Boolean = UsbcRamImage::approved
 ) {
     private var used = false
     private var tag = 0
@@ -83,7 +85,7 @@ internal class UsbcRamTransport(
         used = true
         if (!evidence.complete())
             return UsbcRamReport(UsbcRamResult.BLOCKED, 0, 0, "Faltan verificaciones externas")
-        if (!UsbcRamImage.approved(image))
+        if (!approveImage(image))
             return UsbcRamReport(UsbcRamResult.IMAGE_REJECTED, 0, 0, "Imagen no aprobada")
         var blocks = 0
         var uploaded = 0
@@ -112,7 +114,7 @@ internal class UsbcRamTransport(
                 blocks++
                 progress(uploaded, image.size)
             }
-            if (!UsbcRamImage.approved(image))
+            if (!approveImage(image))
                 throw UsbProblem(UsbFailure.POLICY, "La imagen cambió antes del salto")
 
             // Un solo salto. La ROM puede desmontar USB antes de confirmar.
