@@ -1,0 +1,30 @@
+# FM1 Manager To USB · Fase A
+
+FM1 Manager To USB prepara la biblioteca de una microSD desde Android. La variante `manager`, con ID `com.josxtm.fm1managerusb`, sólo empaqueta el gestor, las clases compartidas de FM1CAT y el manifiesto público. La variante histórica `loader` conserva sus fuentes y pruebas en Git, como APK separado. El verificador de CI inspecciona manifiesto, clases DEX y recursos de la APK Manager.
+
+## Uso en tablet
+
+1. Abrir **Catálogo**, buscar por nombre, autor o función y filtrar por las categorías publicadas. Una ficha enlaza su fuente, el historial de releases, su demostración cuando consta y las capturas de los autores disponibles en la fuente. El catálogo muestra procedencia y separa distribuciones del autor, compilaciones de terceros, código, variantes, duplicados y herramientas.
+2. Marcar una ficha o usar **Todos los descargables**. **Descargar nuevos del filtro** omite hashes presentes en el índice de la microSD o en caché. **Descargas** muestra progreso, pausa y reanudación y permite hasta tres reintentos manuales tras el intento inicial. Hay como máximo tres transferencias concurrentes. Con ETag fuerte y un rango válido se retoman los bytes parciales. Si el servidor devuelve un archivo completo se vuelve a escribir el temporal desde cero. El cambio de contenido, enlaces retirados y SHA incorrecto impiden la publicación.
+3. **Importar originales** permite seleccionar archivos UFW, FWSC y BIN con formato identificado en Android Files. Se conservan bytes, nombre y huella. La identidad FWSC, la estructura UFW y el perfil SLOT se inspeccionan en modo de lectura. Los contenedores opacos sin contrato, los APP1 de diagnóstico y los archivos truncados se rechazan.
+4. Crear una carpeta **FM1** en la raíz de la microSD con Android Files. Pulsar **Elegir carpeta FM1** y autorizar el acceso persistente a esa carpeta. Con el lector USB‑C en la tablet, los archivos deben ser visibles a través de Android Storage Access Framework. Android no garantiza que el proveedor permita confirmar el tipo FAT; verificar FAT32 con otra herramienta del sistema. El gestor carece de formateador.
+5. En **Descargas**, marcar los archivos y pulsar **Copiar selección a microSD**. Primero verifica tamaño, SHA‑256 y formato en caché. Luego copia los originales, los relee y verifica, prepara páginas y publica un índice. **MicroSD** permite recargar y comprobar una copia individual. Su marca «En índice» refleja el catálogo, mientras que «Verificar original» relee los bytes en ese momento.
+6. **Exportar selección FM1CAT v1** crea o amplía `FM1/INDEX.CSV` para una selección de hasta 64 registros en total, con los nombres 8.3 que admite el selector actual. La extensión FWS en tarjeta es el nombre corto de un FWSC original, cuyos bytes se conservan. UFW requiere v2. La operación conserva las entradas previas, relee el índice y guarda `INDEX.BAK`.
+7. Si se retira la tarjeta o falta espacio, reinsertarla y recargar. El índice v2 sano se mantiene si falla la nueva publicación. Un archivo incompleto que el proveedor hubiera dejado se detecta por hash y requiere revisión antes de sustituirlo. **Recuperar índice v1** lee y valida `INDEX.BAK` cuando `INDEX.CSV` quedó dañado. Si persiste un `INDEX.NEW` distinto del índice vigente, revisar esos tres archivos en la tablet. La recuperación evita retirar un borrador ajeno.
+
+La caché y las importaciones sobreviven al reinicio de la app. Tras una terminación del proceso, se puede volver a encolar la misma selección para continuar una transferencia parcial compatible con ETag. La cola visible vive durante la sesión de la app. Los originales ya publicados en microSD conservan sus versiones anteriores.
+
+## Compilar y probar
+
+```sh
+cd android
+./gradlew :app:assembleManagerDebug :app:testManagerDebugUnitTest :app:lintManagerDebug
+```
+
+La APK de prueba firmada en modo debug se publica en GitHub Actions con SHA‑256, resultados JVM, Lint, el manifiesto JSON y trazas de interoperabilidad. La prueba de Android emite dos originales sintéticos y un índice v1. CI monta los archivos sobre FAT32 simulado y ejecuta la misma implementación C de FAT32 y FM1CAT v1 que usa el selector. Un verificador Python independiente lee las páginas FM1CAT v2 producidas por el gestor. Los VM tests cubren 1.150 fichas de descubrimiento y 1.153 registros v2, rangos de reanudación, descargas simultáneas, duplicados, nuevo hash de versión, paquetes corruptos, metadatos incorrectos, tarjeta retirada, falta de espacio, índice dañado y recuperación. La escritura SAF y el diseño adaptable todavía requieren una prueba física en la tablet y su lector.
+
+## Seguridad y alcance del FM1
+
+El contrato de inspección FWSC/UFW sigue la descripción pública de M‑Flasher para la identidad entrelazada y los CRC16 de cabecera, lista y archivos. La inspección SLOT v1 valida la placa FM‑1, JEDEC Puya `856014`, CRC32 y bitmap, apartando bootloader y key/MAC. UFW sin una identidad externa queda con modelo sin confirmar. La app conserva las regiones que declara el **contenedor**, con sus offsets dentro del archivo. El mapa físico y la compatibilidad de instalación permanecen sin verificar. [M‑Flasher 0.12.1 y licencia](https://github.com/jvitkauskas/m-flasher/blob/8fbece7348d758ac284325eed455781675ac95ff/src/formats.rs#L449)
+
+El uso autónomo del lector conectado al **FM1** por USB‑C sigue bloqueado. Quedan por demostrar el rol CC y suministro VBUS de la placa, USB Host MSC y una entrada persistente al explorador desde el arranque o la recuperación existente. Las pruebas de Android y sus permisos SAF sólo cubren al lector conectado a la **tablet**. La compatibilidad de escritura Flash y recuperación de un firmware instalado pertenece a una fase posterior. [Investigación USB‑C](goose/FASE-5Z-USB-C-HARDWARE.md)

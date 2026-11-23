@@ -1,0 +1,75 @@
+name: FM1 Manager To USB
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'scripts/update_manager_catalog.py'
+      - 'scripts/verify_manager_card.py'
+      - 'docs/FM1-MANAGER-USB*.md'
+      - '.github/workflows/android-fm1-manager-usb.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fm1-manager-usb-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-35 build-tools;35.0.0
+      - name: Assemble, test and lint the storage-only app
+        working-directory: android
+        run: ./gradlew --no-daemon :app:assembleManagerDebug :app:testManagerDebugUnitTest :app:lintManagerDebug
+      - name: Read the Android-created card fixtures with independent v2 and embedded v1 parsers
+        run: |
+          set -o pipefail
+          mkdir -p dist/test-results
+          root=android/app/build/manager-contract-card
+          python3 scripts/verify_manager_card.py "$root/FM1" --files | tee dist/FM1CAT-v2.json
+          make build/fat32_multiboot_integration
+          python3 scripts/generate_fat32_image.py build/android-manager-test.img --slotfile-card "$root"
+          ./build/fat32_multiboot_integration build/android-manager-test.img '' 2 | tee dist/FM1CAT-v1.txt
+      - name: Verify signing, manifest and storage-only package scope
+        run: |
+          cp android/app/build/outputs/apk/manager/debug/app-manager-debug.apk dist/FM1_Manager_To_USB_v1.0-alpha01.apk
+          cp android/app/build/test-results/testManagerDebugUnitTest/TEST-*.xml dist/test-results/
+          cp android/app/build/reports/lint-results-managerDebug.html dist/
+          cp android/app/src/manager/assets/discovery.json dist/
+          cp docs/FM1-MANAGER-USB*.md dist/
+          cd dist
+          apk=FM1_Manager_To_USB_v1.0-alpha01.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree "$apk" AndroidManifest.xml > apk-manifest.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          root = Path('apk-manifest.txt').read_text()
+          assert 'com.josxtm.fm1managerusb' in root and 'ManagerActivity' in root
+          assert all(x not in root for x in ('usb.host', 'software.midi', 'MainActivity', 'MbootMidiActivity'))
+          with ZipFile('FM1_Manager_To_USB_v1.0-alpha01.apk') as apk:
+              assert 'assets/discovery.json' in apk.namelist()
+              assert not any('diagnostics-ram' in f for f in apk.namelist())
+              dex = [apk.read(f) for f in apk.namelist() if f.endswith('.dex')]
+              assert dex and not any(
+                  b'Lcom/josxtm/fm1ramloader/' + cls + b';' in data
+                  for cls in (b'RomProbe', b'AndroidUsb', b'RomProtocol', b'MbootMidiDiscovery', b'AppImage')
+                  for data in dex
+              )
+          PY
+          sha256sum "$apk" discovery.json > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FM1_Manager_To_USB_v1.0-alpha01
+          path: dist/
+          if-no-files-found: error
