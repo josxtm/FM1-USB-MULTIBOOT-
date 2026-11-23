@@ -589,3 +589,41 @@ usbc-test: build/usbc-explorer-test build/usbc-storage-test
 
 usbc-sanitize: build/usbc-explorer-sanitize
 	bash tests/usbc_suite.sh build/usbc-explorer-sanitize
+
+
+# USB-C phases 3-5: separate physical laboratory image. The ordinary APP1
+# stays electrically passive. Do not link the lab objects into that image.
+USBC_LAB_TARGET = build/usbc_lab/FM1_USB_C_SD_READER_LAB
+USBC_LAB_C = $(sort $(USBC_C) usbc_lab)
+USBC_LAB_OBJECTS = $(addprefix build/usbc_lab/,$(addsuffix .o,$(USBC_LAB_C))) build/usbc_lab/usbc_start.o
+
+.PHONY: usbc-lab usbc-lab-test
+usbc-lab: $(USBC_LAB_TARGET).bin
+
+build/usbc_lab/%.o: src/%.c $(wildcard src/*.h) Makefile
+	@mkdir -p build/usbc_lab
+	$(CLANG) $(CFLAGS) -DFM1_USBC_EXPLORER -DFM1_USBC_LAB=1 -fstack-usage -c $< -o $@
+
+build/usbc_lab/usbc_start.o: src/usbc_start.S
+	@mkdir -p build/usbc_lab
+	$(CLANG) -target pi32v2 -mcpu=r3 -c $< -o $@
+
+$(USBC_LAB_TARGET).elf: $(USBC_LAB_OBJECTS) src/usbc_explorer.ld
+	$(LD) --gc-sections --no-undefined -Map $(USBC_LAB_TARGET).map -T src/usbc_explorer.ld -o $@ $(filter %.o,$^)
+
+$(USBC_LAB_TARGET).bin: $(USBC_LAB_TARGET).elf scripts/app_trailer.py scripts/validate.py scripts/audit_usbc_image.py Makefile
+	$(OBJCOPY) -O binary -j .image $< $(USBC_LAB_TARGET).flat
+	$(READELF) -h -l -S -s $< > build/usbc_lab/elf-report.txt
+	$(OBJDUMP) -d $< > build/usbc_lab/disassembly.txt
+	python3 scripts/app_trailer.py $(USBC_LAB_TARGET).flat $@.tmp fm1
+	python3 scripts/validate.py $< $(USBC_LAB_TARGET).flat $@.tmp > build/usbc_lab/ABI.txt
+	python3 scripts/audit_usbc_image.py $@.tmp build/usbc_lab/disassembly.txt $(patsubst %.o,%.su,$(filter-out build/usbc_lab/usbc_start.o,$(USBC_LAB_OBJECTS))) > build/usbc_lab/SAFETY.txt
+	mv $@.tmp $@
+	cd build/usbc_lab && sha256sum FM1_USB_C_SD_READER_LAB.bin FM1_USB_C_SD_READER_LAB.elf > SHA256SUMS.txt
+
+build/usbc-lab-test: tests/usbc_lab_test.c src/usbc_lab.c src/usbc_lab.h
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc tests/usbc_lab_test.c src/usbc_lab.c -o $@
+
+usbc-lab-test: build/usbc-lab-test
+	./build/usbc-lab-test
