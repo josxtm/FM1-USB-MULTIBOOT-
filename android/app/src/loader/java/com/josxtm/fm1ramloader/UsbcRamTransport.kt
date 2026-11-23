@@ -91,6 +91,7 @@ internal class UsbcRamTransport(
         var blocks = 0
         var uploaded = 0
         var jumpSent = false
+        var uploadAttempted = false
         try {
             val inquiry = exchange(RomProtocol.inquiryCdb(), 36)
             requireSuccess(inquiry, 36)
@@ -109,6 +110,7 @@ internal class UsbcRamTransport(
                 ensureActive()
                 val raw = image.copyOfRange(uploaded, minOf(uploaded + 512, image.size))
                 val encoded = RomProtocol.transform(raw)
+                uploadAttempted = true
                 val response = exchange(RomProtocol.writeCdb(AppSlot.START + uploaded, encoded), 0, encoded)
                 requireSuccess(response, 0)
                 uploaded += raw.size
@@ -135,7 +137,7 @@ internal class UsbcRamTransport(
                 blocks, uploaded, "Respuesta de salto ambigua; no reintentar")
         } catch (e: Exception) {
             return UsbcRamReport(if (jumpSent) UsbcRamResult.JUMP_UNCONFIRMED
-                else if (blocks == 0 && uploaded == 0) UsbcRamResult.ROM_UNQUALIFIED
+                else if (!uploadAttempted) UsbcRamResult.ROM_UNQUALIFIED
                 else UsbcRamResult.TRANSFER_FAILED,
                 blocks, uploaded, e.message ?: e.javaClass.simpleName)
         }
