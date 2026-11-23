@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -60,7 +61,9 @@ internal fun LoaderScreen(
     connect: () -> Unit, connectExclusive: (Int) -> Unit, disconnect: () -> Unit,
     selectFile: () -> Unit, useReference: () -> Unit,
     validate: () -> Unit, simulate: () -> Unit, export: () -> Unit,
-    openLibrary: () -> Unit, openMidi: () -> Unit
+    openLibrary: () -> Unit, openMidi: () -> Unit,
+    usbcEvidence: UsbcLabEvidence, usbcImageApproved: Boolean, usbcImageState: String,
+    updateUsbcEvidence: (UsbcLabEvidence) -> Unit, launchUsbc: () -> Unit
 ) {
     MaterialTheme(colorScheme = palette) {
         Surface(color = ink, modifier = Modifier.fillMaxSize()) {
@@ -70,7 +73,7 @@ internal fun LoaderScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("FM1 RAM LOADER", color = teal, fontFamily = FontFamily.Monospace,
                         fontSize = 31.sp, fontWeight = FontWeight.Bold)
-                    Text("Simulación · carga física bloqueada", color = muted, fontSize = 17.sp)
+                    Text("USB-C2 · diagnóstico ROM de laboratorio (carga única en SRAM)", color = muted, fontSize = 17.sp)
                     OutlinedButton(openLibrary) { Text("MicroSD · Biblioteca y exportación de firmwares") }
                     OutlinedButton(openMidi) { Text("M-BOOTLOADER 2.4 · Identificar por USB-MIDI (solo lectura)") }
                     if (wide) {
@@ -84,6 +87,8 @@ internal fun LoaderScreen(
                         ImagePane(Modifier.fillMaxWidth(), image, fileSize, imageState, busy, selectFile, useReference, validate)
                         OperationPane(Modifier.fillMaxWidth(), operation, progress, image?.approved != null && !busy, simulate)
                     }
+                    UsbcLabPane(usb, usbcEvidence, usbcImageApproved, usbcImageState,
+                        busy, updateUsbcEvidence, launchUsbc)
                     ConsolePane(lines, export)
                 }
             }
@@ -163,6 +168,49 @@ private fun OperationPane(
     Button(simulate, enabled = canSimulate, modifier = Modifier.fillMaxWidth()) { Text("Simular carga") }
     OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text("Cargar en RAM") }
     Text("Pendiente de validación en el FM‑1 físico.", color = muted)
+}
+
+@Composable
+private fun UsbcLabPane(
+    usb: UsbPanel, evidence: UsbcLabEvidence, imageApproved: Boolean, imageState: String,
+    busy: Boolean, update: (UsbcLabEvidence) -> Unit, launch: () -> Unit
+) = Panel("USB-C2 · diagnóstico temporal", Modifier.fillMaxWidth()) {
+    Text(imageState, color = if (imageApproved) teal else warn)
+    Text("Este proceso NO instala firmware. El programa se carga sólo en SRAM y se pierde al apagar.",
+        color = muted)
+    Text("Una casilla marcada NO acredita mediciones eléctricas ni el estado de ROM: exige pruebas independientes previas.",
+        color = warn)
+    LabCheck("ROM fría confirmada independientemente (no basta INQUIRY)",
+        evidence.independentlyObservedColdRom,
+        { update(evidence.copy(independentlyObservedColdRom = it)) })
+    LabCheck("Copia íntegra de Flash contrastada", evidence.flashBackupVerified,
+        { update(evidence.copy(flashBackupVerified = it)) })
+    LabCheck("Procedimiento de recuperación comprobado", evidence.recoveryProcedureVerified,
+        { update(evidence.copy(recoveryProcedureVerified = it)) })
+    LabCheck("Adaptador, rol USB-C, CC y VBUS cualificados externamente",
+        evidence.usbPowerAndRoleQualified,
+        { update(evidence.copy(usbPowerAndRoleQualified = it)) })
+    LabCheck("Autorizo una única carga en SRAM y asumo reinicio manual",
+        evidence.explicitOneShotConsent,
+        { update(evidence.copy(explicitOneShotConsent = it)) })
+    LabCheck("Permitir reclamo USB exclusivo si Android bloquea el reclamo normal",
+        evidence.exclusiveClaimAllowed,
+        { update(evidence.copy(exclusiveClaimAllowed = it)) })
+    val enabled = imageApproved && evidence.complete() && usb.identity == "WL82 / UBOOT1.00" &&
+        usb.selected?.mode == UsbMode.ROM && !usb.busy && !busy
+    Button(launch, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+        Text("Ejecutar prueba USB-C2 en RAM (una vez)")
+    }
+    Text("Si falta evidencia o Android cambia la conexión, operación bloqueada. " +
+        "Tras un salto no confirmado NO repetir el comando.", color = muted)
+}
+
+@Composable
+private fun LabCheck(label: String, checked: Boolean, update: (Boolean) -> Unit) {
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = update)
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+    }
 }
 
 @Composable
