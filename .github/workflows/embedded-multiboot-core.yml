@@ -137,12 +137,14 @@ jobs:
           assert len(matches) == 1, 'physical loader must pin exactly one approved SHA-256'
           data = Path('build/usbc/FM1_USB_C_SD_READER_READONLY.bin').read_bytes()
           actual = sha256(data).hexdigest()
-          assert matches[0] == actual, f'Android image pin mismatch: {matches[0]} != {actual}'
-          assert data[-8:-4] == b'APP1' and data[-2:] == bytes([1, 1])
           lab = Path('build/usbc_lab/FM1_USB_C_SD_READER_LAB.bin').read_bytes()
           lab_pin = re.findall(r'LAB_PINNED_SHA256 = "([0-9a-f]{64})"', source)
           assert len(lab_pin) == 1, 'lab loader must pin exactly one approved SHA-256'
           lab_actual = sha256(lab).hexdigest()
+          print(f'APP1 readonly recompiled SHA256: {actual} ({len(data)} bytes)')
+          print(f'APP1 host lab recompiled SHA256: {lab_actual} ({len(lab)} bytes)')
+          assert matches[0] == actual, f'Android image pin mismatch: {matches[0]} != {actual}'
+          assert data[-8:-4] == b'APP1' and data[-2:] == bytes([1, 1])
           assert lab_pin[0] == lab_actual, f'Android LAB image pin mismatch: {lab_pin[0]} != {lab_actual}'
           assert lab[-8:-4] == b'APP1' and lab[-2:] == bytes([1, 1])
           assert lab_actual != actual, 'lab and safe images must be different'
