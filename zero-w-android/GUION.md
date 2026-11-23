@@ -14,7 +14,7 @@ Desde el navegador del móvil se abre una página web alojada en la Raspberry Pi
 
 ### Capacidad de la tarjeta
 
-Elegimos Raspberry Pi OS Lite (Trixie, 32 bits) por las pruebas físicas publicadas por FM-1 Companion con Raspberry Pi Zero W y FM-1. El autor documenta copia, restauración verificada y actualización de SLOOP 2.7.1 a 2.8. La instalación por DOWNLOAD MODE con nuestro cargador y paquetes requiere pruebas propias. La imagen base oficial ocupa 2.656 MB una vez descomprimida. Evaluar 4 GB como capacidad candidata y usar 8 GB para el primer montaje, con espacio para las dependencias, los firmwares, las copias y la partición FAT32 FM1DATA. Publicar el mínimo tras medir la imagen completa y probar el ciclo móvil–Zero–FM-1. [Pruebas físicas de FM-1 Companion](https://github.com/xoxoaudiolabs/FM-1-Companion) · [Descargas oficiales](https://www.raspberrypi.com/software/operating-systems/)
+Elegimos Raspberry Pi OS Lite (Trixie, 32 bits) por las pruebas físicas publicadas por FM-1 Companion con Raspberry Pi Zero W y FM-1. El autor documenta copia, restauración verificada y actualización de SLOOP 2.7.1 a 2.8. La instalación por DOWNLOAD MODE con nuestro cargador y paquetes requiere pruebas propias. La imagen base oficial ocupa 2.656 MB una vez descomprimida. Usar una microSD de 32 GB para el primer montaje y las pruebas del ciclo móvil–Zero–FM-1. Reservar espacio para el sistema y las dependencias, y dedicar el espacio restante disponible a la partición FAT32 FM1DATA para firmwares y copias. La capacidad mínima se podrá evaluar más adelante. [Pruebas físicas de FM-1 Companion](https://github.com/xoxoaudiolabs/FM-1-Companion) · [Descargas oficiales](https://www.raspberrypi.com/software/operating-systems/)
 
 ### Preparación de la microSD y botón «Preparar tarjeta SD»
 
@@ -65,7 +65,7 @@ Al repetir la preparación, conservar los paquetes y archivos existentes. Verifi
 |---|---|
 | Móvil Android | Abrir la web local en el navegador y enviar órdenes por Wi-Fi. |
 | Raspberry Pi Zero W v1.1 y carcasa sencilla | Alojar el programador. Dejar accesibles microSD, USB y PWR IN. |
-| MicroSD y lector para prepararla | Instalar el sistema, servicio, paquetes y registros. |
+| MicroSD de 32 GB y lector para prepararla | Instalar el sistema, servicio, paquetes y registros. |
 | Powerbank de 5 V con salida de 2 A y cable micro-USB | Dar alimentación a la Zero por PWR IN. |
 | Adaptador micro-USB OTG a USB-A hembra y cable USB-A a USB-C de datos | Conectar el puerto USB de datos de la Zero al FM-1. |
 | M-VAVE FM-1 con batería cargada | Seleccionar el modo del bootloader y arrancar el firmware instalado. |
