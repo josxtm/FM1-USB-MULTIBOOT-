@@ -30,6 +30,12 @@ class VirtualInstallerTest(unittest.TestCase):
         self.assertEqual(result['result'], 'REJECTED')
         self.assertIn('no documented authorized erase region', result['validation']['reasons'])
 
+    def test_explicit_policy_cannot_authorize_key_mac(self):
+        for start in (MOD.BOOTLOADER_END, MOD.KEY_MAC_START):
+            with self.subTest(start=start):
+                with self.assertRaisesRegex(ValueError, 'key/MAC'):
+                    MOD.FlashRegionPolicy([(start, MOD.FLASH_SIZE)])
+
     def raw_flash(self, payload=b'candidate-flash'):
         payload += b'\0' * ((-len(payload)) % MOD.SECTOR)
         return b'\xff' * MOD.BOOTLOADER_END + payload

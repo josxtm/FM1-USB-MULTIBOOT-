@@ -17,7 +17,7 @@ STG2_C = stg2_selector stg2_selector_platform stg2_sd embedded_multiboot embedde
          fat32 embedded_lcd_list_renderer embedded_lcd_sink lcd keys embedded_keys embedded_clock timer runtime
 STG2_OBJECTS = $(addprefix build/stg2/,$(addsuffix .o,$(STG2_C))) build/stg2/stg2_selector_start.o
 
-.PHONY: stg2-selector stg2-host-test stg2-v24-test
+.PHONY: stg2-selector stg2-host-test stg2-v24-test sd-package-test
 stg2-selector: build/stg2/fm1-multiboot-selector-stg2.bin
 
 STG2_HOST = src/stg2_selector.c src/stg2_sd.c src/embedded_multiboot.c \
@@ -43,6 +43,26 @@ stg2-v24-test: stg2-selector
 	$(CC_HOST) -std=c11 -O2 -Wall -Wextra -Werror -DPLATFORM_SIM \
 		-I"$(MBOOT24)/include" -I"$(MBOOT24)/tests" tests/stg2_v24_bridge.c "$(MBOOT24)/src/core.c" -o build/stg2-v24-test
 	./build/stg2-v24-test build/stg2/fm1-multiboot-selector-stg2.bin
+
+sd-package-test: stg2-v24-test build/stg2-selector-test
+	@set -e; work=$$(mktemp -d build/sd-package-test.XXXXXX); trap 'rm -rf "$$work"' EXIT; \
+		mkdir -p build/sd-package; out=build/sd-package; stg2=build/stg2/fm1-multiboot-selector-stg2.bin; \
+		python3 scripts/fm1_sd_package.py build --selector "$$stg2" --output "$$work/empty.zip" > "$$out/empty.json"; \
+		python3 scripts/fm1_sd_package.py build --selector "$$stg2" --output "$$work/demo.zip" --demo > "$$out/synthetic.json"; \
+		python3 scripts/fm1_sd_package.py build --selector "$$stg2" --output "$$work/repeat.zip" --demo >/dev/null; \
+		cmp "$$work/demo.zip" "$$work/repeat.zip"; \
+		python3 scripts/generate_fat32_image.py "$$work/demo.img" --spi-package "$$work/demo.zip"; \
+		python3 scripts/generate_fat32_image.py "$$work/mbr.img" --spi-package "$$work/demo.zip" --mbr; \
+		python3 scripts/generate_fat32_image.py "$$work/empty.img" --spi-package "$$work/empty.zip"; \
+		for image in demo mbr; do \
+			./build/stg2-v24-test "$$stg2" "$$work/$$image.img"; \
+			./build/stg2-selector-test "$$work/$$image.img" --package; \
+		done; \
+		./build/stg2-v24-test "$$stg2" "$$work/empty.img"; \
+		./build/stg2-selector-test "$$work/empty.img" --empty; \
+		mv "$$work/empty.zip" "$$out/FM1-SPI1-EMPTY.zip"; \
+		mv "$$work/demo.zip" "$$out/FM1-SPI1-SYNTHETIC-HOST-ONLY.zip"; \
+		(cd "$$out" && sha256sum FM1-SPI1-*.zip > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
 
 build/stg2/%.o: src/%.c $(wildcard src/*.h) Makefile
 	@mkdir -p build/stg2

@@ -11,6 +11,7 @@ struct mock {
     u32 frame_at, answer_at, answer_len, reads, corrupt_lba;
     unsigned wait;
     int selected, card, bus_lost, data_lost, bad_crc, oversized_index;
+    int package, missing_file;
 };
 
 static void reply(struct mock *m, u8 b)
@@ -64,7 +65,7 @@ static void command_reply(struct mock *m)
         assert(!argument);
         memset(bytes, 0, 16);
         bytes[0] = 0x40;
-        bytes[9] = 65;
+        bytes[9] = m->package ? 69 : 65;
         reply(m, 0);
         data_reply(m, bytes, 16);
         break;
@@ -75,7 +76,10 @@ static void command_reply(struct mock *m)
         if (m->oversized_index)
             for (u32 i = 0; i < 512; i += 32)
                 if (!memcmp(bytes + i, "INDEX   CSV", 11)) st32(bytes + i + 28, MB_MAX_CATALOG + 1u);
-        if (argument == m->corrupt_lba) bytes[0] ^= 1;
+        if (m->missing_file)
+            for (u32 i = 0; i < 512; i += 32)
+                if (!memcmp(bytes + i, "DEMOB   BIN", 11)) bytes[i] = 0xe5;
+        if (argument == m->corrupt_lba) bytes[argument == 0 ? 510 : 0] ^= 1;
         reply(m, 0);
         if (m->data_lost) {
             reply(m, 0xfe);
@@ -153,8 +157,9 @@ static void capture(struct screen *s, struct stg2_selector *selector, int save)
 
 int main(int argc, char **argv)
 {
-    assert(argc == 2);
-    struct mock mock = {.image = fopen(argv[1], "rb"), .corrupt_lba = 0xffffffffu};
+    assert(argc == 2 || (argc == 3 && (!strcmp(argv[2], "--package") || !strcmp(argv[2], "--empty"))));
+    int empty = argc == 3 && !strcmp(argv[2], "--empty");
+    struct mock mock = {.image = fopen(argv[1], "rb"), .corrupt_lba = 0xffffffffu, .package = argc == 3};
     assert(mock.image);
     struct stg2_sd sd = {{&mock, mock_exchange, mock_select, mock_wait}, 0, 0};
     struct block_device disk = {&sd, 0, stg2_sd_read};
@@ -171,14 +176,22 @@ int main(int argc, char **argv)
     mock.bus_lost = 1;
     assert(stg2_sd_start(&sd) == DIAG_TIMEOUT && !mock.selected);
     mock.bus_lost = 0;
-    assert(stg2_sd_start(&sd) == DIAG_OK && !mock.selected && sd.sectors == 67584u);
+    assert(stg2_sd_start(&sd) == DIAG_OK && !mock.selected && sd.sectors == (mock.package ? 71680u : 67584u));
     disk.count = sd.sectors;
     assert(stg2_sd_read(&sd, sd.sectors, selector.fs.sector) == DIAG_RANGE);
     stg2_selector_mount(&selector, disk, DIAG_OK);
-    assert(selector.index == MB_IO_OK && selector.core.catalog.count == 12);
-    for (u32 i = 0; i < 8; ++i) assert(stg2_selector_event(&selector, MB_EVENT_NEXT) == STG2_REDRAW);
-    assert(!strcmp(mb_selected(&selector.core)->id, "F09"));
-    capture(&screen, &selector, 1);
+    assert(selector.index == MB_IO_OK && selector.core.catalog.count == (empty ? 0u : mock.package ? 2u : 12u));
+    if (empty) {
+        assert(stg2_selector_event(&selector, MB_EVENT_PLAY) == STG2_RELOAD);
+        assert(stg2_selector_event(&selector, MB_EVENT_REC) == STG2_EXIT);
+        assert(!fclose(mock.image));
+        puts("STG2 accepted the empty 6D catalog and returned safely");
+        return 0;
+    }
+    for (u32 i = 0; i < (mock.package ? 1u : 8u); ++i)
+        assert(stg2_selector_event(&selector, MB_EVENT_NEXT) == STG2_REDRAW);
+    assert(!strcmp(mb_selected(&selector.core)->id, mock.package ? "DEMOB" : "F09"));
+    capture(&screen, &selector, !mock.package);
     assert(stg2_selector_event(&selector, MB_EVENT_PLAY) == STG2_REDRAW && selector.detail);
     assert(stg2_selector_event(&selector, MB_EVENT_PLAY) == STG2_VERIFY);
     stg2_selector_verify(&selector);
@@ -186,7 +199,13 @@ int main(int argc, char **argv)
     assert(mb_prepare_launch(&selector.core) == MB_LAUNCH_BLOCKED);
 
     struct fat_file file;
-    assert(fat32_open_fm1_file(&selector.fs, "F09.BIN", &file) == DIAG_OK);
+    assert(fat32_open_fm1_file(&selector.fs, mock.package ? "DEMOB.BIN" : "F09.BIN", &file) == DIAG_OK);
+    if (mock.package) {
+        mock.missing_file = 1;
+        stg2_selector_verify(&selector);
+        assert(!strcmp(selector.notice, "ARCHIVO AUSENTE"));
+        mock.missing_file = 0;
+    }
     mock.corrupt_lba = selector.fs.data_lba + (file.cluster - 2) * selector.fs.sectors_per_cluster;
     stg2_selector_verify(&selector);
     assert(!strcmp(selector.notice, "SHA-256 INCORRECTO"));
@@ -213,6 +232,7 @@ int main(int argc, char **argv)
     stg2_selector_mount(&selector, disk, DIAG_OK);
     assert(selector.media == DIAG_OK && selector.index == MB_IO_ERROR && !selector.core.catalog.count);
     assert(!fclose(mock.image));
-    printf("STG2 SPI simulated: 12 catalog entries, scrolling, SHA-256, safe actions, %u reads, card faults OK\n", mock.reads);
+    printf("STG2 SPI simulated: %u catalog entries, scrolling, SHA-256, safe actions, %u reads, card faults OK\n",
+           mock.package ? 2u : 12u, mock.reads);
     return 0;
 }
