@@ -5,6 +5,7 @@ on:
       - 'android/**'
       - 'scripts/update_manager_catalog.py'
       - 'scripts/verify_manager_card.py'
+      - 'scripts/audit_manager_alpha02.py'
       - 'docs/FM1-MANAGER-USB*.md'
       - '.github/workflows/android-fm1-manager-usb.yml'
   workflow_dispatch:
@@ -19,6 +20,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -33,9 +36,12 @@ jobs:
       - name: Read the Android-created card fixtures with independent v2 and embedded v1 parsers
         run: |
           set -o pipefail
-          mkdir -p dist/test-results
+          mkdir -p dist/test-results build
           root=android/app/build/manager-contract-card
-          python3 scripts/verify_manager_card.py "$root/FM1" --files | tee dist/FM1CAT-v2.json
+          python3 scripts/verify_manager_card.py "$root/FM1" --files --flat | tee dist/FM1CAT-v2.json
+          cp "$root/MATRIX.json" dist/validation-matrix.json
+          git show 88fcd29ca41f531e123d662f5b1707b2711defad:android/app/src/manager/assets/discovery.json > build/alpha01-manifest.json
+          python3 scripts/audit_manager_alpha02.py build/alpha01-manifest.json android/app/src/manager/assets/discovery.json > dist/catalogue-audit.json
           make build/fat32_multiboot_integration
           python3 scripts/generate_fat32_image.py build/android-manager-test.img --slotfile-card "$root"
           ./build/fat32_multiboot_integration build/android-manager-test.img '' 2 | tee dist/FM1CAT-v1.txt

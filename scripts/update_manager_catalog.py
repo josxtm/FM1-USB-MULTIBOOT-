@@ -261,7 +261,7 @@ def manifest(hub, collection, builds, coll_releases, editor, author):
                      "identity":"", "image":None, "demo":None, "packages":[], "variantOf":None, "discovered":["M-VAVE"]})
     rows.sort(key=lambda r: (r["name"].casefold(), r["id"]))
     counts = dict(sorted(Counter(r["status"] for r in rows).items()))
-    return {"schema": 1, "updated": hub["updated"], "attribution": "Firmware list: The Firmware Hub – thefirmwarehub.com (CC BY 4.0; normalizada)",
+    return {"schema": 2, "updated": hub["updated"], "attribution": "Firmware list: The Firmware Hub – thefirmwarehub.com (CC BY 4.0; normalizada)",
             "collection": COLLECTION_URL, "counts": counts, "uniquePackages": len(seen_hashes), "entries": rows}
 
 

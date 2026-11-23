@@ -73,7 +73,7 @@ internal data class Discovery(val updated: String, val entries: List<Listing>) {
         fun decode(bytes: ByteArray): Discovery {
             require(bytes.size <= MAX_MANIFEST) { "Manifiesto demasiado grande" }
             val root = JSONObject(bytes.toString(Charsets.UTF_8))
-            require(root.getInt("schema") == 1)
+            require(root.getInt("schema") == 2) { "Usa un manifiesto alpha02 con verificación de disponibilidad" }
             val array = root.getJSONArray("entries")
             require(array.length() in 1..4096)
             val rows = List(array.length()) { i ->
