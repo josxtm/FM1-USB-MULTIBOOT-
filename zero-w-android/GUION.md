@@ -4,7 +4,7 @@ Guion de desarrollo · Software primero, montaje y validación física después.
 
 Desde el navegador del móvil se abre una página web alojada en la Raspberry Pi Zero W, conectándose a su red Wi-Fi local. Los firmwares musicales se conservan en la microSD de la Pi. El móvil prepara la tarjeta con FM1 Manager To USB y después ordena la instalación desde el navegador. El FM-1 ejecuta la aplicación elegida desde su flash. Se conserva el bootloader existente, también cuando se parte de una zona de aplicación vacía.
 
-**Flujo principal con una sola microSD.** Preparar una vez una microSD arrancable con Raspberry Pi OS Lite y el servicio. Reservar una partición FAT32 de intercambio identificable como FM1DATA, con la carpeta FM1/FIRMWARES/. El diseño de imagen deberá asignarle espacio propio y ensayarse en la Zero W y en el lector del móvil. Grabar una imagen borra el contenido anterior: usar una tarjeta dedicada o respaldada. Si Android ofrece formatear una partición Linux, cancelar.
+**Flujo principal con una sola microSD.** Preparar una vez una microSD arrancable con Linux mínimo para Zero W y el servicio. Reservar una partición FAT32 de intercambio identificable como FM1DATA, con la carpeta FM1/FIRMWARES/. El diseño de imagen deberá asignarle espacio propio y ensayarse en la Zero W y en el lector del móvil. Grabar una imagen borra el contenido anterior: usar una tarjeta dedicada o respaldada. Si Android ofrece formatear una partición Linux, cancelar.
 
 1. Con internet, abrir la APK existente FM1 Manager To USB. Adaptar su selector de carpeta y menús para guardar los paquetes musicales completos en FM1DATA/FM1/FIRMWARES/. Mantener la adaptación en esta línea de desarrollo. Verificar lectura y escritura desde Android con la tarjeta ya preparada, incluida la visibilidad de la partición de intercambio.
 2. Expulsar la tarjeta en Android, colocarla en la Zero apagada y encenderla. Al arrancar, montar la partición por identificador, descubrir los paquetes y validar contenido y compatibilidad antes de ofrecer su instalación. Los archivos incompletos quedan fuera del catálogo instalable.
@@ -12,9 +12,13 @@ Desde el navegador del móvil se abre una página web alojada en la Raspberry Pi
 4. Con el FM-1 conectado por USB, seleccionar DOWNLOAD MODE con OCT−/+ y confirmar con PLAY. Ordenar la instalación desde la web. Tras verificar la escritura, comprobar el reinicio y el arranque de la aplicación musical. MIDI MODE del bootloader sirve para recuperación o selección manual. Distinguir ese modo del USB-MIDI que ofrezca la aplicación musical.
 5. Antes de volver a sacar la tarjeta, apagar la Zero de forma ordenada.
 
+### Capacidad de la tarjeta
+
+Primera opción a evaluar: Alpine Linux armhf para la Zero W original. Buildroot dispone también de un perfil raspberrypi0w si hace falta reducir más la imagen. Objetivo inicial de la tarjeta completa: 512 MB comerciales. Probar 256 MB como objetivo experimental y publicar el mínimo solo tras medir la imagen descomprimida y probarla en placa. Presupuesto inicial, todavía sin medir: hasta 192 MiB en conjunto para arranque, sistema, dependencias offline y alineación. Una tarjeta nominal de 512 MB ofrecería unos 296 MiB para FM1DATA antes del coste de FAT32, registros y copias. En 256 MB quedarían unos 52 MiB bajo el mismo supuesto. Acotar registros y temporales, incluir controladores Wi-Fi/USB, verificar dos reinicios, acceso web, descubrimiento en DOWNLOAD MODE y lectura verificada de los datos. Ensayar el intercambio con Android antes de declarar compatible una capacidad. [Alpine](https://alpinelinux.org/downloads/) · [Buildroot para Raspberry Pi](https://github.com/buildroot/buildroot/blob/master/board/raspberrypi/readme.txt)
+
 ### Preparación de la microSD y botón «Preparar tarjeta SD»
 
-La imagen prevista para el proyecto incluirá Raspberry Pi OS Lite, sus particiones de arranque y sistema, y un volumen FAT32 de intercambio llamado FM1DATA. Definir ese reparto al generar la imagen, limitar la expansión del sistema al espacio asignado y probar el primer arranque. Grabar la imagen una sola vez en una tarjeta dedicada o previamente respaldada. La preparación inicial reemplaza el contenido de la tarjeta. Evitar una secuencia que dependa de reducir a mano el sistema después de arrancar. La imagen propuesta está pendiente de construir y validar.
+La imagen prevista para el proyecto incluirá Linux mínimo para Zero W, sus particiones de arranque y sistema, y un volumen FAT32 de intercambio llamado FM1DATA. Definir ese reparto al generar la imagen, limitar la expansión del sistema al espacio asignado y probar el primer arranque. Grabar la imagen una sola vez en una tarjeta dedicada o previamente respaldada. La preparación inicial reemplaza el contenido de la tarjeta. Evitar una secuencia que dependa de reducir a mano el sistema después de arrancar. La imagen propuesta está pendiente de construir y validar.
 
 La imagen creará una carpeta FM1 en FM1DATA y dejará dentro un identificador de formato para reconocer la ubicación correcta. En FM1 Manager To USB, el botón «Preparar tarjeta SD» abrirá el selector de carpetas de Android. El usuario elegirá FM1 y concederá acceso a esa carpeta. La APK comprobará el identificador y la escritura disponible, creará FIRMWARES si falta y guardará el permiso para futuras descargas. Si el identificador falta, se eligió otra carpeta, Android no muestra el volumen o falta permiso, explicar el motivo antes de escribir. La APK solo gestionará archivos dentro de la carpeta concedida; no requiere acceso al disco completo ni operaciones de particionado.
 
@@ -34,11 +38,11 @@ Al repetir la preparación, conservar los paquetes y archivos existentes. Verifi
 
 ## Parte 2. Software de la Raspberry Pi Zero W
 
-**Resultado.** Un servidor web local autoiniciable sobre Raspberry Pi OS Lite de 32 bits para la Zero W original. Conservar el paquete local y dirigir toda la grabación desde la Pi permite que el móvil se desconecte durante la operación.
+**Resultado.** Un servidor web local autoiniciable sobre Linux mínimo ARMv6 de 32 bits para la Zero W original. Conservar el paquete local y dirigir toda la grabación desde la Pi permite que el móvil se desconecte durante la operación.
 
 | Función | Implementación y comprobación |
 |---|---|
-| Arranque y red | Instalador para Raspberry Pi OS Lite, servicio systemd y punto de acceso Wi-Fi con contraseña. Preparar las dependencias en casa. La operación posterior funciona sin cobertura, router ni nube. |
+| Arranque y red | Servicio iniciado al arrancar Linux y punto de acceso Wi-Fi con contraseña. Preparar las dependencias en casa. La operación posterior funciona sin cobertura, router ni nube. |
 | API local | Implementar para la web las operaciones de estado, catálogo, subida, planificación, confirmación y seguimiento. Autenticar la sesión del navegador. Vincular cada confirmación al hash del paquete, al plan y a la sesión del dispositivo. |
 | Almacenamiento | Recibir en temporal, comprobar espacio, formato, modelo, tamaño e integridad, calcular SHA-256 y publicar mediante renombrado atómico. Persistir catálogo y registro del trabajo. Un hash identifica el fichero, mientras que la compatibilidad se verifica aparte. |
 | USB y modos | En MIDI MODE, comprobar detección y lecturas admitidas. En DOWNLOAD MODE, identificar la unidad y evaluar la vía Linux de programación por sectores. El perfil inicial previsto es FM-1 con m-bootloader 2.4-395E6CC y flash 856014 de 1 MiB. Confirmar el perfil mediante lecturas reales. |
@@ -66,4 +70,4 @@ Al repetir la preparación, conservar los paquetes y archivos existentes. Verifi
 | Adaptador micro-USB OTG a USB-A hembra y cable USB-A a USB-C de datos | Conectar el puerto USB de datos de la Zero al FM-1. |
 | M-VAVE FM-1 con batería cargada | Seleccionar el modo del bootloader y arrancar el firmware instalado. |
 
-**Montaje.** Powerbank a PWR IN. Puerto USB de la Zero al USB-C del sintetizador. Móvil a la Wi-Fi de la Zero. La carcasa aloja únicamente la placa. [Ficha de la Zero W](https://www.raspberrypi.com/products/raspberry-pi-zero-w/) · [Sistema operativo](https://www.raspberrypi.com/software/operating-systems/)
+**Montaje.** Powerbank a PWR IN. Puerto USB de la Zero al USB-C del sintetizador. Móvil a la Wi-Fi de la Zero. La carcasa aloja únicamente la placa. [Ficha de la Zero W](https://www.raspberrypi.com/products/raspberry-pi-zero-w/) · [Alpine para Zero W (armhf)](https://alpinelinux.org/downloads/)
