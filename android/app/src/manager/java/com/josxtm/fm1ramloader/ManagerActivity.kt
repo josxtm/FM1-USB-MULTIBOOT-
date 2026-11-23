@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -142,8 +143,7 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
     val selectedForDownload = filtered.filter { it.id in selection && it.downloads(blocked).isNotEmpty() }
     val selectedRow = filtered.find { it.id == inspected } ?: filtered.firstOrNull()
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    AdaptiveScreen {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -280,6 +280,18 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AdaptiveScreen(content: @Composable ColumnScope.() -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
+        // A bounded viewport keeps the lazy lists usable when the header takes most of a short window.
+        val layout = if (maxHeight < 600.dp) {
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).height(600.dp)
+        } else Modifier.fillMaxSize()
+        Column(layout.padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
     }
 }
 

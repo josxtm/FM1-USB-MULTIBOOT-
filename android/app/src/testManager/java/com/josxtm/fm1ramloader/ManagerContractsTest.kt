@@ -246,6 +246,94 @@ class ManagerContractsTest {
         assertEquals(final, lib.reorganize())
     }
 
+    @Test fun scaleMatrixKeepsEveryOriginalFlatAcrossReopen() {
+        val output = JSONArray()
+        for (size in listOf(250, 415, 1024, 2048, 4096)) {
+            val store = MemoryCard()
+            val assets = List(size) { i -> entry("synthetic-library:$i".encodeToByteArray(), i) }
+            val first = CardLibrary(store).publish(assets)
+            assertEquals(size, first.records.size)
+            val reopened = CardLibrary(store)
+            assertEquals(first, reopened.publish(assets))
+            val files = store.files.keys.filter { it.startsWith("FW/") }
+            assertEquals(size, files.size)
+            assertTrue(files.all { it.matches(Regex("FW/[A-F0-9]{8}\\.BIN")) })
+            assertEquals(files.toSet(), reopened.scan().records.map { it.path }.toSet())
+            assertTrue(first.records.all(reopened::verify))
+            output.put(JSONObject().put("source", "synthetic").put("entries", size)
+                .put("flat_files", files.size).put("nested_files", 0).put("sha256_verified", size))
+        }
+        val dir = requireNotNull(File(System.getProperty("fm1.card.fixture")!!).parentFile)
+        dir.mkdirs()
+        File(dir, "MATRIX.json").writeText(output.toString(2) + "\n")
+    }
+
+    @Test fun migrates415IndexedOriginalsKeepsBackupAndDoesNotRecopy() {
+        val store = MemoryCard()
+        val originals = List(415) { i -> entry("synthetic-migration:$i".encodeToByteArray(), i) }
+        val old = seedLegacy(store, originals)
+        val before = store.files.getValue("CATALOG/INDEXA.V2").copyOf()
+        val migrated = CardLibrary(store).reorganize()
+        assertEquals(415, migrated.records.size)
+        assertEquals(2L, migrated.sequence)
+        assertTrue(migrated.records.none { it.nested })
+        assertArrayEquals(before, store.files.getValue("CATALOG/INDEXA.V2"))
+        assertTrue(old.all(CardLibrary(store)::verify))
+        assertTrue(migrated.records.all(CardLibrary(store)::verify))
+        assertEquals(415, store.files.keys.count { it.matches(Regex("FW/[A-F0-9]{8}\\.BIN")) })
+        assertEquals(migrated, CardLibrary(store).reorganize())
+    }
+
+    @Test fun payloadCollisionUsesTwoActualDigestsWithSamePrefix() {
+        val store = MemoryCard()
+        val a = entry("collision-test:34786".encodeToByteArray(), 1)
+        val b = entry("collision-test:90803".encodeToByteArray(), 2)
+        assertEquals(a.record.path, b.record.path)
+        assertNotEquals(a.record.sha, b.record.sha)
+        val first = CardLibrary(store).publish(listOf(a))
+        expectFailure { CardLibrary(store).publish(listOf(b)) }
+        assertArrayEquals(a.load(), store.files[a.record.path])
+        assertEquals(first, CardLibrary(store).scan())
+    }
+
+    @Test fun revokedPermissionAndProviderRenameLeavePreviousIndex() {
+        val backing = MemoryCard()
+        val lib = CardLibrary(backing)
+        val first = lib.publish(listOf(entry(byteArrayOf(88), 1)))
+        val next = entry(byteArrayOf(99), 2)
+        val denied = object : CardStore by backing {
+            override fun write(path: String, data: ByteArray, replace: Boolean) {
+                throw SecurityException("permission expired")
+            }
+        }
+        val renamed = object : CardStore by backing {
+            override fun write(path: String, data: ByteArray, replace: Boolean) {
+                backing.write(path + " (1)", data, replace)
+            }
+        }
+        for (store in listOf(denied, renamed)) {
+            expectFailure { CardLibrary(store).publish(listOf(next)) }
+            assertEquals(first, lib.scan())
+            assertTrue(lib.verify(first.records.single()))
+        }
+    }
+
+    @Test fun httpAccessRejectionIsDistinctFromRateLimitingAndRemoval() {
+        val data = wrapFwsc(ufw(2))
+        for (code in listOf(403, 404, 410, 429, 451)) {
+            val folder = temporary.newFolder()
+            val cache = DownloadCache(folder, DownloadHttp { _, _, _ -> body(code, ByteArray(0)) })
+            val error = runCatching { cache.obtain(link(data)) }.exceptionOrNull() as DownloadHttpFailure
+            assertEquals(code, error.code)
+            assertEquals(code in listOf(404, 410, 451), error.permanent)
+            assertTrue(cache.complete().isEmpty())
+            if (!error.permanent) {
+                val reopened = DownloadCache(folder, DownloadHttp { _, _, _ -> body(200, data) })
+                assertEquals(link(data).sha256, reopened.obtain(link(data)).digest)
+            }
+        }
+    }
+
     private fun seedLegacy(store: MemoryCard, assets: List<CardAsset>): List<CardRecord> {
         val records = assets.map { item ->
             item.record.copy(nested = true).also { store.files[it.path] = item.load() }
