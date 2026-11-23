@@ -136,7 +136,7 @@ void usbc_event(struct usbc_explorer *e, enum mb_event event)
             } else {
                 e->integrity = cat2_verify(&e->catalog, &e->item);
                 e->checked = 1;
-                if (e->integrity == DIAG_DISCONNECTED) e->media = DIAG_DISCONNECTED;
+                if (e->integrity == DIAG_DISCONNECTED) usbc_media_lost(e);
             }
         } else if (event == MB_EVENT_NEXT || event == MB_EVENT_PREVIOUS) {
             if (e->detail) {
@@ -241,7 +241,9 @@ void usbc_draw_diag(const struct usbc_explorer *e, const struct usb_device *iden
         text[n] = 0;
         mb_lcd_list_row(lcd, 3, text, C_WHITE);
     } else mb_lcd_list_row(lcd, 3, "USB SIN IDENTIFICAR", C_GREY);
-    mb_lcd_list_row(lcd, 4, identity && identity->bulk_mps ? "MSC / SCSI / BOT OK" :
+    mb_lcd_list_row(lcd, 4, e->transport == DIAG_DISCONNECTED ? "MSC: DESCONECTADO" :
+                    e->transport != DIAG_OK ? "MSC: NO DISPONIBLE" :
+                    identity && identity->bulk_mps ? "MSC / SCSI / BOT OK" :
                     "MSC: SIN CONFIRMAR", C_WHITE);
     n = 0;
     append(text, &n, "SECTORES: ", sizeof text);
