@@ -21,10 +21,14 @@ struct usbc_explorer {
     struct cat2_record item;
     char labels[USB_EXPLORER_ROWS][21];
     u32 window, current, count;
-    enum diag_result media, integrity;
+    /* Distinguish transport, FAT32, and catalogue failures in the final test. */
+    u32 sectors_detected;
+    enum diag_result transport, fat_status, media, integrity;
     u8 version, detail, checked, exit, name_page;
 };
 void usbc_mount(struct usbc_explorer *, struct block_device, enum diag_result);
+/* Invalidates all cached catalogue state after a physical reader disconnect. */
+void usbc_media_lost(struct usbc_explorer *);
 void usbc_draw(const struct usbc_explorer *, struct mb_lcd_list_renderer *);
 void usbc_draw_diag(const struct usbc_explorer *, const struct usb_device *, struct mb_lcd_list_renderer *);
 void usbc_event(struct usbc_explorer *, enum mb_event);
