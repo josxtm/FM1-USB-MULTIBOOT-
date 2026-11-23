@@ -1,0 +1,27 @@
+name: Zero W - catalogo
+on:
+  push:
+    branches: [zero-w-android]
+    paths: ['zero-w-android/zero/**', '.github/workflows/zero-w-catalog.yml']
+permissions:
+  contents: read
+jobs:
+  catalogo:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probar catálogo HTTP con paquete y descarga incompleta
+        working-directory: zero-w-android/zero
+        shell: bash
+        run: |
+          set -eu
+          dir=$(mktemp -d)
+          printf 'prueba' > "$dir/test.fwsc"
+          touch "$dir/oculto.fwsc.partial"
+          python3 catalog_server.py --folder "$dir" &
+          pid=$!
+          trap 'kill "$pid"' EXIT
+          curl --retry 5 --retry-connrefused -fsS http://127.0.0.1:8080/ > "$dir/respuesta"
+          grep -F test.fwsc "$dir/respuesta"
+          grep -F "$(sha256sum "$dir/test.fwsc" | cut -d' ' -f1)" "$dir/respuesta"
+          if grep -F oculto "$dir/respuesta"; then exit 1; fi
