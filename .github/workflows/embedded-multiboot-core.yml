@@ -139,7 +139,15 @@ jobs:
           actual = sha256(data).hexdigest()
           assert matches[0] == actual, f'Android image pin mismatch: {matches[0]} != {actual}'
           assert data[-8:-4] == b'APP1' and data[-2:] == bytes([1, 1])
-          print(f'USB-C2 Android image pin verified: {actual} ({len(data)} B)')
+          lab = Path('build/usbc_lab/FM1_USB_C_SD_READER_LAB.bin').read_bytes()
+          lab_pin = re.findall(r'LAB_PINNED_SHA256 = "([0-9a-f]{64})"', source)
+          assert len(lab_pin) == 1, 'lab loader must pin exactly one approved SHA-256'
+          lab_actual = sha256(lab).hexdigest()
+          assert lab_pin[0] == lab_actual, f'Android LAB image pin mismatch: {lab_pin[0]} != {lab_actual}'
+          assert lab[-8:-4] == b'APP1' and lab[-2:] == bytes([1, 1])
+          assert lab_actual != actual, 'lab and safe images must be different'
+          print(f'USB-C2 Android safe pin verified: {actual} ({len(data)} B)')
+          print(f'USB-C3 Android lab pin verified: {lab_actual} ({len(lab)} B)')
           PY
       - uses: actions/upload-artifact@v4
         with:
