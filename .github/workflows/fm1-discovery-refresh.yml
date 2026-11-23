@@ -1,0 +1,27 @@
+name: Refresh FM1 discovery manifest
+on:
+  schedule:
+    - cron: '37 18 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: fm1-discovery-daily
+  cancel-in-progress: false
+jobs:
+  discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refresh public metadata once per scheduled day
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          python3 scripts/update_manager_catalog.py --snapshot-dir "$RUNNER_TEMP/fm1-discovery" --output dist/discovery.json
+          (cd dist && sha256sum discovery.json > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-discovery-manifest
+          path: dist/
+          if-no-files-found: error
