@@ -266,7 +266,8 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
     }
 
     fun omit(update: FirmwareUpdate) {
-        if (update.candidate == null) return
+        val candidate = update.candidate ?: return
+        if (jobs[candidate.sha256]?.state == "Pendiente de actualización") jobs.remove(candidate.sha256)
         omitted = omitted + update.key
         prefs.edit().putStringSet("omittedUpdates", omitted).apply()
     }
@@ -294,12 +295,20 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
             val library = CardLibrary(SafCardStore(app, uri))
             val actual = library.scan()
             val updates = withContext(Dispatchers.Main) {
-                firmwareUpdates(discovery, actual.records, blockedUrls, omitted).filter { it.key in chosen }
+                val activeManifest = requireNotNull(discovery) { "Busca actualizaciones primero" }
+                ManifestRefresh.requireFresh(activeManifest, null)
+                val selected = firmwareUpdates(activeManifest, actual.records, blockedUrls, omitted).filter { it.key in chosen }
+                require(selected.size == chosen.size && selected.all { it.candidate != null }) {
+                    "La tarjeta o las versiones cambiaron. Recarga el índice antes de continuar."
+                }
+                selected.distinctBy { it.candidate!!.sha256 }.onEach { item ->
+                    val link = requireNotNull(item.candidate)
+                    val prepared = link.sha256 in cached
+                    jobs[link.sha256] = QueueItem(item.row, link,
+                        if (prepared) "Verificado" else "Pendiente de actualización", if (prepared) link.size else 0L)
+                }
             }
-            require(updates.size == chosen.size && updates.all { it.candidate != null }) {
-                "La tarjeta o las versiones cambiaron. Recarga el índice antes de continuar."
-            }
-            val assets = updates.distinctBy { it.candidate!!.sha256 }.map { item ->
+            val assets = updates.map { item ->
                 copy.check()
                 val link = requireNotNull(item.candidate)
                 val key = link.sha256

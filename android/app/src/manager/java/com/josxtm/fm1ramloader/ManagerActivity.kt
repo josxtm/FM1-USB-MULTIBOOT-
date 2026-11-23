@@ -151,7 +151,6 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
     val downloadedCount = remember(entries, blocked) { entries.count { it.downloads(blocked).isNotEmpty() } }
     var updateSelection by remember { mutableStateOf(setOf<String>()) }
     var toolsOpen by remember { mutableStateOf(false) }
-    val copy by model.copyProgress.collectAsState()
     val filtered = remember(entries, query, category, filter, blocked) {
         val term = query.trim()
         entries.filter { row ->
@@ -160,8 +159,10 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
         }
     }
     val selected = remember(entries, selection) { entries.filter { it.id in selection } }
-    val selectedForDownload = filtered.filter { it.id in selection && it.downloads(blocked).isNotEmpty() }
-    val selectedRow = filtered.find { it.id == inspected } ?: filtered.firstOrNull()
+    val selectedForDownload = remember(filtered, selection, blocked) {
+        filtered.filter { it.id in selection && it.downloads(blocked).isNotEmpty() }
+    }
+    val selectedRow = remember(filtered, inspected) { filtered.find { it.id == inspected } ?: filtered.firstOrNull() }
 
     AdaptiveScreen {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
@@ -176,7 +177,7 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
             verticalAlignment = Alignment.CenterVertically) {
             listOf("Catálogo", "Descargas", "MicroSD", "Actualizaciones").forEach { name ->
                 val count = when (name) {
-                    "Descargas" -> model.jobs.values.count { it.state in setOf("En cola", "Pausado", "Descargando", "Descargando actualización") }
+                    "Descargas" -> model.jobs.values.count { it.state in setOf("En cola", "Pausado", "Descargando", "Descargando actualización", "Pendiente de actualización") }
                     "Actualizaciones" -> updateReady.size
                     else -> 0
                 }
@@ -200,11 +201,7 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
         }
         Text("${library.size} firmwares en microSD · $downloadedCount fichas descargables · ${model.status}",
             color = pale, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-        copy?.let {
-            if (model.busy || tab in setOf("Descargas", "MicroSD", "Actualizaciones")) {
-                CopyBanner(it, model.busy, model::cancelCopy, systemStorage)
-            }
-        }
+        CopyStatus(model, tab, systemStorage)
 
         when (tab) {
             "Catálogo" -> {
@@ -334,10 +331,6 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                     TextButton(onClick = model::recoverV1, enabled = !model.busy) { Text("Recuperar índice v1") }
                     TextButton(onClick = systemStorage, enabled = !model.busy) { Text("Ajustes de almacenamiento") }
                 }
-                if (model.busy && copy?.phase !in setOf(CopyPhase.PREPARING, CopyPhase.SPACE, CopyPhase.COPYING,
-                        CopyPhase.VERIFYING, CopyPhase.INDEX, CopyPhase.INDEX_VERIFY)) {
-                    Text("No desconectes la microSD: operación en curso.", color = mint)
-                }
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(library, key = CardRecord::sha) { row ->
                         Surface(color = disk, shape = MaterialTheme.shapes.medium) {
@@ -356,6 +349,17 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CopyStatus(model: ManagerModel, tab: String, settings: () -> Unit) {
+    val copy by model.copyProgress.collectAsState()
+    val progress = copy
+    if (progress != null && (model.busy || tab != "Catálogo")) {
+        CopyBanner(progress, model.busy, model::cancelCopy, settings)
+    } else if (model.busy && tab == "MicroSD") {
+        Text("No desconectes la microSD: operación en curso.", color = mint)
     }
 }
 
@@ -403,7 +407,7 @@ private fun CatalogList(rows: List<Listing>, selected: Set<String>, current: Str
 }
 
 @Composable
-private fun DetailPanel(row: Listing?, blocked: Set<String>, update: FirmwareUpdate?, modifier: Modifier, open: (String) -> Unit) {
+internal fun DetailPanel(row: Listing?, blocked: Set<String>, update: FirmwareUpdate?, modifier: Modifier, open: (String) -> Unit) {
     Surface(modifier.fillMaxSize(), color = disk, shape = MaterialTheme.shapes.large) {
         if (row == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No hay fichas para este filtro") }

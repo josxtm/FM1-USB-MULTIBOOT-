@@ -2,6 +2,7 @@ package com.josxtm.fm1ramloader
 
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
@@ -51,5 +52,20 @@ class ManagerScreenTest {
             activity.setContent { MaterialTheme { CardPhoto(null, "Firmware", Modifier) } }
         }
         rule.onNodeWithText("Imagen no disponible").assertIsDisplayed()
+    }
+
+    @Test fun detailsKeepDescriptionAndSourceAccessible() {
+        val description = ("Descripción original completa para comprobar el desplazamiento. ").repeat(8)
+        val listing = Listing("example/test", "Un firmware con un nombre largo para la prueba", "Autora", "example/test",
+            "https://github.com/example/test", "MIT", description, listOf("synth"), "SOURCE", "v1.10.2",
+            "FM-1", "", null, "https://example.com/video", null, emptyList())
+        rule.activityRule.scenario.onActivity { activity ->
+            activity.setContent { MaterialTheme {
+                DetailPanel(listing, emptySet(), null, Modifier.fillMaxSize()) {}
+            } }
+        }
+        rule.onNodeWithText(listing.name).assertIsDisplayed()
+        rule.onNodeWithText(description).assertIsDisplayed()
+        rule.onNodeWithText("Demostración").performScrollTo().assertIsDisplayed()
     }
 }
