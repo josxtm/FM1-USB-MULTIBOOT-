@@ -161,8 +161,9 @@ def check_host_release(asset, profile):
 
 
 def check_linux_runtime():
-    libc = os.confstr("CS_GNU_LIBC_VERSION") or ""
-    version = re.fullmatch(r"glibc (\d+)\.(\d+)(?:\.\d+)?", libc)
+    confstr = getattr(os, "confstr", None)
+    libc = confstr("CS_GNU_LIBC_VERSION") if confstr else None
+    version = re.fullmatch(r"glibc (\d+)\.(\d+)(?:\.\d+)?", libc or "")
     need(version and tuple(map(int, version.groups())) >= (2, 35),
          "official Linux release requires glibc 2.35 or newer")
     return f"{libc} reported by host; SG and udev remain unverified"
