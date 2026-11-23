@@ -37,6 +37,8 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
     private var cardUri: Uri? = prefs.getString("card", null)?.let(Uri::parse)
     val jobs = mutableStateMapOf<String, QueueItem>()
     val imports = mutableStateMapOf<String, ImportItem>()
+    var blockedUrls by mutableStateOf(prefs.getStringSet("unavailableUrls", emptySet()).orEmpty().toSet())
+        private set
     var discovery by mutableStateOf<Discovery?>(null)
         private set
     var cached by mutableStateOf(cache.complete())
@@ -79,6 +81,11 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
         val parsed = Discovery.decode(bytes)
         save(manifest, bytes)
         withContext(Dispatchers.Main) {
+            // An explicitly refreshed manifest can requalify links.
+            if (discovery?.updated != parsed.updated) {
+                blockedUrls = emptySet()
+                prefs.edit().remove("unavailableUrls").apply()
+            }
             discovery = parsed
             status = "Manifiesto cargado · ${parsed.entries.size} fichas"
         }
@@ -120,7 +127,7 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
     fun enqueue(listings: List<Listing>) {
         val stored = card?.records?.map { it.sha }?.toHashSet().orEmpty()
         var added = 0
-        for ((listing, link) in listings.flatMap { row -> row.packages.map { row to it } }) {
+        for ((listing, link) in listings.flatMap { row -> row.downloads(blockedUrls).map { row to it } }) {
             if (link.sha256 in stored || link.sha256 in cached) continue
             val prior = jobs[link.sha256]
             if (prior == null) {
@@ -146,7 +153,7 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
 
     fun retry() {
         jobs.toMap().forEach { (key, item) ->
-            if (item.state.startsWith("Error") && item.attempts < 4) jobs[key] = item.copy(state = "En cola")
+            if (item.state.startsWith("Error") && item.attempts < 4 && item.link.url !in blockedUrls) jobs[key] = item.copy(state = "En cola")
         }
         pump()
     }
@@ -157,6 +164,11 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
             val entry = jobs.entries.firstOrNull { it.value.state == "En cola" } ?: return
             val key = entry.key
             val item = entry.value
+            val allowed = discovery?.entries?.firstOrNull { it.id == item.listing.id }?.downloads(blockedUrls).orEmpty()
+            if (item.link !in allowed) {
+                jobs[key] = item.copy(state = "No disponible · fuera del manifiesto activo")
+                continue
+            }
             active++
             jobs[key] = item.copy(state = "Descargando", attempts = item.attempts + 1)
             viewModelScope.launch {
@@ -178,6 +190,13 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
                     throw error
                 } catch (_: DownloadPaused) {
                     jobs[key] = item.copy(state = if (paused) "Pausado" else "En cola")
+                } catch (error: DownloadHttpFailure) {
+                    if (error.permanent) {
+                        blockedUrls = blockedUrls + item.link.url
+                        prefs.edit().putStringSet("unavailableUrls", blockedUrls).apply()
+                    }
+                    val prefix = if (error.permanent) "No disponible" else "Error"
+                    jobs[key] = item.copy(state = "$prefix · ${error.message}", attempts = item.attempts + 1)
                 } catch (error: Exception) {
                     jobs[key] = item.copy(state = "Error · ${error.message ?: "transferencia"}", attempts = item.attempts + 1)
                 } finally {
@@ -224,7 +243,7 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
             val items = manual.map { CardAsset(it.record) { it.file.inputStream().use { input -> input.bounded(MAX_ASSET) } } } +
                 selected.map { (listing, link) ->
                     val item = cache.existing(link)
-                    CardAsset(record(listing.id, listing.name, link.version, link.file, item, link.url)) {
+                    CardAsset(record(listing.id, listing.name, link.version, link.file, item, link.url, listing.author)) {
                         item.file.inputStream().use { it.bounded(MAX_ASSET) }
                     }
                 }
@@ -253,6 +272,17 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
         }
     }
 
+    fun reorganizeCard() {
+        val uri = cardUri ?: return
+        task {
+            val result = CardLibrary(SafCardStore(app, uri)).reorganize()
+            withContext(Dispatchers.Main) {
+                showCard(result)
+                status = "${result.records.size} archivos directos en FM1/FW. Las copias anteriores se conservan."
+            }
+        }
+    }
+
     fun recoverV1() {
         val uri = cardUri ?: return
         task {
@@ -262,8 +292,8 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
     }
 
     private fun record(project: String, name: String, version: String, original: String,
-                       asset: CachedPackage, source: String) = CardRecord(project, name, version,
-        original, asset.size, asset.digest, asset.info.container, asset.info.identity, asset.info.crc, asset.info.layout, source)
+                       asset: CachedPackage, source: String, author: String = "") = CardRecord(project, name, version,
+        original, asset.size, asset.digest, asset.info.container, asset.info.identity, asset.info.crc, asset.info.layout, source, author)
 
     private fun displayName(uri: Uri): String =
         app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {

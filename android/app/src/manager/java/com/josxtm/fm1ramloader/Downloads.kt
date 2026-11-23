@@ -87,6 +87,16 @@ internal object GithubDownloadHttp : DownloadHttp {
     }
 }
 
+internal class DownloadHttpFailure(val code: Int) : IOException(when (code) {
+    404, 410 -> "Enlace retirado (HTTP $code); actualiza el manifiesto"
+    451 -> "Bloqueo de disponibilidad (HTTP 451)"
+    401, 403 -> "Acceso denegado (HTTP $code); vuelve a comprobar el enlace"
+    429 -> "Límite temporal del servidor (HTTP 429)"
+    else -> "Error HTTP $code"
+}) {
+    val permanent get() = code in setOf(404, 410, 451)
+}
+
 internal class DownloadPaused : IOException("En pausa")
 
 internal data class CachedPackage(val file: File, val size: Long, val digest: String, val info: PackageInfo)
@@ -129,8 +139,7 @@ internal class DownloadCache(private val root: File, private val http: DownloadH
                         note.delete()
                         part.delete()
                     }
-                    404, 410 -> error("Enlace retirado (HTTP ${response.status}); actualiza el manifiesto")
-                    else -> error("Error HTTP ${response.status}")
+                    else -> throw DownloadHttpFailure(response.status)
                 }
                 val freshTag = response.etag?.takeIf(::strong)
                 if (freshTag != null) note.writeText(freshTag)

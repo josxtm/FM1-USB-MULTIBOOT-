@@ -10,8 +10,9 @@ from pathlib import Path
 import re
 import subprocess
 import time
-from urllib.parse import urljoin, urlsplit
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+from urllib.parse import unquote, urljoin, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 HUB = "https://thefirmwarehub.com"
 EDITOR = "https://fm1-editor.com/firmware/"
@@ -20,7 +21,9 @@ COLLECTION_URL = f"https://github.com/{COLLECTION}"
 REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 DIGEST = re.compile(r"sha256:([a-f0-9]{64})")
 FM1_ASSET = re.compile(r"\.(fwsc|ufw|bin)$", re.I)
-LICENSE = re.compile(r"(GPL|LGPL|AGPL|MPL|MIT|BSD|Apache|CC0)(?:[- .+].*|$)")
+LICENSE = re.compile(r"(?:GPL-[23]\.0(?:-only|-or-later)?|MPL-2\.0|MIT|BSD-[23]-Clause|Apache-2\.0|CC0-1\.0)")
+DOWNLOAD_HOSTS = {"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com",
+                  "github-releases.githubusercontent.com"}
 TOOLS = re.compile(r"(?i)(emulat|downloader|unbrick|midi converter|firmware (tool|explor)|workbench|patch editor)")
 OTHER = re.compile(r"(?i)(pocket amp|donner pocket|^SMK[- ]?37)")
 
@@ -55,13 +58,21 @@ def public_url(value, base=None):
     return None
 
 
-def asset(a, version, release, kind):
+def asset(a, version, release, kind, publisher):
     digest = DIGEST.fullmatch(a.get("digest") or "")
     name, size = a.get("name", ""), a.get("size", 0)
     url = public_url(a.get("browser_download_url"))
     if not (digest and FM1_ASSET.search(name) and a.get("state") == "uploaded" and
             type(size) is int and 0 < size <= 16 * 1024 * 1024 and url and
             urlsplit(url).hostname == "github.com" and "/releases/download/" in url):
+        return None
+    components = unquote(urlsplit(url).path).strip("/").split("/")
+    expected = [*publisher.lower().split("/"), "releases", "download"]
+    release_path = unquote(urlsplit(release).path).strip("/").split("/")
+    if (len(components) != 6 or [p.lower() for p in components[:4]] != expected or components[5] != name or
+            urlsplit(release).hostname != "github.com" or
+            [p.lower() for p in release_path[:4]] != [*publisher.lower().split("/"), "releases", "tag"] or
+            release_path[4:] != components[4:5] or urlsplit(url).query or urlsplit(url).fragment):
         return None
     return {"version": version[:80], "file": name, "size": size, "sha256": digest[1], "url": url,
             "format": name.rsplit(".", 1)[-1].upper(), "provenance": kind, "release": release}
@@ -88,6 +99,60 @@ def gh(path):
     raise RuntimeError(f"GitHub metadata failed for {path}: {proc.stderr.decode(errors='replace')[:250]}")
 
 
+def path_license(value):
+    return re.sub(r"-(only|or-later)$", "", value) if LICENSE.fullmatch(value) else None
+
+
+class PublicRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        p = urlsplit(newurl)
+        if p.scheme != "https" or p.hostname not in DOWNLOAD_HOSTS or p.username or p.password or p.port not in (443, None):
+            raise URLError("unapproved redirect")
+        return Request(newurl, headers=dict(req.headers), method="HEAD")
+
+
+def response_status(code):
+    return {404: "REMOVED", 410: "REMOVED", 451: "BLOCKED", 401: "ACCESS",
+            403: "ACCESS", 429: "TEMPORARY"}.get(code, "TEMPORARY")
+
+
+def probe(package):
+    for attempt in range(2):
+        try:
+            req = Request(package["url"], method="HEAD", headers={"User-Agent": "FM1-Manager-To-USB / public release audit"})
+            with build_opener(PublicRedirect()).open(req, timeout=12) as reply:
+                length = reply.headers.get("Content-Length")
+                if reply.status == 200 and length == str(package["size"]) and "text/html" not in reply.headers.get("Content-Type", "").lower():
+                    return "AVAILABLE"
+                return "UNVERIFIED"
+        except HTTPError as error:
+            status = response_status(error.code)
+            error.close()
+            if status != "TEMPORARY" or error.code == 429:
+                return status
+        except (URLError, TimeoutError, OSError):
+            pass
+        if attempt == 0:
+            time.sleep(1)
+    return "TEMPORARY"
+
+
+def verify_links(result):
+    pairs = [(row, package) for row in result["entries"] for package in row["packages"]]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        states = list(pool.map(probe, (p for _, p in pairs)))
+    for (row, package), state in zip(pairs, states):
+        package["availability"] = state
+        package["distribution"] = "AUTHOR_OPEN_RELEASE" if row["status"] == "AUTHOR" else "COMMUNITY_OPEN_BUILD"
+    for row in result["entries"]:
+        if row["packages"] and not any(p["availability"] == "AVAILABLE" for p in row["packages"]):
+            states_for_row = [p["availability"] for p in row["packages"]]
+            row["status"] = "TEMPORARY" if "TEMPORARY" in states_for_row else states_for_row[0]
+    result["counts"] = dict(sorted(Counter(r["status"] for r in result["entries"]).items()))
+    result["assetAvailability"] = dict(sorted(Counter(states).items()))
+    result["uniquePackages"] = len({p["sha256"] for (_, p), state in zip(pairs, states) if state == "AVAILABLE"})
+
+
 def published_author(row, releases):
     """Match the hub's public asset ID or verbatim digest; never guess an asset."""
     reference = (row.get("asset") or "").split(" ", 1)[0]
@@ -98,7 +163,7 @@ def published_author(row, releases):
         for a in release.get("assets", []):
             if ((reference and str(a.get("id")) == reference) or
                     a.get("digest") == f"sha256:{row.get('sha256', '')}"):
-                candidate = asset(a, row["version"], release["html_url"], "AUTHOR")
+                candidate = asset(a, row["version"], release["html_url"], "AUTHOR", row["repo"])
                 if candidate:
                     versions.append(candidate)
     return versions[:1]
@@ -116,7 +181,7 @@ def manifest(hub, collection, builds, coll_releases, editor, author):
         if rel.get("draft"):
             continue
         for a in rel.get("assets", []):
-            candidate = asset(a, rel["tag_name"], rel["html_url"], "COMMUNITY")
+            candidate = asset(a, rel["tag_name"], rel["html_url"], "COMMUNITY", COLLECTION)
             if candidate:
                 coll_assets.setdefault(a["name"], candidate)
     for row in hub["firmwares"]:
@@ -124,8 +189,11 @@ def manifest(hub, collection, builds, coll_releases, editor, author):
         if not REPO.fullmatch(repo):
             continue
         lic = row.get("lic") or "Sin licencia verificada"
-        packages = [] if row.get("linkOnly") or not LICENSE.fullmatch(lic) else published_author(row, author.get(repo.lower(), []))
-        status = "AUTHOR" if packages else "RESTRICTED" if row.get("linkOnly") or not LICENSE.fullmatch(lic) else "NO_DIRECT"
+        upstream_license = known.get(repo.lower(), {}).get("license")
+        declared = path_license(lic)
+        license_ok = declared is not None and (not upstream_license or path_license(upstream_license) == declared)
+        packages = [] if row.get("linkOnly") or not license_ok else published_author(row, author.get(repo.lower(), []))
+        status = "AUTHOR" if packages else "RESTRICTED" if row.get("linkOnly") else "LICENSE_UNKNOWN" if not license_ok else "NO_DIRECT"
         if packages:
             if packages[0]["sha256"] in seen_hashes:
                 packages = []
@@ -157,7 +225,7 @@ def manifest(hub, collection, builds, coll_releases, editor, author):
         elif TOOLS.search(description) or key == "m-vave/fm1_open":
             status = "TOOL"
         elif not r.get("redistributable") or not LICENSE.fullmatch(lic):
-            status = "RESTRICTED"
+            status = "LICENSE_UNKNOWN"
         elif parent and (parent.get("head") == r.get("head") or
                          parent["repo"].split("/")[1].lower() == repo.split("/")[1].lower()):
             status = "FORK"
@@ -236,6 +304,7 @@ def main():
     with ThreadPoolExecutor(max_workers=6) as pool:
         result = manifest(hub, coll, builds, releases, editor, dict(pool.map(author, repositories)))
     result["unavailableSources"] = sorted(unavailable)
+    verify_links(result)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
     print(json.dumps({"entries": len(result["entries"]), "counts": result["counts"],

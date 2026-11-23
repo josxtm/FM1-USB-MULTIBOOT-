@@ -39,9 +39,10 @@ def index(path):
     return generation, sequence, count, hashes
 
 
-def validate(root, path, files=False):
+def validate(root, path, files=False, flat_only=False):
     generation, sequence, count, pages = index(path)
     previous = ""
+    names = set()
     for i, expected in enumerate(pages):
         data = read_file(page_path(root, generation, i), 128 * 1024)
         need(digest(data) == expected and data.endswith(b"\n"), "page corrupted")
@@ -57,8 +58,12 @@ def validate(root, path, files=False):
             previous = checksum
             h = checksum.upper()
             ext = EXT[name.rsplit(".", 1)[-1].lower()]
-            relative = f"FW/{h[:2]}/{h[2:10]}/{h[10:18]}.{ext}"
-            need(row["path"] == relative, "invalid payload path")
+            flat = f"FW/{h[:8]}.{ext}"
+            legacy = f"FW/{h[:2]}/{h[2:10]}/{h[10:18]}.{ext}"
+            relative = row["path"]
+            need(relative in (flat, legacy) and relative not in names, "invalid or repeated payload path")
+            need(not flat_only or relative == flat, "legacy payload path")
+            names.add(relative)
             if files:
                 original = read_file(root / relative, size)
                 need(len(original) == size and digest(original) == checksum, "payload changed")
@@ -69,6 +74,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path, help="FM1 folder")
     parser.add_argument("--files", action="store_true")
+    parser.add_argument("--flat", action="store_true", help="verify active slot uses only direct FW paths")
     args = parser.parse_args()
     valid, rejected = [], 0
     for slot in ("INDEXA.V2", "INDEXB.V2"):
@@ -76,11 +82,13 @@ def main():
         if not path.exists():
             continue
         try:
-            valid.append(validate(args.root, path, args.files))
+            valid.append((*validate(args.root, path, args.files), path))
         except (OSError, ValueError, KeyError, TypeError):
             rejected += 1
-    need(bool(valid) and len(valid) == len({s for s, _ in valid}), "no unambiguous valid v2 index")
-    seq, count = max(valid)
+    need(bool(valid) and len(valid) == len({s for s, _, _ in valid}), "no unambiguous valid v2 index")
+    seq, count, chosen = max(valid)
+    if args.flat:
+        validate(args.root, chosen, args.files, flat_only=True)
     print(json.dumps({"format": "FM1CAT-v2", "sequence": seq, "entries": count,
                       "rejected_slots": rejected, "files_checked": args.files}))
 

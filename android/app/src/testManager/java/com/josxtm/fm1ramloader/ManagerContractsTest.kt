@@ -192,6 +192,80 @@ class ManagerContractsTest {
         assertEquals(snapshot.records, library.scan().records)
     }
 
+    @Test fun approvedSnapshotAndFiltersNeverSelectUnqualifiedPackages() {
+        val snapshot = Discovery.decode(File(System.getProperty("fm1.discovery")!!).readBytes())
+        val available = snapshot.entries.filter { DownloadFilter.AVAILABLE.matches(it, emptySet()) }
+        assertEquals(913, snapshot.entries.size)
+        assertEquals(410, available.flatMap { it.downloads() }.map { it.sha256 }.toSet().size)
+        assertEquals(280, snapshot.entries.count { DownloadFilter.AUTHOR.matches(it, emptySet()) })
+        assertEquals(129, snapshot.entries.count { DownloadFilter.COMMUNITY.matches(it, emptySet()) })
+        assertEquals(504, snapshot.entries.count { DownloadFilter.UNAVAILABLE.matches(it, emptySet()) })
+        val author = available.first { it.status == "AUTHOR" }
+        val p = author.downloads().single()
+        for (broken in listOf(p.copy(url = "https://example.org/file"), p.copy(sha256 = ""),
+            p.copy(distribution = ""), p.copy(availability = "REMOVED"), p.copy(availability = "TEMPORARY"))) {
+            assertTrue(author.copy(packages = listOf(broken)).downloads().isEmpty())
+        }
+        assertTrue(author.copy(license = "NOASSERTION").downloads().isEmpty())
+        assertTrue(author.downloads(setOf(p.url)).isEmpty())
+        assertTrue(author.copy(repo = "unrelated/project").downloads().isEmpty())
+        assertTrue(DownloadFilter.ALL.matches(author.copy(license = "NOASSERTION"), emptySet()))
+    }
+
+    @Test fun flatLibraryReusesSameFileForV1AndRejectsConflicts() {
+        val store = MemoryCard()
+        val lib = CardLibrary(store)
+        val a = entry(byteArrayOf(1, 2, 3), 1)
+        val b = entry(byteArrayOf(9, 8, 7), 2)
+        assertEquals(1, lib.publish(listOf(a, a)).records.size)
+        assertEquals(1, lib.exportLegacy(listOf(a.record)))
+        assertEquals(listOf(a.record.path), store.files.keys.filter { it.startsWith("FW/") })
+        store.files[b.record.path] = byteArrayOf(0)
+        expectFailure { lib.publish(listOf(b)) }
+        assertArrayEquals(byteArrayOf(0), store.files[b.record.path])
+        assertEquals(1, lib.scan().records.size)
+    }
+
+    @Test fun legacyMigrationRetainsOriginalThroughInterruptedIndexWrite() {
+        val store = MemoryCard()
+        val lib = CardLibrary(store)
+        val asset = entry(byteArrayOf(1, 7, 8), 8)
+        val old = seedLegacy(store, listOf(asset)).single()
+        assertTrue(lib.scan().records.single().nested)
+        assertTrue(lib.verify(old))
+        store.fail = "CATALOG/INDEXB.V2"
+        expectFailure { lib.reorganize() }
+        assertTrue(lib.scan().recovered)
+        assertTrue(lib.scan().records.single().nested)
+        store.fail = null
+        val final = lib.reorganize()
+        assertFalse(final.records.single().nested)
+        assertEquals(asset.record.path, lib.scan().records.single().path)
+        assertArrayEquals(asset.load(), store.files[old.path])
+        assertArrayEquals(asset.load(), store.files[asset.record.path])
+        assertEquals(final, lib.reorganize())
+    }
+
+    private fun seedLegacy(store: MemoryCard, assets: List<CardAsset>): List<CardRecord> {
+        val records = assets.map { item ->
+            item.record.copy(nested = true).also { store.files[it.path] = item.load() }
+        }.sortedBy { it.sha }
+        val pages = records.chunked(PAGE_SIZE).mapIndexed { i, group ->
+            ("FM1CAT|2|PAGE|${i + 1}\n" + group.joinToString("\n", postfix = "\n") {
+                it.json().apply { remove("author") }.toString()
+            }).encodeToByteArray()
+        }
+        val hashes = pages.map(::sha256)
+        val generation = sha256(hashes.joinToString("").encodeToByteArray()).take(16).uppercase()
+        pages.forEachIndexed { i, page ->
+            store.files["CATALOG/${generation.take(8)}/${generation.drop(8)}/P${(i + 1).toString().padStart(7, '0')}.JSN"] = page
+        }
+        val body = JSONObject().put("generation", generation).put("sequence", 1)
+            .put("count", records.size).put("pages", JSONArray(hashes)).toString().encodeToByteArray()
+        store.files["CATALOG/INDEXA.V2"] = "FM1CAT|2\n${sha256(body)}\n".encodeToByteArray() + body
+        return records
+    }
+
     private fun entry(bytes: ByteArray, version: Int) = CardAsset(
         CardRecord("test/device", "Fixture", "$version", "original.bin", bytes.size.toLong(), sha256(bytes),
             "SLOT v1", "FM-1", "Test CRC", "", "Synthetic test"), { bytes })

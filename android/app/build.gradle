@@ -19,8 +19,8 @@ android {
         manager {
             dimension 'scope'
             applicationId 'com.josxtm.fm1managerusb'
-            versionCode 1
-            versionName '1.0-alpha01'
+            versionCode 2
+            versionName '1.0-alpha02'
         }
     }
     sourceSets {
