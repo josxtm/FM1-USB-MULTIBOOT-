@@ -181,6 +181,82 @@ internal class AndroidUsb(private val context: Context, private val log: (String
         identify(live, exclusive = true)
     }
 
+    /**
+     * Ensayo físico único, invocado solo por la pantalla de laboratorio.
+     * Requiere PIN de APP1, ROM observada externamente, copia verificada,
+     * plan de recuperación y calificación independiente del adaptador.
+     * No programa ni consulta la Flash. Una vez comenzado, cero reintentos.
+     */
+    fun launchUsbcRam(
+        image: ByteArray,
+        evidence: UsbcLabEvidence,
+        onProgress: (Int, Int) -> Unit,
+        onDone: (UsbcRamReport) -> Unit
+    ) {
+        val manager = manager
+        val descriptor = panel.selected
+        val device = devices().firstOrNull { descriptor != null && describe(it) == descriptor }
+        if (panel.busy || manager == null || device == null || descriptor?.mode != UsbMode.ROM ||
+            panel.identity != "WL82 / UBOOT1.00" || !manager.hasPermission(device) ||
+            devices().count { describe(it).mode == UsbMode.ROM } != 1 ||
+            !evidence.complete() || !UsbcRamImage.approved(image)) {
+            onDone(UsbcRamReport(UsbcRamResult.BLOCKED, 0, 0,
+                "Preflight no superado: ROM fría, permisos, imagen, respaldo y USB-C cualificados"))
+            return
+        }
+        val token = ++generation
+        panel = panel.copy(busy = true, state = "Laboratorio ROM: preflight y transporte RAM")
+        worker.execute {
+            val result = runCatching {
+                val iface = (0 until device.interfaceCount).map(device::getInterface)
+                    .singleOrNull { UsbPolicy.isRomInterface(classify(it)) }
+                    ?: throw RomProbeError(RomFault.INTERFACE, "USB-C2")
+                val endpoints = (0 until iface.endpointCount).map(iface::getEndpoint)
+                val pair = UsbPolicy.bulkPair(endpoints.map { UsbPipe(it.address,
+                    it.type == UsbConstants.USB_ENDPOINT_XFER_BULK, it.maxPacketSize) })
+                    ?: throw RomProbeError(RomFault.ENDPOINTS, "USB-C2")
+                if (!UsbPolicy.canOfferExclusive(descriptor, device.configurationCount,
+                        endpoints.map { UsbPipe(it.address,
+                            it.type == UsbConstants.USB_ENDPOINT_XFER_BULK, it.maxPacketSize) }))
+                    throw RomProbeError(RomFault.INTERFACE, "USB-C2", "Perfil de dispositivo no exclusivo")
+                val input = endpoints.single { it.address == pair.input.address }
+                val output = endpoints.single { it.address == pair.output.address }
+                val live = { token == generation && !closed &&
+                    liveDevice(manager, device) != null && manager.hasPermission(device) }
+                if (!live()) throw RomProbeError(RomFault.DETACHED, "USB-C2")
+                val conn = manager.openDevice(device)
+                    ?: throw RomProbeError(RomFault.OPEN, "USB-C2")
+                var claimed = false
+                try {
+                    claimed = conn.claimInterface(iface, false)
+                    if (!claimed && evidence.exclusiveClaimAllowed &&
+                        runCatching(::storageAllowsExclusive).getOrDefault(false) && live()) {
+                        claimed = conn.claimInterface(iface, true)
+                    }
+                    if (!claimed) throw RomProbeError(RomFault.CLAIM, "USB-C2",
+                        "Android no concedió la interfaz; sin transferencias")
+                    val backend = AndroidRomConnection(conn, iface, input, output)
+                    UsbcRamTransport(backend, live, { done, total ->
+                        main.post { if (!closed) onProgress(done, total) }
+                    }).launch(image, evidence)
+                } finally {
+                    if (claimed) runCatching { conn.releaseInterface(iface) }
+                    runCatching { conn.close() }
+                }
+            }.getOrElse { error ->
+                UsbcRamReport(UsbcRamResult.BLOCKED, 0, 0,
+                    error.message ?: error.javaClass.simpleName)
+            }
+            main.post {
+                if (token == generation && !closed) {
+                    panel = panel.copy(busy = false, state = "USB-C2: ${result.result}")
+                    log("USB-C2 · ${result.result} · ${result.blocks} bloques · ${result.bytes} B · ${result.detail}")
+                }
+                if (!closed) onDone(result)
+            }
+        }
+    }
+
     fun disconnect() {
         resetSession()
         val selected = panel.selected
