@@ -11,8 +11,8 @@ android {
         minSdk 30
         targetSdk 35
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        versionCode 17
-        versionName '1.0-comp17'
+        versionCode 18
+        versionName '1.0-comp18'
     }
     flavorDimensions 'scope'
     productFlavors {

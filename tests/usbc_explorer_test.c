@@ -90,6 +90,7 @@ int main(int argc, char **argv)
     assert(usbc_connect(&identity, &disk, USB_POWER_QUALIFIED) == DIAG_OK);
     assert(identity.vid == 0x1234 && identity.pid == 0x5678 && disk.count == block.count);
     usbc_mount(&explorer, disk, DIAG_OK);
+    assert(explorer.transport == DIAG_OK && explorer.sectors_detected == block.count);
     if (!strcmp(fault, "tie") || !strcmp(fault, "missing-index")) {
         assert(explorer.media == (!strcmp(fault, "tie") ? DIAG_FAT : DIAG_END));
     } else if (!strcmp(fault, "bad-fat")) {
@@ -98,6 +99,7 @@ int main(int argc, char **argv)
         assert(explorer.media == DIAG_EXFAT);
     } else {
         assert(explorer.media == DIAG_OK && explorer.count == expected);
+        assert(explorer.fat_status == DIAG_OK);
         assert(explorer.version == (!strcmp(fault, "v1") ? 1 : 2));
         if (!strcmp(fault, "index")) assert(explorer.catalog.recovered && explorer.catalog.index.sequence == 4294967297ull);
         if (!strcmp(fault, "page")) {
@@ -141,6 +143,18 @@ int main(int argc, char **argv)
             press(&keys, MB_KEY_PLAY, &time);
             assert(explorer.integrity == DIAG_DISCONNECTED);
             assert(explorer.media == DIAG_DISCONNECTED);
+            assert(explorer.transport == DIAG_DISCONNECTED);
+            assert(explorer.fat_status == DIAG_DISCONNECTED);
+            assert(explorer.count == 0 && explorer.version == 0);
+            assert(explorer.sectors_detected == 0);
+            for (unsigned k = 0; k < USB_EXPLORER_ROWS; ++k)
+                assert(explorer.labels[k][0] == 0);
+            usbc_media_lost(&explorer); /* idempotent on repeat disconnect */
+            assert(explorer.media == DIAG_DISCONNECTED);
+            struct mb_lcd_list_renderer diagnostic;
+            mb_lcd_list_renderer_init(&diagnostic,
+                (struct mb_lcd_sink){0, row_window, row_pixels, end});
+            usbc_draw_diag(&explorer, &identity, &diagnostic);
             press(&keys, MB_KEY_REC, &time);
             assert(!explorer.detail);
             press(&keys, MB_KEY_REC, &time);
