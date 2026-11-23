@@ -89,7 +89,7 @@ internal class CardLibrary(private val store: CardStore) {
             .put("count", records.size).put("pages", JSONArray(hashes)).toString().encodeToByteArray()
         val wire = "FM1CAT|2\n${sha256(body)}\n".encodeToByteArray() + body
         val path = slots[target]
-        store.write(path, wire, replace = true)
+        store.write(path, wire, replace = current.slot >= 0)
         val reloaded = decodeIndex(requireNotNull(store.read(path, MAX_INDEX)), target)
         require(reloaded.records == records) { "La relectura del índice no coincide" }
         return reloaded
@@ -102,7 +102,8 @@ internal class CardLibrary(private val store: CardStore) {
 
     /** The original implementation's 8.3 catalog, staging, re-read and backup contract. */
     fun exportLegacy(records: List<CardRecord>): Int {
-        val prior = legacyIndex("INDEX.CSV") ?: run {
+        val old = store.read("INDEX.CSV", FirmwareCatalog.MAX_BYTES)
+        val prior = old?.let { FirmwareCatalog.decode(it.toString(Charsets.UTF_8)) } ?: run {
             require(store.read("INDEX.BAK", FirmwareCatalog.MAX_BYTES) == null) { "Recupera INDEX.BAK antes de exportar" }
             emptyList()
         }
@@ -125,9 +126,11 @@ internal class CardLibrary(private val store: CardStore) {
             immutable("FW/${entry.fileName}", bytes, FirmwareCatalog.MAX_IMAGE_BYTES.toInt())
         }
         immutable("INDEX.NEW", encoded, FirmwareCatalog.MAX_BYTES)
-        val old = store.read("INDEX.CSV", FirmwareCatalog.MAX_BYTES)
+        val current = store.read("INDEX.CSV", FirmwareCatalog.MAX_BYTES)
+        require(if (old == null) current == null else current?.contentEquals(old) == true) {
+            "INDEX.CSV cambió durante la exportación"
+        }
         if (old != null) {
-            FirmwareCatalog.decode(old.toString(Charsets.UTF_8))
             store.write("INDEX.BAK", old, store.read("INDEX.BAK", FirmwareCatalog.MAX_BYTES) != null)
             require(store.read("INDEX.BAK", FirmwareCatalog.MAX_BYTES)?.contentEquals(old) == true)
         }
@@ -148,10 +151,6 @@ internal class CardLibrary(private val store: CardStore) {
         FirmwareCatalog.decode(backup.toString(Charsets.UTF_8))
         store.write("INDEX.CSV", backup, current != null)
         require(store.read("INDEX.CSV", FirmwareCatalog.MAX_BYTES)?.contentEquals(backup) == true)
-    }
-
-    private fun legacyIndex(path: String) = store.read(path, FirmwareCatalog.MAX_BYTES)?.let {
-        FirmwareCatalog.decode(it.toString(Charsets.UTF_8))
     }
 
     private fun assertPayload(record: CardRecord, bytes: ByteArray) {

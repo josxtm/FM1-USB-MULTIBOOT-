@@ -157,6 +157,20 @@ class ManagerContractsTest {
         assertEquals(1, store.files.keys.count { it.endsWith(".V2") })
     }
 
+    @Test fun firstPublicationCannotOverwriteAnUnexpectedIndex() {
+        val backing = MemoryCard()
+        val path = "CATALOG/INDEXA.V2"
+        val previous = "existing index".encodeToByteArray()
+        val raced = object : CardStore by backing {
+            override fun write(path: String, data: ByteArray, replace: Boolean) {
+                if (path == "CATALOG/INDEXA.V2") backing.files[path] = previous
+                backing.write(path, data, replace)
+            }
+        }
+        expectFailure { CardLibrary(raced).publish(listOf(entry(byteArrayOf(9), 9))) }
+        assertArrayEquals(previous, backing.files[path])
+    }
+
     @Test fun kotlinExportFeedsEmbeddedV1AndRecoversBackup() {
         val store = MemoryCard()
         val library = CardLibrary(store)
