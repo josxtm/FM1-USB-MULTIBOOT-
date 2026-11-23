@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a deterministic, read-only FAT32 test image for the host harness."""
 import argparse
-import hashlib, struct
+import hashlib, stat, struct
 from pathlib import Path
 
 SECTOR = 512
@@ -142,6 +142,8 @@ def main():
         image[start:start + len(fat_bytes)] = fat_bytes
     out.parent.mkdir(parents=True, exist_ok=True)
     # Sparse fixture. 6D creates only a previously nonexistent regular output file.
+    if (out.exists() or out.is_symlink()) and not stat.S_ISREG(out.lstat().st_mode):
+        parser.error('output must be a regular file, never a device or symbolic link')
     with out.open('xb' if args.spi_package else 'wb') as stream:
         for start in range(0, len(image), 65536):
             chunk = image[start:start + 65536]
