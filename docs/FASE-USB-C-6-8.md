@@ -58,3 +58,19 @@ SHA-256 correcto de archivo y salida con SKIFF funcionando.
 
 En caso de VID/PID ausente, fallo de Host, FAT32 o desconexión, registrar
 el código mostrado; no instalar firmware ni repetir saltos de ROM.
+
+## Validación CI terminada
+
+- [Embedded multiboot core — SUCCESS](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/45270688944).
+- [FM-1 RAM diagnostics — SUCCESS](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/45270688794).
+- [Android RAM Loader comp18 — SUCCESS](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/45270688877): 82 pruebas JVM, 0 fallos, 0 errores, 0 omitidas, Lint y firma verificados.
+- [APK comp18 y XML de pruebas](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/45270688877/artifacts/14866025646).
+
+| Artefacto | Tamaño | SHA-256 |
+|---|---:|---|
+| READONLY v2 APP1 | 20412 B | `628cf2976fefbcbac55b3f0dcb403d9eafd7e1b46409d0467dc82ab6f8e11270` |
+| HOST LAB v2 APP1 | 22564 B | `fcc660d34017a48a85a4ffe96b2317876b79268d778d2835e9377e50f11041d4` |
+| FM1 RAM Loader comp18 APK | 22792542 B | `30f5e687ef4b2ec2f5f19a97b1a257a710b9c8a29f90e0baf58d11b4b8c7d874` |
+
+El cargador Android permite exclusivamente estas dos imágenes APP1, con hashes fijados.
+**No se ha realizado una prueba física; el firmware musical SKIFF no se ha alterado.**
