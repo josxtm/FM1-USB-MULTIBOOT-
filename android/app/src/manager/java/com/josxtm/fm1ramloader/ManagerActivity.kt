@@ -100,8 +100,18 @@ private val statusLabels = mapOf(
     "SOURCE" to "Código con receta de compilación", "RESTRICTED" to "Distribución sin autorización verificada",
     "INCOMPATIBLE" to "Otro dispositivo", "UNVERIFIED" to "Proyecto por verificar",
     "TOOL" to "Herramienta", "FORK" to "Fork sin paquete independiente",
-    "DUPLICATE" to "Paquete duplicado", "NO_DIRECT" to "Sin descarga directa"
+    "DUPLICATE" to "Paquete duplicado", "NO_DIRECT" to "Sin descarga directa",
+    "LICENSE_UNKNOWN" to "Licencia o autorización sin acreditar", "REMOVED" to "Enlace retirado",
+    "BLOCKED" to "Distribución bloqueada", "ACCESS" to "Acceso pendiente de verificar",
+    "TEMPORARY" to "Error temporal del servidor"
 )
+private fun availabilityLabel(row: Listing, blocked: Set<String>): String = when {
+    row.downloads(blocked).isNotEmpty() -> statusLabels[row.status].orEmpty()
+    row.packages.any { it.url in blocked } -> "Enlace retirado o bloqueado"
+    row.status in setOf("AUTHOR", "COMMUNITY") -> "Descarga sin verificar"
+    else -> statusLabels[row.status].orEmpty()
+}
+
 private val genreLabels = mapOf("synth" to "Síntesis", "groove" to "Groovebox", "drums" to "Batería / sampler",
     "tracker" to "Tracker", "chords" to "Acordes", "other" to "Experimental", "dev" to "MIDI / desarrollo")
 
@@ -111,7 +121,9 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
     var tab by rememberSaveable { mutableStateOf("Catálogo") }
     var query by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf("") }
-    var available by rememberSaveable { mutableStateOf(false) }
+    var filterName by rememberSaveable { mutableStateOf(DownloadFilter.AVAILABLE.name) }
+    val filter = DownloadFilter.valueOf(filterName)
+    val blocked = model.blockedUrls
     var inspected by rememberSaveable { mutableStateOf<String?>(null) }
     var selection by remember { mutableStateOf(setOf<String>()) }
     var copySelection by remember { mutableStateOf(setOf<String>()) }
@@ -119,14 +131,15 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
     val staged = model.cached
     val library = model.card?.records.orEmpty()
     val onCard = remember(library) { library.map { it.sha }.toSet() }
-    val filtered = remember(entries, query, category, available) {
+    val filtered = remember(entries, query, category, filter, blocked) {
         val term = query.trim()
         entries.filter { row ->
             (term.isEmpty() || listOf(row.name, row.author, row.repo, row.description).any { it.contains(term, true) }) &&
-                (category.isEmpty() || category in row.genres) && (!available || row.packages.isNotEmpty())
+                (category.isEmpty() || category in row.genres) && filter.matches(row, blocked)
         }
     }
     val selected = remember(entries, selection) { entries.filter { it.id in selection } }
+    val selectedForDownload = filtered.filter { it.id in selection && it.downloads(blocked).isNotEmpty() }
     val selectedRow = filtered.find { it.id == inspected } ?: filtered.firstOrNull()
 
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 10.dp),
@@ -156,7 +169,12 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                 OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text("Buscar por firmware, autor o función") })
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = available, onClick = { available = !available }, label = { Text("Descarga directa") })
+                    DownloadFilter.entries.forEach { option ->
+                        FilterChip(selected = filter == option, onClick = { filterName = option.name },
+                            label = { Text(option.label) })
+                    }
+                }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for ((tag, name) in genreLabels) {
                         FilterChip(selected = category == tag, onClick = { category = if (category == tag) "" else tag },
                             label = { Text(name) })
@@ -164,13 +182,13 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { model.enqueue(selected); tab = "Descargas" }, enabled = selected.any { it.packages.isNotEmpty() }) {
+                    Button(onClick = { model.enqueue(selectedForDownload); tab = "Descargas" }, enabled = selectedForDownload.isNotEmpty()) {
                         Text("Descargar selección")
                     }
-                    OutlinedButton(onClick = { model.enqueue(filtered); tab = "Descargas" }, enabled = filtered.any { it.packages.isNotEmpty() }) {
+                    OutlinedButton(onClick = { model.enqueue(filtered); tab = "Descargas" }, enabled = filtered.any { it.downloads(blocked).isNotEmpty() }) {
                         Text("Descargar nuevos del filtro")
                     }
-                    OutlinedButton(onClick = { selection = entries.filter { it.packages.isNotEmpty() }.map { it.id }.toSet() }) {
+                    OutlinedButton(onClick = { selection = filtered.filter { it.downloads(blocked).isNotEmpty() }.map { it.id }.toSet() }) {
                         Text("Todos los descargables")
                     }
                     TextButton(onClick = { selection = emptySet() }) { Text("Limpiar selección") }
@@ -179,17 +197,17 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     if (maxWidth >= 750.dp) {
                         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, Modifier.weight(1f), {
+                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, blocked, Modifier.weight(1f), {
                                 inspected = it.id
                             }, { selection = toggle(selection, it.id) })
-                            DetailPanel(selectedRow, Modifier.weight(0.9f), open)
+                            DetailPanel(selectedRow, blocked, Modifier.weight(0.9f), open)
                         }
                     } else {
                         Column(Modifier.fillMaxSize()) {
-                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, Modifier.weight(1.2f), {
+                            CatalogList(filtered, selection, selectedRow?.id, staged, onCard, blocked, Modifier.weight(1.2f), {
                                 inspected = it.id
                             }, { selection = toggle(selection, it.id) })
-                            DetailPanel(selectedRow, Modifier.weight(1f), open)
+                            DetailPanel(selectedRow, blocked, Modifier.weight(1f), open)
                         }
                     }
                 }
@@ -237,6 +255,8 @@ private fun ManagerScreen(model: ManagerModel, choose: () -> Unit, import: () ->
                 Text("Android SAF no confirma el tipo de sistema de archivos. Comprueba FAT32 en la tarjeta; la app no la formatea.",
                     color = pale, style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = model::reorganizeCard,
+                        enabled = !model.busy && library.any { it.nested }) { Text("Reorganizar en FW") }
                     OutlinedButton(onClick = model::reloadCard, enabled = !model.busy) { Text("Recargar índice") }
                     OutlinedButton(onClick = { model.exportV1(library.filter { it.sha in copySelection }) },
                         enabled = !model.busy && library.any { it.sha in copySelection }) { Text("Exportar selección FM1CAT v1") }
@@ -267,14 +287,14 @@ private fun toggle(keys: Set<String>, key: String) = if (key in keys) keys - key
 
 @Composable
 private fun CatalogList(rows: List<Listing>, selected: Set<String>, current: String?, cached: Set<String>,
-                        onCard: Set<String>, modifier: Modifier, open: (Listing) -> Unit, check: (Listing) -> Unit) {
+                        onCard: Set<String>, blocked: Set<String>, modifier: Modifier, open: (Listing) -> Unit, check: (Listing) -> Unit) {
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         items(rows, key = Listing::id) { row ->
-            val link = row.packages.firstOrNull()
+            val link = row.downloads(blocked).firstOrNull()
             val state = when {
                 row.packages.any { it.sha256 in onCard } -> "En índice microSD"
                 row.packages.any { it.sha256 in cached } -> "En caché"
-                else -> statusLabels[row.status].orEmpty()
+                else -> availabilityLabel(row, blocked)
             }
             Surface(color = if (current == row.id) Color(0xFF214036) else disk, shape = MaterialTheme.shapes.medium) {
                 Row(Modifier.fillMaxWidth().clickable { open(row) }.padding(end = 12.dp, top = 3.dp, bottom = 3.dp),
@@ -294,7 +314,7 @@ private fun CatalogList(rows: List<Listing>, selected: Set<String>, current: Str
 }
 
 @Composable
-private fun DetailPanel(row: Listing?, modifier: Modifier, open: (String) -> Unit) {
+private fun DetailPanel(row: Listing?, blocked: Set<String>, modifier: Modifier, open: (String) -> Unit) {
     Surface(modifier.fillMaxSize(), color = disk, shape = MaterialTheme.shapes.large) {
         if (row == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No hay fichas para este filtro") }
@@ -309,12 +329,13 @@ private fun DetailPanel(row: Listing?, modifier: Modifier, open: (String) -> Uni
                 if (genres.isNotEmpty()) Text(genres.joinToString(" · "), color = pale, style = MaterialTheme.typography.labelMedium)
                 row.variantOf?.let { Text("Variante de $it", color = pale, style = MaterialTheme.typography.labelSmall) }
                 HorizontalDivider()
-                Text(statusLabels[row.status].orEmpty(), color = mint)
-                if (row.packages.isEmpty()) Text("Sin descarga directa. Puedes importar un original obtenido por tu cuenta.", color = pale)
+                Text(availabilityLabel(row, blocked), color = mint)
+                if (row.downloads(blocked).isEmpty()) Text("Sin descarga directa. Puedes importar un original obtenido por tu cuenta.", color = pale)
                 Text("Perfil publicado: ${row.compatibility} · arranque sin verificar", style = MaterialTheme.typography.bodySmall)
                 if (row.identity.isNotBlank()) Text(row.identity, style = MaterialTheme.typography.labelSmall)
                 for (link in row.packages) {
-                    Text("${link.version} · ${link.format} · ${link.size} B", fontWeight = FontWeight.Medium)
+                    Text("${link.version} · ${link.format} · ${link.size} B" +
+                        if (link in row.downloads(blocked)) "" else " · no descargable", fontWeight = FontWeight.Medium)
                     Text(link.sha256, color = pale, style = MaterialTheme.typography.labelSmall)
                     TextButton(onClick = { open(link.release) }) { Text("Versión publicada") }
                 }

@@ -6,19 +6,19 @@ Datos de The Firmware Hub del **23 de noviembre de 2026**, normalizados con repo
 
 | Estado de la ficha | Fichas |
 |---|---:|
-| Publicación del autor con activo GitHub | 285 |
+| Publicación del autor con activo GitHub | 280 |
 | Compilación comunitaria publicada | 129 |
 | Receta de compilación conocida | 133 |
-| Sin descarga directa comprobada | 102 |
-| Falta autorización verificable | 81 |
+| Sin descarga directa comprobada | 103 |
+| Licencia o autorización sin acreditar | 85 |
+| Distribución restringida | 1 |
 | Repositorio con paquete o árbol sin confirmar para el FM‑1 | 40 |
 | Fork sin paquete independiente verificado | 113 |
-| Duplicado de bytes | 1 |
 | Herramienta | 28 |
 | Otro dispositivo | 1 |
 | **Total** | **913** |
 
-El manifiesto ofrece **415 activos con SHA‑256 distintos**. Hay variantes y, ocasionalmente, más de un activo asociado a una ficha. Las cifras miden procedencia y disponibilidad publicada de archivos, con clasificación de variantes por separado. La comprobación íntegra de bytes y formato se realiza en cada descarga. La selección masiva incluye los activos de cada ficha y la ficha enlaza al historial de versiones del autor. La caché y el catálogo usan SHA‑256 como clave de contenido. Un paquete actualizado con un hash distinto se añade como versión adicional.
+El manifiesto ofrece **410 activos con SHA‑256 distintos**. Hay variantes y, ocasionalmente, más de un activo asociado a una ficha. Las cifras miden procedencia y disponibilidad publicada de archivos, con clasificación de variantes por separado. La comprobación íntegra de bytes y formato se realiza en cada descarga. La selección masiva incluye los activos de cada ficha y la ficha enlaza al historial de versiones del autor. La caché y el catálogo usan SHA‑256 como clave de contenido. Un paquete actualizado con un hash distinto se añade como versión adicional.
 
 ## Cómo se reúne la evidencia
 
@@ -42,7 +42,7 @@ python3 scripts/update_manager_catalog.py --snapshot-dir /ruta/fm1-dia --output 
 - El archivo raíz de compatibilidad `FM1/INDEX.CSV` sigue v1. Los índices v2 son `FM1/CATALOG/INDEXA.V2` e `INDEXB.V2`. Cada uno contiene `FM1CAT|2\n`, el SHA‑256 hexadecimal del cuerpo más LF y un objeto JSON UTF‑8. El cuerpo tiene una secuencia, entre 1 y 4.096 registros, identificador de generación y la tabla de SHA‑256 de páginas.
 - Las páginas se guardan en `CATALOG/<primeros ocho>/<últimos ocho>/P0000001.JSN`. La generación es el prefijo de 16 caracteres del SHA‑256 de la concatenación ASCII de los hashes de páginas. Cada página empieza por `FM1CAT|2|PAGE|n\n`, tiene hasta 32 registros JSON por línea, termina en LF y está acotada a 128 KiB. El índice está acotado a 24 KiB. Un lector independiente puede comprobar páginas secuencialmente y conservar sólo el rango que muestra.
 - Cada registro tiene proyecto, nombre, versión, nombre original, tamaño, SHA‑256 completo, tipo, identidad, CRC comprobados, regiones declaradas, fuente y `compat=UNVERIFIED`. El hash identifica el contenido y los registros se ordenan por hash. Un mismo hash conserva una sola copia. Distintos hashes de un proyecto pueden convivir.
-- Los originales se guardan en `FW/HH/HHHHHHHH/HHHHHHHH.EXT`. Los primeros 18 caracteres del hash en mayúsculas forman la ruta. El hash completo del registro detecta una colisión del prefijo y la copia se rechaza. Las extensiones cortas son FWS, UFW y BIN. No representan una conversión. Los nombres y extensiones usan 8.3.
+- Los originales nuevos se guardan directamente en `FW/HHHHHHHH.EXT`. Los primeros ocho caracteres del SHA-256 en mayúsculas forman el nombre. Los registros v2 anteriores con ruta `FW/HH/HHHHHHHH/HHHHHHHH.EXT` se pueden leer y migrar. Un v1 nuevo puede compartir el mismo archivo plano. El hash completo del registro detecta una colisión del prefijo y la copia se rechaza. Las extensiones cortas son FWS, UFW y BIN. No representan una conversión. Los nombres y extensiones usan 8.3.
 - Se verifican los originales y el hash de cada página antes de escribir en el slot de índice inactivo. Se relee el slot completo. El lector elige la secuencia válida más alta y cae al otro slot si la nueva publicación está incompleta. Los archivos ya referenciados y las versiones anteriores se conservan. Las generaciones no referenciadas no se eliminan automáticamente.
 - El verificador Python `scripts/verify_manager_card.py` es independiente del serializador Android. El firmware embebido actual lee v1. Las pruebas de v2 son de software y no acreditan lectura embebida ni instalación.
 

@@ -18,7 +18,8 @@ private val slots = listOf("CATALOG/INDEXA.V2", "CATALOG/INDEXB.V2")
 internal data class CardRecord(
     val project: String, val name: String, val version: String, val original: String,
     val size: Long, val sha: String, val format: String, val identity: String,
-    val crc: String, val layout: String, val source: String
+    val crc: String, val layout: String, val source: String,
+    val author: String = "", val nested: Boolean = false
 ) {
     val extension get() = when (original.substringAfterLast('.').lowercase()) {
         "fwsc" -> "FWS"
@@ -26,23 +27,27 @@ internal data class CardRecord(
         "bin" -> "BIN"
         else -> error("Extensión original no admitida")
     }
-    val path get() = sha.uppercase().let { "FW/${it.take(2)}/${it.substring(2, 10)}/${it.substring(10, 18)}.$extension" }
+    val flatPath get() = "FW/${sha.take(8).uppercase()}.$extension"
+    private val oldPath get() = sha.uppercase().let { "FW/${it.take(2)}/${it.substring(2, 10)}/${it.substring(10, 18)}.$extension" }
+    val path get() = if (nested) oldPath else flatPath
 
     fun json(): JSONObject = JSONObject()
         .put("project", project).put("name", name).put("version", version).put("original", original)
         .put("size", size).put("sha256", sha).put("format", format).put("identity", identity)
-        .put("crc", crc).put("layout", layout).put("source", source).put("path", path).put("compat", "UNVERIFIED")
+        .put("author", author).put("crc", crc).put("layout", layout).put("source", source).put("path", path).put("compat", "UNVERIFIED")
 
     companion object {
         fun decode(row: JSONObject): CardRecord {
             val record = CardRecord(row.field("project", 180), row.field("name", 160),
                 row.field("version", 80), row.field("original", 160), row.getLong("size"),
                 row.field("sha256", 64), row.field("format", 24), row.field("identity", 100),
-                row.field("crc", 120), row.field("layout", 900), row.field("source", 512))
+                row.field("crc", 120), row.field("layout", 900), row.field("source", 512),
+                if (row.has("author")) row.field("author", 160) else "")
             require(record.size in 1..MAX_ASSET.toLong() && HASH64.matches(record.sha) &&
-                validBaseName(record.original) && row.getString("path") == record.path &&
+                validBaseName(record.original) &&
+                row.getString("path") in listOf(record.flatPath, record.oldPath) &&
                 row.getString("compat") == "UNVERIFIED")
-            return record
+            return record.copy(nested = row.getString("path") == record.oldPath)
         }
     }
 }
@@ -70,12 +75,37 @@ internal class CardLibrary(private val store: CardStore) {
         val added = assets.distinctBy { it.record.sha }.filter { it.record.sha !in have }
         if (added.isEmpty()) return current
         require(added.size + have.size <= MAX_RECORDS) { "Biblioteca llena" }
-        val records = (current.records + added.map { CardRecord.decode(it.record.json()) }).sortedBy { it.sha }
-        added.forEach { item ->
+        val additions = added.map { CardRecord.decode(it.record.copy(nested = false).json()) }
+        val records = (current.records + additions).sortedBy { it.sha }
+        rejectCollisions(records)
+        added.zip(additions).forEach { (item, record) ->
             val bytes = item.load()
-            assertPayload(item.record, bytes)
-            immutable(item.record.path, bytes, MAX_ASSET)
+            assertPayload(record, bytes)
+            immutable(record.path, bytes, MAX_ASSET)
         }
+        return commit(current, records)
+    }
+
+    fun reorganize(): CardSnapshot {
+        val current = scan()
+        if (current.records.none { it.nested }) return current
+        val records = current.records.map { it.copy(nested = false) }
+        rejectCollisions(records)
+        current.records.zip(records).forEach { (old, flat) ->
+            val bytes = requireNotNull(store.read(old.path, MAX_ASSET)) { "Archivo ausente: ${old.path}" }
+            assertPayload(old, bytes)
+            if (old.nested) immutable(flat.path, bytes, MAX_ASSET)
+        }
+        require(records.all(::verify)) { "La biblioteca reorganizada no supera la verificación" }
+        return commit(current, records)
+    }
+
+    private fun rejectCollisions(records: List<CardRecord>) {
+        val collision = records.groupBy { it.flatPath }.entries.firstOrNull { it.value.size > 1 }
+        require(collision == null) { "Colisión 8.3: ${collision?.key}; se conservan ambos originales" }
+    }
+
+    private fun commit(current: CardSnapshot, records: List<CardRecord>): CardSnapshot {
         val pages = records.chunked(PAGE_SIZE).mapIndexed { page, group ->
             ("FM1CAT|2|PAGE|${page + 1}\n" + group.joinToString("\n", postfix = "\n") { it.json().toString() })
                 .encodeToByteArray().also { require(it.size <= MAX_PAGE) }
@@ -109,7 +139,8 @@ internal class CardLibrary(private val store: CardStore) {
         }
         require(store.read("INDEX.NEW", FirmwareCatalog.MAX_BYTES) == null) { "Existe INDEX.NEW; revisa la copia anterior" }
         val known = prior.associateBy { it.id }
-        val additions = records.distinctBy { it.sha }.map { item ->
+        val knownHashes = prior.map { it.sha256 }.toHashSet()
+        val additions = records.distinctBy { it.sha }.filter { it.sha !in knownHashes }.map { item ->
             require(item.extension != "UFW") { "FM1CAT v1 sólo admite BIN y FWS" }
             val id = item.sha.take(8).uppercase()
             require(known[id]?.sha256.let { it == null || it == item.sha }) { "Colisión de ID corto $id" }
@@ -186,6 +217,7 @@ internal class CardLibrary(private val store: CardStore) {
             lines.drop(1).dropLast(1).map { CardRecord.decode(JSONObject(it)) }
         }
         require(records.zipWithNext().all { (left, right) -> left.sha < right.sha }) { "Índice fuera de orden" }
+        require(records.map { it.path }.toSet().size == records.size) { "Rutas físicas repetidas" }
         return CardSnapshot(seq, slot, records)
     }
 
