@@ -1,0 +1,31 @@
+name: Zero W - APK
+on:
+  push:
+    branches: [zero-w-android]
+    paths: ['zero-w-android/android/**', '.github/workflows/zero-manager-apk.yml']
+permissions:
+  contents: read
+jobs:
+  manager:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: e401bc4788547f4141fa50df13de37db7523736f
+          path: upstream
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Preparar variante y compilar
+        working-directory: upstream
+        run: |
+          python3 ../zero-w-android/android/prepare_variant.py
+          cd android
+          bash gradlew :app:assembleManagerDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FM1-Manager-Zero-W
+          path: upstream/android/app/build/outputs/apk/manager/debug/*.apk
+          if-no-files-found: error
