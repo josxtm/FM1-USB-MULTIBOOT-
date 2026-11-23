@@ -70,7 +70,7 @@ static enum diag_result load_window(struct usbc_explorer *e)
         append(record->path, &n, "FW/", sizeof record->path);
         append(record->path, &n, old->file, sizeof record->path); n = 0;
         const u32 len = (u32)ustrlen(old->file);
-        append(record->format, &n, old->file + len - 3, sizeof record->format);
+        if (len >= 3u) append(record->format, &n, old->file + len - 3u, sizeof record->format);
         record->size = old->size;
         display_row(e, i, record);
     }
@@ -79,11 +79,13 @@ static enum diag_result load_window(struct usbc_explorer *e)
 
 void usbc_mount(struct usbc_explorer *e, struct block_device disk, enum diag_result result)
 {
-    e->media = result;
+    e->transport = e->media = result;
+    e->fat_status = DIAG_END; /* Not attempted until transport succeeds. */
+    e->sectors_detected = result == DIAG_OK ? disk.count : 0;
     e->count = e->current = e->window = 0;
     e->version = e->detail = e->checked = e->exit = e->name_page = 0;
     if (result != DIAG_OK) return;
-    e->media = fat32_mount_explorer(&e->fs, disk);
+    e->fat_status = e->media = fat32_mount_explorer(&e->fs, disk);
     if (e->media != DIAG_OK) return;
     e->media = cat2_open(&e->catalog, &e->fs);
     if (e->media == DIAG_OK) {
@@ -105,6 +107,19 @@ void usbc_mount(struct usbc_explorer *e, struct block_device disk, enum diag_res
         e->catalog.fs = &e->fs;
         e->media = load_window(e);
     }
+}
+
+void usbc_media_lost(struct usbc_explorer *e)
+{
+    if (!e || e->transport == DIAG_DISCONNECTED) return;
+    e->transport = DIAG_DISCONNECTED;
+    e->fat_status = DIAG_DISCONNECTED;
+    e->media = DIAG_DISCONNECTED;
+    e->integrity = DIAG_DISCONNECTED;
+    e->current = e->window = e->count = 0;
+    e->version = e->detail = e->checked = e->name_page = 0;
+    e->sectors_detected = 0;
+    for (u32 i = 0; i < USB_EXPLORER_ROWS; ++i) e->labels[i][0] = 0;
 }
 
 void usbc_event(struct usbc_explorer *e, enum mb_event event)
@@ -230,12 +245,14 @@ void usbc_draw_diag(const struct usbc_explorer *e, const struct usb_device *iden
                     "MSC: SIN CONFIRMAR", C_WHITE);
     n = 0;
     append(text, &n, "SECTORES: ", sizeof text);
-    if (e->media == DIAG_OK && e->fs.disk.count)
-        decimal(text, &n, e->fs.disk.count, sizeof text);
+    if (e->transport == DIAG_OK && e->sectors_detected)
+        decimal(text, &n, e->sectors_detected, sizeof text);
     else append(text, &n, "?", sizeof text);
     mb_lcd_list_row(lcd, 5, text, C_WHITE);
-    mb_lcd_list_row(lcd, 6, e->media == DIAG_OK ? "FAT32: MONTADA" : diag_error(e->media),
-                    e->media == DIAG_OK ? C_GREEN : C_RED);
+    mb_lcd_list_row(lcd, 6, e->fat_status == DIAG_OK ? "FAT32: MONTADA" :
+                    e->transport != DIAG_OK ? diag_error(e->transport) :
+                    e->fat_status == DIAG_END ? "FAT32: SIN LEER" : diag_error(e->fat_status),
+                    e->fat_status == DIAG_OK ? C_GREEN : C_RED);
     mb_lcd_list_row(lcd, 7, e->version == 2 ? "CATALOGO: FM1CAT V2" :
                     e->version == 1 ? "CATALOGO: INDEX V1" : "CATALOGO: SIN LEER",
                     C_WHITE);
@@ -243,6 +260,8 @@ void usbc_draw_diag(const struct usbc_explorer *e, const struct usb_device *iden
     append(text, &n, "FIRMWARES: ", sizeof text);
     decimal(text, &n, e->count, sizeof text);
     mb_lcd_list_row(lcd, 8, text, C_WHITE);
+    mb_lcd_list_row(lcd, 9, e->media == DIAG_OK ? "ESTADO: PREPARADO" : diag_error(e->media),
+                    e->media == DIAG_OK ? C_GREEN : C_RED);
     mb_lcd_list_row(lcd, 10, "FLASH: SIN ESCRITURA", C_YELLOW);
     mb_lcd_list_row(lcd, 12, "PLAY: EXPLORADOR", C_GREEN);
     mb_lcd_list_row(lcd, 13, "REC: TERMINAR", C_GREY);
