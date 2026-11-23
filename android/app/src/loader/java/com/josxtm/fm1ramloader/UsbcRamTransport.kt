@@ -40,6 +40,7 @@ internal data class UsbcRamReport(
  */
 internal object UsbcRamImage {
     const val HARDWARE_PINNED_SHA256 = "cb04c2cef8ef9641603c68b2942c8d094fa87a9b5debec72d24cf7115bfd2025"
+    const val LAB_PINNED_SHA256 = "d090ff7d49f7324ee8c06c3eaee5e6d4cf7e2ec55a54d2f48287f76a4247c009"
     private const val MAX_IMAGE = 32768
     private fun digest(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes)
@@ -62,7 +63,13 @@ internal object UsbcRamImage {
         )
     }
 
-    fun approved(image: ByteArray): Boolean = checks(image).all { it.second }
+    fun profile(image: ByteArray): String? = when {
+        checks(image, LAB_PINNED_SHA256).all { it.second } -> "HOST LAB"
+        checks(image, HARDWARE_PINNED_SHA256).all { it.second } -> "READONLY"
+        else -> null
+    }
+
+    fun approved(image: ByteArray): Boolean = profile(image) != null
 }
 
 /**
