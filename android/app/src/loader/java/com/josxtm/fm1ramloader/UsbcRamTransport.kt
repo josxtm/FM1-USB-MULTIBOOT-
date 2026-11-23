@@ -17,7 +17,8 @@ internal data class UsbcLabEvidence(
     val flashBackupVerified: Boolean = false,
     val recoveryProcedureVerified: Boolean = false,
     val usbPowerAndRoleQualified: Boolean = false,
-    val explicitOneShotConsent: Boolean = false
+    val explicitOneShotConsent: Boolean = false,
+    val exclusiveClaimAllowed: Boolean = false
 ) {
     fun complete(): Boolean = independentlyObservedColdRom && flashBackupVerified &&
         recoveryProcedureVerified && usbPowerAndRoleQualified && explicitOneShotConsent
