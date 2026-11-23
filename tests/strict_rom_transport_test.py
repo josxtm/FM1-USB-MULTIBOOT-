@@ -5,6 +5,7 @@ from hashlib import sha256
 from pathlib import Path
 import struct
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -107,6 +108,13 @@ class TransportTest(unittest.TestCase):
                            (rom.APP + 4096, b"x" * 5), (rom.RETAINED, b"x" * 4)):
             with self.assertRaisesRegex(rom.Stop, "REQUEST_RANGE"):
                 rom.upload(addr, data)
+
+    def test_input_must_be_a_regular_file_before_open(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            with patch.object(rom.os, "open", side_effect=AssertionError("must not open")):
+                with self.assertRaisesRegex(rom.Stop, "ARTIFACT_NOT_REGULAR"):
+                    rom.read_image(path)
 
 
 # Independent CRC16 bit-loop vector from the pinned M-Flasher algorithm.
