@@ -67,6 +67,58 @@ build/stg2/fm1-multiboot-selector-stg2.bin: build/stg2/fm1-multiboot-selector-st
 
 core-pi32v2-object: build/embedded_multiboot_pi32v2.o
 
+# Reuse the FM-1 GPIO-only keys and polled HAL objects. No storage, Host or programming objects.
+ROM_DIAG_SHARED = lcd keys embedded_lcd_list_renderer embedded_lcd_sink embedded_keys embedded_clock timer runtime
+ROM_DIAG_C_OBJECTS = $(addprefix build/stg2/,$(addsuffix .o,$(ROM_DIAG_SHARED))) \
+                     build/romdiag/rom_diag.o build/romdiag/rom_diag_platform.o
+ROM_DIAG_FILES = build/romdiag/fm1-rom-hardware-test
+.PHONY: rom-hardware-diagnostic rom-diagnostic-host-test rom-diagnostic-regression
+rom-hardware-diagnostic: $(ROM_DIAG_FILES).bin
+
+rom-diagnostic-regression: rom-hardware-diagnostic stg2-selector
+	cd build/stg2 && printf '%s\n' \
+		'0e9ef963d5a0c614d09a7bd3dc3ba808b25c611d572e9544f37bd9586c283002  fm1-multiboot-selector-stg2.bin' \
+		'6b45887bc71cb4df77936959a1729813c2a04feeb8b2e532d1f6087f29eaf87c  fm1-multiboot-selector-stg2.elf' | sha256sum -c -
+	cd build/romdiag && sha256sum -c SHA256SUMS.txt
+
+build/rom-diag-test: tests/rom_diag_test.c src/rom_diag.c src/embedded_lcd_list_renderer.c \
+                      src/embedded_keys.c src/embedded_clock.c $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -Isrc $(filter %.c,$^) -o $@
+
+build/rom-diag-mmio-test: tests/rom_diag_mmio_test.c src/rom_diag_platform.c src/timer.c src/lcd.c $(wildcard src/*.h)
+	@mkdir -p build
+	$(CC_HOST) -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST -DDISP_BOARD=1 -ffunction-sections \
+		-fdata-sections -Wl,--gc-sections -Isrc $(filter %.c,$^) -o $@
+
+rom-diagnostic-host-test: build/rom-diag-test build/rom-diag-mmio-test
+	./build/rom-diag-test
+	./build/rom-diag-mmio-test
+
+build/romdiag/%.o: src/%.c $(wildcard src/*.h) Makefile
+	@mkdir -p build/romdiag
+	$(CLANG) $(CFLAGS) -fstack-usage -c $< -o $@
+
+build/romdiag/rom_diag_start.o: src/rom_diag_start.S
+	@mkdir -p build/romdiag
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+$(ROM_DIAG_FILES).elf: $(ROM_DIAG_C_OBJECTS) build/romdiag/rom_diag_start.o src/rom_diag.ld
+	$(LD) --gc-sections --no-undefined -Map $(ROM_DIAG_FILES).map -T src/rom_diag.ld -o $@ $(filter %.o,$^)
+
+$(ROM_DIAG_FILES).bin: $(ROM_DIAG_FILES).elf scripts/app_trailer.py scripts/validate_rom_diag.py scripts/validate.py \
+                    scripts/validate_stg2.py scripts/ram_loader_dry_run.py Makefile
+	$(OBJCOPY) -O binary -j .image $< $(ROM_DIAG_FILES).flat
+	$(READELF) -h -l -S -s $< > build/romdiag/elf-report.txt
+	$(OBJDUMP) -d $< > build/romdiag/disassembly.txt
+	python3 scripts/app_trailer.py $(ROM_DIAG_FILES).flat build/romdiag/diagnostic.tmp fm1
+	python3 scripts/validate_rom_diag.py $< $(ROM_DIAG_FILES).flat build/romdiag/diagnostic.tmp \
+		build/romdiag/disassembly.txt $(ROM_DIAG_C_OBJECTS:.o=.su) > build/romdiag/ABI-SAFETY.txt
+	mv build/romdiag/diagnostic.tmp $@
+	cd build/romdiag && sha256sum fm1-rom-hardware-test.bin fm1-rom-hardware-test.elf > SHA256SUMS.txt
+	python3 scripts/ram_loader_dry_run.py $@ > build/romdiag/dry-run.json
+	python3 scripts/ram_loader_dry_run.py $@ --timeout-at 1 > build/romdiag/dry-run-timeout.json
+
 core-pi32v2-sim: build/embedded_multiboot_pi32v2.elf
 
 fat32-pi32v2-object: build/embedded_fat32_multiboot_pi32v2.o build/embedded_fat32_pi32v2.o build/fat32_pi32v2.o build/msc_bot_pi32v2.o build/usb_diag_log_pi32v2.o build/embedded_lcd_renderer_pi32v2.o build/embedded_keys_pi32v2.o build/embedded_fat32_pi32v2_sim.o build/embedded_fat32_pi32v2_runtime.o

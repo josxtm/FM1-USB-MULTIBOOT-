@@ -4,6 +4,7 @@ on:
     paths:
       - 'src/embedded_multiboot.*'
       - 'src/stg2_*'
+      - 'src/rom_diag*'
       - 'tests/**'
       - 'scripts/validate_embedded_render.py'
       - 'scripts/generate_fat32_image.py'
@@ -24,12 +25,14 @@ on:
       - 'src/multiboot_ram.ld'
       - 'scripts/validate_ram_image.py'
       - 'scripts/validate_stg2.py'
+      - 'scripts/validate_rom_diag.py'
       - 'scripts/decode_usb_diag_log.py'
       - 'scripts/virtual_flash_installer.py'
       - 'scripts/virtual_slotfile.py'
       - 'scripts/boot_recovery_model.py'
       - 'scripts/audit_flash_backup.py'
       - 'docs/goose/**'
+      - 'docs/FASE-6A-*.md'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
       - 'docs/goose/FASE-5A-RESULTADOS.md'
@@ -70,6 +73,8 @@ jobs:
           make virtual-slotfile-test 2>&1 | tee virtual-slotfile-results.txt
           make virtual-slotfile-demo | tee virtual-slotfile-storage-results.txt
           make stg2-host-test 2>&1 | tee stg2-host-results.txt
+          make rom-diagnostic-host-test 2>&1 | tee rom-diagnostic-host-results.txt
+          python3 -m unittest discover -s tests -p '*test.py' 2>&1 | tee python-regression-results.txt
           make boot-recovery-test | tee boot-recovery-results.txt
           make flash-backup-audit-test | tee flash-backup-audit-results.txt
           make launch-policy-test | tee launch-policy-results.txt
@@ -115,6 +120,39 @@ jobs:
           set -o pipefail
           make TOOLCHAIN=toolchain stg2-v24-test | tee stg2-v24-results.txt
           (cd build/stg2 && sha256sum -c SHA256SUMS.txt)
+      - name: Build ROM diagnostic and check unchanged 5Z outputs
+        run: |
+          set -o pipefail
+          make TOOLCHAIN=toolchain rom-diagnostic-regression | tee rom-diagnostic-build-results.txt
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          directory = Path('build/romdiag')
+          full = json.loads((directory / 'dry-run.json').read_text())
+          timed = json.loads((directory / 'dry-run-timeout.json').read_text())
+          assert full['result'] == 'READY_FOR_SIMULATION' and full['jump_recorded'] and not full['hardware_io']
+          assert timed['result'] == 'TIMEOUT' and timed['blocks'] == 1 and 'jump_recorded' not in timed
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-rom-hardware-test-experimental-hardware-unverified
+          path: |
+            LICENSE
+            NOTICE.md
+            docs/FASE-6A-*.md
+            build/romdiag/fm1-rom-hardware-test.bin
+            build/romdiag/fm1-rom-hardware-test.elf
+            build/romdiag/fm1-rom-hardware-test.map
+            build/romdiag/SHA256SUMS.txt
+            build/romdiag/ABI-SAFETY.txt
+            build/romdiag/elf-report.txt
+            build/romdiag/disassembly.txt
+            build/romdiag/dry-run*.json
+            build/rom-diag-display.ppm
+            rom-diagnostic-host-results.txt
+            rom-diagnostic-build-results.txt
+            python-regression-results.txt
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: fm1-stg2-selector-experimental-hardware-unverified
