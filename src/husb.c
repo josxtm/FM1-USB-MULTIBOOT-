@@ -393,7 +393,11 @@ enum husb_res husb_bulk_in(u8 *buf, u32 len, u32 *got, u32 timeout_ms)
 			snapshot(0x52, c);
 			sie_wr(RXCSR1, 0);
 			sie_wr(RXCSR1, 0x10);
-			return HU_TIMEOUT;
+#ifdef FM1_USBC_EXPLORER
+            return husb_attached() ? HU_TIMEOUT : HU_GONE;
+#else
+            return HU_TIMEOUT;
+#endif
 		}
 	}
 }

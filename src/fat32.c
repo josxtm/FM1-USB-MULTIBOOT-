@@ -310,3 +310,106 @@ enum diag_result fat32_read_at(struct fat32 *fs, const struct fat_file *file, u3
     enum diag_result r = fat32_seek(fs, file, offset, &cursor);
     return r == DIAG_OK ? fat32_read_next(fs, file, &cursor, output, capacity, written) : r;
 }
+
+/* Read-only, limited to DOS 8.3 descendants of FM1. The expanded lookup
+ * budget applies only to the explorer's v2 paths. */
+#ifdef FM1_USBC_EXPLORER
+static int short_component(const char **path, char name[11])
+{
+    for (u32 i = 0; i < 11; ++i) name[i] = ' ';
+    const char *p = *path;
+    u32 pos = 0;
+    while (*p && *p != '/' && *p != '.') {
+        char c = *p++;
+        if (pos == 8 || !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) return 0;
+        name[pos++] = c;
+    }
+    if (!pos) return 0;
+    if (*p == '.') {
+        ++p;
+        pos = 8;
+        while (*p && *p != '/') {
+            char c = *p++;
+            if (pos == 11 || !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) return 0;
+            name[pos++] = c;
+        }
+        if (pos == 8) return 0;
+    }
+    *path = p;
+    return 1;
+}
+
+static enum diag_result find_path_entry(struct fat32 *fs, u32 cluster, const char name[11],
+                                         int directory, struct fat_file *out)
+{
+    /* Brent's cycle detector, using no extra FAT reads. */
+    u32 anchor = cluster, span = 1, distance = 0;
+    for (u32 visited = 0; visited < 4096u; ++visited) {
+        const u32 sector = visited % fs->sectors_per_cluster;
+        if (!sector && visited) {
+            enum diag_result r = next_cluster(fs, &cluster);
+            if (r != DIAG_OK) return r;
+            if (cluster == anchor) return DIAG_FAT;
+            if (++distance == span) {
+                anchor = cluster;
+                span *= 2;
+                distance = 0;
+            }
+        }
+        enum diag_result r = data_sector(fs, cluster, sector);
+        if (r != DIAG_OK) return r;
+        for (u32 i = 0; i < ENTRIES_PER_SECTOR; ++i) {
+            const u8 *p = fs->sector + 32u * i;
+            if (p[0] == 0) return DIAG_END;
+            if (p[0] == 0xe5 || (p[11] & 0x0eu) || !!(p[11] & 0x10u) != !!directory) continue;
+            u32 n = 0;
+            while (n < 11 && p[n] == (u8)name[n]) ++n;
+            if (n != 11) continue;
+            out->cluster = ((u32)(ld16(p + 20) & 0x0fffu) << 16) | ld16(p + 26);
+            out->size = ld32(p + 28);
+            short_name(out->name, p);
+            return valid_cluster(fs, out->cluster) || (!directory && !out->size && !out->cluster)
+                ? DIAG_OK : DIAG_FAT;
+        }
+    }
+    return DIAG_LIMIT;
+}
+
+enum diag_result fat32_open_fm1_path(struct fat32 *fs, const char *path, struct fat_file *file)
+{
+    if (!fs || !fs->sectors_per_cluster || !file || !path || path[0] != 'F' ||
+        path[1] != 'M' || path[2] != '1' || path[3] != '/') return DIAG_RANGE;
+    u32 parent = fs->root;
+    for (unsigned level = 0; level < 5; ++level) {
+        char name[11];
+        if (!short_component(&path, name)) return DIAG_FAT;
+        const int directory = *path == '/';
+        enum diag_result r = find_path_entry(fs, parent, name, directory, file);
+        if (r != DIAG_OK || !directory) return r;
+        parent = file->cluster;
+        ++path;
+    }
+    return DIAG_LIMIT;
+}
+
+enum diag_result fat32_mount_explorer(struct fat32 *fs, struct block_device disk)
+{
+    enum diag_result r = fat32_mount(fs, disk);
+    const u8 *b = fs->sector + 3;
+    if (r == DIAG_FAT && b[0] == 'E' && b[1] == 'X' && b[2] == 'F' && b[3] == 'A' &&
+        b[4] == 'T' && b[5] == ' ' && b[6] == ' ' && b[7] == ' ') return DIAG_EXFAT;
+    if (r == DIAG_FAT && ld16(fs->sector + 510) == 0xaa55) {
+        /* Type 07 may contain exFAT or NTFS. Inspect its signature only. */
+        for (unsigned i = 0; i < 4; ++i) {
+            const u8 *entry = fs->sector + 446 + 16u * i;
+            const u32 lba = ld32(entry + 8), count = ld32(entry + 12);
+            if (entry[4] != 7 || !lba || lba >= disk.count || !count || count > disk.count - lba) continue;
+            r = disk.read(disk.context, lba, fs->sector);
+            if (r != DIAG_OK) return r;
+            return b[0] == 'E' && b[1] == 'X' && b[2] == 'F' && b[3] == 'A' && b[4] == 'T'
+                ? DIAG_EXFAT : DIAG_FAT;
+        }
+    }
+    return r;
+}
+#endif

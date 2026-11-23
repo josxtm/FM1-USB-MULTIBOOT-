@@ -9,6 +9,12 @@ static const u8 config[] = {9,2,32,0,1,1,0,0x80,50,9,4,0,0,2,8,6,0x50,0,7,5,0x81
 static u8 mock_config[sizeof config];
 static unsigned attached = 1, configured, resets, recoveries, bulk_count;
 static u32 bot_tag, bot_size, disk_lba;
+#ifdef FM1_USBC_EXPLORER
+#include "usbc_explorer.h"
+static unsigned inits, short_read, detached_during_read;
+void husb_init(void) { ++inits; }
+int husb_wait_attach(u32 ms) { assert(ms == 1500); return attached != 0; }
+#endif
 static unsigned bot_failed, have_data, inject_timeout, invalid_csw, pending_attention;
 static enum husb_res next_control;
 static u32 block_size = 512, volume_lba = 2048;
@@ -73,6 +79,9 @@ enum husb_res husb_bulk_out(const u8 *p, u32 len, u32 timeout)
             pending_attention = 0;
             break;
         case 0x03: assert(bot_size == 18 && p[14] == 6); break;
+#ifdef FM1_USBC_EXPLORER
+        case 0x12: assert(bot_size == 36 && p[14] == 6); break;
+#endif
         case 0x25: assert(bot_size == 8 && p[14] == 10); break;
         case 0x28:
             disk_lba = bd32(p + 17);
@@ -151,6 +160,11 @@ enum husb_res husb_bulk_in(u8 *out, u32 len, u32 *got, u32 timeout)
             bs32(out, disk_end - 1);
             bs32(out + 4, block_size);
         }
+#ifdef FM1_USBC_EXPLORER
+        if (len == 36) out[4] = 31;
+        if (len == 512 && detached_during_read) { attached = 0; return HU_GONE; }
+        if (len == 512 && short_read) { *got = 511; return HU_OK; }
+#endif
         if (len == 512) sector(out, disk_lba);
     } else {
         assert(len == 13);
@@ -226,5 +240,21 @@ int main(void)
         assert(fat32_read_prefix(&fs, &file, output, sizeof output, &length) == DIAG_FAT);
         damaged_fat = 0;
     }
+#ifdef FM1_USBC_EXPLORER
+    mock_config[13] = 3; /* declares three endpoints, provides two */
+    assert(usb_enumerate(&reader) == DIAG_DESCRIPTOR);
+    mock_config[13] = 2;
+    assert(usbc_connect(&reader, &disk, USB_POWER_ABSENT) == DIAG_NO_VBUS && inits == 0);
+    assert(usbc_connect(&reader, &disk, USB_POWER_UNKNOWN) == DIAG_POWER_UNVERIFIED && inits == 0);
+    attached = 0;
+    assert(usbc_connect(&reader, &disk, USB_POWER_QUALIFIED) == DIAG_DISCONNECTED && inits == 1);
+    attached = 1;
+    assert(usbc_connect(&reader, &disk, USB_POWER_QUALIFIED) == DIAG_OK && disk.count == disk_end && inits == 2);
+    short_read = 1;
+    assert(disk.read(disk.context, 0, output) == DIAG_TRANSFER);
+    short_read = 0;
+    detached_during_read = 1;
+    assert(disk.read(disk.context, 0, output) == DIAG_DISCONNECTED);
+#endif
     printf("USB MSC simulado: VID/PID, BOT, timeout, CSW, FAT32 MBR/superfloppy, fichero fragmentado (%u CBW de solo lectura).\n", bulk_count);
 }

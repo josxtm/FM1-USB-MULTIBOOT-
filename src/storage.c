@@ -39,12 +39,21 @@ static int full_speed_bulk(u16 size)
 static enum diag_result parse_configuration(struct usb_device *dev, const u8 *bytes, u32 length)
 {
     u8 is_storage = 0, have_interface = 0, ep_in = 0, ep_out = 0;
+#ifdef FM1_USBC_EXPLORER
+    u8 found = 0, endpoints = 0, declared_endpoints = 0;
+    struct usb_device selected;
+#endif
     u16 in_size = 0, out_size = 0;
     for (u32 pos = 0; pos < length; ) {
         const u8 *d = bytes + pos;
         if (length - pos < 2 || d[0] < 2 || d[0] > length - pos) return DIAG_DESCRIPTOR;
         if (d[1] == 4) {
             if (d[0] < 9) return DIAG_DESCRIPTOR;
+#ifdef FM1_USBC_EXPLORER
+            if (is_storage && endpoints != declared_endpoints) return DIAG_DESCRIPTOR;
+            declared_endpoints = d[4];
+            endpoints = 0;
+#endif
             is_storage = d[3] == 0 && d[5] == MASS_STORAGE &&
                          d[6] == SCSI_TRANSPARENT && d[7] == BULK_ONLY;
             if ((!have_interface && d[3] == 0) || is_storage) {
@@ -58,8 +67,15 @@ static enum diag_result parse_configuration(struct usb_device *dev, const u8 *by
             in_size = out_size = 0;
         } else if (d[1] == 5 && is_storage) {
             if (d[0] < 7) return DIAG_DESCRIPTOR;
+#ifdef FM1_USBC_EXPLORER
+            if (endpoints == 255) return DIAG_DESCRIPTOR;
+            ++endpoints;
+#endif
             const u16 size = ld16(d + 4);
             if ((d[3] & 3u) == 2u && (d[2] & 15u) && !(d[2] & 0x70u) && full_speed_bulk(size)) {
+#ifdef FM1_USBC_EXPLORER
+                if (((d[2] & 0x80u) && ep_in) || (!(d[2] & 0x80u) && ep_out)) return DIAG_DESCRIPTOR;
+#endif
                 if (d[2] & 0x80u) { ep_in = d[2]; in_size = size; }
                 else { ep_out = d[2]; out_size = size; }
             }
@@ -67,11 +83,20 @@ static enum diag_result parse_configuration(struct usb_device *dev, const u8 *by
                 dev->ep_in = ep_in;
                 dev->ep_out = ep_out;
                 dev->bulk_mps = in_size;
+#ifdef FM1_USBC_EXPLORER
+                if (!found) selected = *dev;
+                found = 1;
+#else
                 return DIAG_OK;
+#endif
             }
         }
         pos += d[0];
     }
+#ifdef FM1_USBC_EXPLORER
+    if (is_storage && endpoints != declared_endpoints) return DIAG_DESCRIPTOR;
+    if (found) { *dev = selected; return DIAG_OK; }
+#endif
     return DIAG_UNSUPPORTED;
 }
 
@@ -151,8 +176,12 @@ static enum diag_result read_command(const u8 *cdb, u8 cdb_size, u8 *data, u32 s
         res = husb_bulk_in(data, size, &got, USB_TIMEOUT);
         if (res == HU_STALL) {
             clear_halt(1);
+#ifdef FM1_USBC_EXPLORER
+            res = HU_OK;
+#else
             got = 0;
             res = husb_bulk_in(data, size, &got, USB_TIMEOUT);
+#endif
         }
         if (res != HU_OK) goto bad;
     }
@@ -184,13 +213,24 @@ bad:
 
 enum diag_result disk_open(const struct usb_device *dev, u32 *blocks)
 {
+#ifdef FM1_USBC_EXPLORER
+    static const u8 inquiry[6] = {0x12, 0, 0, 0, 36};
+    u8 identity[36];
+#endif
     static const u8 ready[6] = {0};
     static const u8 request_sense[6] = {0x03, 0, 0, 0, 18};
     static const u8 read_capacity[10] = {0x25};
     u8 capacity[8], sense[18];
     active = dev;
     *blocks = block_count = 0;
+#ifdef FM1_USBC_EXPLORER
+    enum diag_result result = read_command(inquiry, sizeof inquiry, identity, sizeof identity);
+    if (result != DIAG_OK) return result;
+    if ((identity[0] & 0x1fu) != 0 || (identity[0] >> 5) != 0 || identity[4] < 31) return DIAG_UNSUPPORTED;
+    result = read_command(ready, sizeof ready, 0, 0);
+#else
     enum diag_result result = read_command(ready, sizeof ready, 0, 0);
+#endif
     /* A newly inserted card may raise UNIT ATTENTION on the first TUR. */
     if (result == DIAG_SCSI) {
         result = read_command(request_sense, sizeof request_sense, sense, sizeof sense);
@@ -224,6 +264,9 @@ const char *diag_error(enum diag_result result)
         "OK", "DESCONECTADO", "TIEMPO AGOTADO", "ERROR USB/BOT", "DESCRIPTOR INVALIDO",
         "INTERFAZ NO COMPATIBLE", "LECTOR NO LISTO", "BLOQUE DISTINTO A 512", "FUERA DE RANGO",
         "FAT32 INVALIDA", "FIN DEL DIRECTORIO", "LIMITE DE DIAGNOSTICO"
+#ifdef FM1_USBC_EXPLORER
+        , "EXFAT NO COMPATIBLE", "VBUS AUSENTE", "CC/VBUS SIN VALIDAR"
+#endif
     };
     return (unsigned)result < ARRAY_LEN(names) ? names[result] : "ERROR";
 }
