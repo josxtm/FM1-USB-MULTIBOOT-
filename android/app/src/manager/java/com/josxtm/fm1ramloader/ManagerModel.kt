@@ -59,11 +59,12 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
             }.getOrElse {
                 app.assets.open("discovery.json").use { Discovery.decode(it.bounded(MAX_MANIFEST)) }
             }
-            val restoredImports = loadImports()
+            val restoredImports = runCatching { loadImports() }
             withContext(Dispatchers.Main) {
                 discovery = found
-                imports.putAll(restoredImports)
-                status = "${found.entries.size} fichas · ${found.updated}"
+                imports.putAll(restoredImports.getOrDefault(emptyMap()))
+                status = "${found.entries.size} fichas · ${found.updated}" +
+                    if (restoredImports.isFailure) " · Índice local de importaciones ilegible" else ""
             }
             cardUri?.let { uri ->
                 runCatching { CardLibrary(SafCardStore(app, uri)).scan() }
@@ -118,15 +119,19 @@ internal class ManagerModel(private val app: Application) : AndroidViewModel(app
 
     fun enqueue(listings: List<Listing>) {
         val stored = card?.records?.map { it.sha }?.toHashSet().orEmpty()
+        var added = 0
         for ((listing, link) in listings.flatMap { row -> row.packages.map { row to it } }) {
             if (link.sha256 in stored || link.sha256 in cached) continue
             val prior = jobs[link.sha256]
             if (prior == null) {
                 jobs[link.sha256] = QueueItem(listing, link)
+                added++
             } else if (prior.state.startsWith("Error") && prior.link.url != link.url) {
                 jobs[link.sha256] = QueueItem(listing, link)
+                added++
             }
         }
+        status = if (added == 0) "Ningún paquete nuevo en la selección" else "$added paquetes nuevos en cola"
         pump()
     }
 

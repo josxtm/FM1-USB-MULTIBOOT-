@@ -29,6 +29,8 @@ El manifiesto ofrece **415 activos con SHA‑256 distintos**. Hay variantes y, o
 
 [The Firmware Hub, términos del catálogo](https://thefirmwarehub.com/kb/#catalog) · [FM1 Editor](https://fm1-editor.com/firmware/) · [Colección 2bbb](https://github.com/2bbb/fm1-firmware-collection) · [M‑VAVE V14](https://github.com/m-vave/fm1_open/releases/tag/V14)
 
+Se descargaron siete publicaciones como muestra de comprobación, cuatro paquetes de autores y tres compilaciones comunitarias. Coincidieron tamaño y SHA‑256, y el analizador Kotlin comprobó la identidad FM‑1 y los CRC16. La muestra incluyó DARK‑1, SLOOP y dos variantes de Hortator. Los binarios de esta comprobación quedaron fuera del repositorio y de la APK.
+
 Para producir una instantánea sin recolectar desde cada tablet, el workflow `fm1-discovery-refresh.yml` ejecuta `scripts/update_manager_catalog.py` y publica un JSON con su SHA‑256. El trabajo programado de GitHub opera desde la rama predeterminada cuando el workflow esté allí. Esta fase vive en su PR en borrador. Mientras tanto, el regenerador puede ejecutarse con `gh` y un directorio de instantánea local. Reutilizar ese directorio evita repetir la descarga ese día. La APK inicia con la copia incluida y actualiza al abrir un nuevo manifiesto validado mediante **Cargar manifiesto**.
 
 ```sh

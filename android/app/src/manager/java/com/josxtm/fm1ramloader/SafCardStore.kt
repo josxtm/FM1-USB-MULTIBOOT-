@@ -3,6 +3,7 @@ package com.josxtm.fm1ramloader
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 
 internal class SafCardStore(private val context: Context, uri: Uri) : CardStore {
@@ -39,7 +40,9 @@ internal class SafCardStore(private val context: Context, uri: Uri) : CardStore 
         val (dir, leaf) = requireNotNull(parent(path, true))
         val old = dir.findFile(leaf)
         require(old == null || replace && old.isFile) { "El archivo ya existe: $path" }
-        val file = old ?: requireNotNull(dir.createFile("application/octet-stream", leaf)) {
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(leaf.substringAfterLast('.', "").lowercase())
+            ?: "application/octet-stream"
+        val file = old ?: requireNotNull(dir.createFile(mime, leaf)) {
             "No se pudo crear $path; comprueba espacio, tarjeta y permiso"
         }
         try {
