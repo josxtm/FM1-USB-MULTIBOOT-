@@ -28,6 +28,7 @@ on:
       - 'scripts/validate_rom_diag.py'
       - 'scripts/fm1_hardware_preflight.py'
       - 'scripts/strict_rom_transport.py'
+      - 'scripts/fm1_sd_package.py'
       - 'scripts/decode_usb_diag_log.py'
       - 'scripts/virtual_flash_installer.py'
       - 'scripts/virtual_slotfile.py'
@@ -37,6 +38,7 @@ on:
       - 'docs/FASE-6A-*.md'
       - 'docs/FASE-6B-*.md'
       - 'docs/FASE-6C-*.md'
+      - 'docs/FASE-6D-*.md'
       - 'Makefile'
       - '.github/workflows/embedded-multiboot-core.yml'
       - 'docs/goose/FASE-5A-RESULTADOS.md'
@@ -124,6 +126,10 @@ jobs:
           set -o pipefail
           make TOOLCHAIN=toolchain stg2-v24-test | tee stg2-v24-results.txt
           (cd build/stg2 && sha256sum -c SHA256SUMS.txt)
+      - name: Build and test the 6D SPI1 card packages
+        run: |
+          set -o pipefail
+          make TOOLCHAIN=toolchain sd-package-test | tee sd-package-results.txt
       - name: Build ROM diagnostic and check unchanged 5Z outputs
         run: |
           set -o pipefail
@@ -210,6 +216,23 @@ jobs:
             scripts/strict_rom_transport.py
             scripts/validate.py
             tests/strict_rom_transport_test.py
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-6d-spi1-packages-hardware-unverified
+          path: |
+            LICENSE
+            NOTICE.md
+            build/sd-package/
+            sd-package-results.txt
+            python-regression-results.txt
+            docs/FASE-6D-*.md
+            docs/FM1CAT-v1.md
+            scripts/fm1_sd_package.py
+            scripts/validate_stg2.py
+            scripts/virtual_slotfile.py
+            scripts/virtual_flash_installer.py
+            scripts/boot_recovery_model.py
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:

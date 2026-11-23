@@ -84,6 +84,8 @@ class FlashRegionPolicy:
         for start, end in self.authorized:
             if start < BOOTLOADER_END:
                 raise ValueError('authorized range overlaps protected bootloader')
+            if end > KEY_MAC_START:
+                raise ValueError('authorized range overlaps protected key/MAC sector')
         self.protected = self._complement(self.authorized)
 
     @staticmethod

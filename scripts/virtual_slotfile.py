@@ -4,7 +4,7 @@
 import argparse
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-import fcntl
+import errno
 import json
 import os
 from pathlib import Path
@@ -42,7 +42,13 @@ class Entry:
 
 
 def read_file(path, limit):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    mode = path.lstat().st_mode
+    if stat.S_ISLNK(mode):
+        raise OSError(errno.ELOOP, 'symbolic link refused', path)
+    if not stat.S_ISREG(mode):
+        raise ValueError(f'{path.name}: expected regular file')
+    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+    fd = os.open(path, flags | getattr(os, 'O_BINARY', 0))
     with os.fdopen(fd, 'rb') as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
@@ -159,6 +165,8 @@ class VirtualSlotfile:
 
     @contextmanager
     def _locked(self):
+        import fcntl
+
         if self.root.is_symlink() or self.backups.is_symlink() or not self.backups.is_dir():
             raise ValueError('invalid virtual state directory')
         fd = os.open(self.root / '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
