@@ -6,7 +6,9 @@ from binascii import crc_hqx
 from dataclasses import dataclass
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
+import stat
 import struct
 from threading import Lock
 
@@ -39,6 +41,14 @@ def verify_candidate(image):
     require(sha256(image).hexdigest() == IMAGE_DIGEST, "ARTIFACT_SHA256")
     require(image[-8:] == b"APP1\x86\xb7\x01\x01" and crc_hqx(image[:-8], 0) == 0xB786,
             "ARTIFACT_APP1")
+
+
+def read_image(path):
+    require(stat.S_ISREG(path.lstat().st_mode), "ARTIFACT_NOT_REGULAR")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(path, flags | getattr(os, "O_BINARY", 0)), "rb") as stream:
+        require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), "ARTIFACT_NOT_REGULAR")
+        return stream.read(IMAGE_SIZE + 1)
 
 
 def transform(block):
@@ -245,8 +255,11 @@ def main():
     parser.add_argument("image", type=Path)
     parser.add_argument("--fault", choices=FAULTS)
     args = parser.parse_args()
-    with args.image.open("rb") as stream:
-        result = Session(args.fault).run(stream.read(IMAGE_SIZE + 1))
+    try:
+        image = read_image(args.image)
+    except (Stop, OSError) as error:
+        parser.exit(1, f"ROM IMAGE REJECTED: {error}\n")
+    result = Session(args.fault).run(image)
     print(json.dumps(result, sort_keys=True))
     return 0 if result["result"] == "JUMP_ACKNOWLEDGED_IN_MODEL" else 1
 
