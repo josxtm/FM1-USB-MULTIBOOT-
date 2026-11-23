@@ -1,5 +1,7 @@
 # FM1 MULTIBOOT OS — Fases USB-C 3, 4 y 5
 
+**Firmware musical actual comunicado por el propietario: SKIFF.** Sustituye a DARK-1. La versión de m-bootloader 2.4 y los identificadores hardware son los últimos conocidos y se reconfirmarán antes de la prueba física.
+
 ## Entrega encadenada
 
 Este PR continúa los PR #21 (explorador) y #22 (transporte ROM Android de SRAM).
@@ -86,7 +88,7 @@ La CI debe:
 **No programar Flash ni fusionar PR por superar CI.**
 
 Sólo después de haber caracterizado la alimentación y de disponer de copia
-recuperable de DARK-1 se ejecutará UNA sesión física de laboratorio.
+recuperable de SKIFF se ejecutará UNA sesión física de laboratorio.
 
 | Etapa | Evidencia de aprobación |
 |---|---|
@@ -97,7 +99,7 @@ recuperable de DARK-1 se ejecutará UNA sesión física de laboratorio.
 | Almacenamiento | Lectura de capacidad, FAT32 válida |
 | Catálogo | Contador y nombres reales de FM1CAT v2 |
 | Integridad | SHA-256 de un firmware del directorio `FM1/FW` verificado |
-| Salida | Apagado completo, DARK-1 y m-bootloader intactos |
+| Salida | Apagado completo, SKIFF y m-bootloader intactos |
 
 **Resultado físico por defecto: NO VERIFICADO.** Una compilación no prueba
 alimentación USB-C, lectura física ni viabilidad del arranque autónomo.
