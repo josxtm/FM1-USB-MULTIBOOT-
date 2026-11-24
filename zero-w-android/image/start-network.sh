@@ -40,6 +40,10 @@ if ! nmcli connection show FM1-Zero >/dev/null 2>&1; then
     test "${#pass}" -ge 8 && test "${#pass}" -le 63 || exit 1
     nmcli connection add type wifi ifname wlan0 con-name FM1-Zero ssid FM1-Zero         802-11-wireless.mode ap 802-11-wireless.band bg 802-11-wireless.channel 6         wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"         ipv4.method shared ipv4.addresses 10.42.0.1/24 ipv6.method disabled
 fi
+# Pi Zero W / Trixie: the integrated chipset can fail AP startup when PMF is enabled.
+# Keep WPA2-PSK and CCMP encryption; disable only management-frame protection.
+stage="configurar WPA2 compatible con Zero W"
+nmcli connection modify FM1-Zero wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp wifi-sec.pmf 1
 stage="activar punto de acceso FM1-Zero"
 nmcli --wait 45 connection up FM1-Zero ifname wlan0
 stage="punto de acceso activado"
