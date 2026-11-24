@@ -1,0 +1,22 @@
+name: Zero W - imagen de lectura
+on:
+  push:
+    branches: [zero-w-android]
+    paths: ['zero-w-android/image/**', 'zero-w-android/zero/**', '.github/workflows/zero-w-image.yml']
+permissions:
+  contents: read
+jobs:
+  imagen:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y parted dosfstools
+      - run: sudo bash zero-w-android/image/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FM1-Zero-W-lectura
+          path: |
+            FM1-Zero-W.img.xz
+            FM1-Zero-W.img.xz.sha256
+          compression-level: 0
+          if-no-files-found: error
