@@ -22,6 +22,10 @@ mkfs.vfat -F 32 -n FM1DATA "${dev}p3"
 mount "${dev}p2" "$tmp"
 mount "${dev}p1" "$tmp/boot/firmware"
 sed -Ei 's@ ?init=[^ ]*firstboot[^ ]*@@g;s@ ?init=[^ ]*init_resize[^ ]*@@g' "$tmp/boot/firmware/cmdline.txt"
+# Preconfigure the console account for unattended first boot. Discard its
+# random password; local web access uses the owner's separate Wi-Fi key.
+openssl rand -hex 32 | openssl passwd -6 -stdin | sed 's/^/fm1:/' > "$tmp/boot/firmware/userconf.txt"
+grep -Eq '^fm1:\$6\$.+' "$tmp/boot/firmware/userconf.txt"
 mkdir -p "$tmp/mnt/FM1DATA"
 mount "${dev}p3" "$tmp/mnt/FM1DATA"
 mkdir -p "$tmp/mnt/FM1DATA/FM1/FIRMWARES"
