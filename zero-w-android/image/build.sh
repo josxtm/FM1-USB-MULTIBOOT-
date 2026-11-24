@@ -8,8 +8,8 @@ echo "2c302771f34c67a0b7ae7aa2e0dcdd3eac660504be59193c011ba79d412e1632  $base" |
 img=FM1-Zero-W.img
 test ! -e "$img"
 xz -dc "$base" > "$img"
-# Compact transport image. The third partition grows once on the actual SD.
-truncate -s 9G "$img"
+# A sparse image with room for minor capacity differences between 32 GB cards.
+truncate -s 31500000256 "$img"
 parted -s "$img" unit s resizepart 2 16777215s
 parted -s "$img" unit s mkpart primary fat32 16777216s 100%
 dev=$(losetup --find --show --partscan "$img")
