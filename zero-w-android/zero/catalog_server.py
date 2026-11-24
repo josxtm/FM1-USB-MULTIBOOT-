@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import html
+import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -30,6 +31,9 @@ def catalog(folder):
             continue
         with file.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if re.fullmatch(r"[a-fA-F0-9]{64}", file.stem) and digest != file.stem.lower():
+            rows.append(f"<li>{html.escape(file.name)} · Copia incompleta o alterada. Bloqueada.</li>")
+            continue
         rows.append(f"<li><strong>{html.escape(file.name)}</strong><br>{file.stat().st_size} bytes"
                     f"<details><summary>SHA-256</summary><code>{digest}</code></details>"
                     "<small>Compatibilidad pendiente. Instalación bloqueada.</small></li>")
