@@ -55,6 +55,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.josxtm.fm1screen.BuildConfig
@@ -332,7 +333,8 @@ private fun Toggle(text: String, checked: Boolean, enabled: Boolean = true, chan
 
 @Composable
 private fun Action(text: String, active: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
-    if (active) Button(onClick = onClick, enabled = enabled, colors = ButtonDefaults.buttonColors(
+    if (active) Button(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { selected = true },
+        colors = ButtonDefaults.buttonColors(
         containerColor = Palette.sheetAccent, contentColor = Palette.sheetBackground
     )) { Text(text, fontFamily = RfmFonts.ui, fontSize = 12.sp) }
     else TextButton(onClick = onClick, enabled = enabled, colors = ButtonDefaults.textButtonColors(

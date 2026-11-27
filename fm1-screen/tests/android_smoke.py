@@ -21,9 +21,12 @@ def node(text: str):
             time.sleep(1)
             continue
         tree = ET.fromstring(adb("shell", "cat", "/sdcard/fm1-ui.xml"))
-        for item in tree.iter("node"):
-            if text in (item.get("text"), item.get("content-desc")):
-                return item
+        # A switch has its action announced as a description and a separate static label.
+        # Prefer the interactive node when both share the same visible wording.
+        for attribute in ("content-desc", "text"):
+            for item in tree.iter("node"):
+                if item.get(attribute) == text:
+                    return item
         time.sleep(1)
     raise AssertionError(f"Visible control missing: {text}")
 
@@ -51,6 +54,7 @@ def verify(apk: str, out: Path):
     tap("Open controls, or swipe down")
     tap("Vista")
     tap("Modo demostración")
+    assert node("Modo demostración").get("checked") == "true"
     tap("Cerrar")
     node("DEMO")
     node("Keyboard, F3 to G5")
@@ -76,7 +80,7 @@ def verify(apk: str, out: Path):
     adb("shell", "am", "start", "-W", "-n", ACTIVITY)
     tap("Open controls, or swipe down")
     tap("Colores")
-    assert node("SILVER").get("enabled") == "true"
+    assert node("SILVER").get("selected") == "true"
     tap("Cerrar")
     adb("shell", "cmd", "window", "user-rotation", "lock", "0")
     node("Keyboard, F3 to G5")
