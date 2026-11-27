@@ -1,0 +1,94 @@
+name: FM1 SCREEN Android
+
+on:
+  push:
+    branches: [feat/fm1-screen-android]
+    paths: ['fm1-screen/**', '.github/workflows/fm1-screen-android.yml']
+  pull_request:
+    paths: ['fm1-screen/**', '.github/workflows/fm1-screen-android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: fm1-screen
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Validate profiles and theme tokens
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          for file in pathlib.Path('app/src/main/assets').rglob('*.json'):
+              json.loads(file.read_text())
+          PY
+      - name: Unit tests and lint
+        run: ./gradlew --no-daemon -Pfm1Build="$GITHUB_RUN_NUMBER" :app:testDebugUnitTest :app:lintDebug
+      - name: Build and verify APK
+        env:
+          FM1_KEYSTORE_BASE64: ${{ github.event_name == 'push' && secrets.FM1_KEYSTORE_BASE64 || '' }}
+          FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
+          FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
+          FM1_SIGNING_KEY_PASSWORD: ${{ secrets.FM1_SIGNING_KEY_PASSWORD }}
+        run: |
+          variant=debug
+          signing='debug certificate for this runner'
+          if [[ -n "$FM1_KEYSTORE_BASE64" ]]; then
+            umask 077
+            export FM1_SIGNING_PATH="$RUNNER_TEMP/fm1-signing.jks"
+            trap 'rm -f "$FM1_SIGNING_PATH"' EXIT
+            printf '%s' "$FM1_KEYSTORE_BASE64" | base64 --decode > "$FM1_SIGNING_PATH"
+            variant=release
+            signing='owner distribution certificate'
+          fi
+          ./gradlew --no-daemon -Pfm1Build="$GITHUB_RUN_NUMBER" ":app:assemble${variant^}"
+          apk="FM1-SCREEN_v1.0-comp.$GITHUB_RUN_NUMBER.apk"
+          sdktools="$ANDROID_HOME/build-tools/35.0.0"
+          mkdir -p distribution
+          cp "app/build/outputs/apk/$variant/app-$variant.apk" "distribution/$apk"
+          git -C .. archive --format=zip --output="$PWD/distribution/corresponding-source.zip" HEAD fm1-screen .github/workflows/fm1-screen-android.yml
+          "$sdktools/apksigner" verify --verbose --print-certs "distribution/$apk" > distribution/apk-signature.txt
+          "$sdktools/aapt" dump badging "distribution/$apk" > distribution/apk-metadata.txt
+          grep -F "name='com.josxtm.fm1screen' versionCode='$GITHUB_RUN_NUMBER' versionName='1.0'" distribution/apk-metadata.txt
+          (
+            cd distribution
+            sha256sum "$apk" > "$apk.sha256"
+            sha256sum -c "$apk.sha256"
+          )
+          {
+            printf '# FM1 SCREEN v1.0 · comp. %s\n\n' "$GITHUB_RUN_NUMBER"
+            printf -- '- Commit: %s\n- Certificate: %s\n' "$GITHUB_SHA" "$signing"
+            printf -- '- Unit tests, lint, APK signature and checksum passed.\n'
+            printf '\n```\n'
+            cat "distribution/$apk.sha256"
+            printf '```\n'
+          } | tee distribution/build-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FM1-SCREEN-tests-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            fm1-screen/app/build/test-results/testDebugUnitTest/*.xml
+            fm1-screen/app/build/reports/lint-results-debug.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FM1-SCREEN_v1.0-comp.${{ github.run_number }}
+          path: fm1-screen/distribution/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
