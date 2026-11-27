@@ -2,6 +2,7 @@
 package com.josxtm.fm1screen
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -31,6 +32,7 @@ import com.josxtm.fm1screen.data.ProfileLibrary
 import com.josxtm.fm1screen.data.ThemeLibrary
 import com.josxtm.fm1screen.protocol.PanelState
 import com.josxtm.fm1screen.protocol.Wire
+import com.josxtm.fm1screen.transport.DeviceIdentity
 import com.josxtm.fm1screen.transport.LinkKind
 import com.josxtm.fm1screen.transport.MidiTransport
 import com.josxtm.fm1screen.transport.MirrorStats
@@ -196,6 +198,7 @@ class MainActivity : ComponentActivity(), TransportListener {
     override fun onResume() {
         super.onResume()
         foreground = true
+        restoreBluetooth()
         configure()
     }
 
@@ -240,10 +243,21 @@ class MainActivity : ComponentActivity(), TransportListener {
     }
 
     fun selectLink(kind: LinkKind) {
+        if (link == kind) return
         link = kind
         deviceList = emptyList()
         prefs.edit().putString("link", kind.name).apply()
         transport.use(kind)
+        restoreBluetooth()
+    }
+
+    private fun restoreBluetooth() {
+        if (link != LinkKind.BLE || !::transport.isInitialized) return
+        if (Build.VERSION.SDK_INT >= 31 &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
+        val id = prefs.getString("bleDevice", null) ?: return
+        val name = prefs.getString("bleName", null) ?: return
+        transport.restoreBle(Target(id, name, DeviceIdentity.allowsRequests(name), "Último dispositivo BLE"))
     }
 
     fun scanBluetooth() {
@@ -253,6 +267,7 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     fun selectTarget(target: Target) {
         if (link == LinkKind.USB) prefs.edit().putString("usbDevice", target.id).apply()
+        else prefs.edit().putString("bleDevice", target.id).putString("bleName", target.name).apply()
         updateProfileForDevice(target.name)
         transport.select(target)
     }
@@ -267,6 +282,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         autoProfile = next == null
         prefs.edit().putBoolean("autoProfile", autoProfile).putString("profile", next?.id).apply()
         updateProfile(next)
+        if (next == null && connected) updateProfileForDevice(connectionText.substringBefore(" · "))
         if (next != null && next.wire != Wire.AUTO) selectProtocol(next.wire)
     }
 

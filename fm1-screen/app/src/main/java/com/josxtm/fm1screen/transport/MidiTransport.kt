@@ -62,7 +62,7 @@ class MidiTransport(
     private var watch = false
     private var remote = false
     private var usbPreference = preferredUsb
-    private var selectedBle: BluetoothDevice? = null
+    private var selectedBle: Pair<BluetoothDevice, Target>? = null
     private var availableUsb = emptyList<MidiDeviceInfo>()
     private val availableBle = linkedMapOf<String, Pair<BluetoothDevice, Target>>()
     private var scan: ScanCallback? = null
@@ -127,9 +127,21 @@ class MidiTransport(
         worker.post {
             drop("Conectando a ${target.name}")
             if (mode == LinkKind.USB) usbPreference = target.id
-            else selectedBle = availableBle[target.id]?.first
+            else selectedBle = availableBle[target.id]
             stopScan()
             lastRetry = 0
+            refresh()
+        }
+    }
+
+    fun restoreBle(target: Target) {
+        worker.post {
+            if (mode != LinkKind.BLE || selectedBle != null || DeviceIdentity.isLoader(target.name)) return@post
+            val peer = runCatching { bluetooth?.adapter?.getRemoteDevice(target.id) }.getOrNull() ?: return@post
+            val entry = peer to target
+            availableBle[target.id] = entry
+            selectedBle = entry
+            emitTargets()
             refresh()
         }
     }
@@ -273,9 +285,8 @@ class MidiTransport(
                 open(target) { callback -> service.openDevice(picked, callback, worker) }
             }
         } else {
-            val peer = selectedBle ?: return
+            val (peer, target) = selectedBle ?: return
             if (!opening && device == null) {
-                val target = availableBle[peer.address]?.second ?: return
                 open(target) { callback -> service.openBluetoothDevice(peer, callback, worker) }
             }
         }
