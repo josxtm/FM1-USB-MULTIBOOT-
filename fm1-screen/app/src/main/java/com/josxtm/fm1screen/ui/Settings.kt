@@ -326,7 +326,7 @@ private fun Diagnostics(app: MainActivity) {
 private fun Toggle(text: String, checked: Boolean, enabled: Boolean = true, change: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(text, modifier = Modifier.weight(1f), color = Palette.sheetText, fontFamily = RfmFonts.ui, fontSize = 14.sp)
-        Switch(checked, change, enabled = enabled)
+        Switch(checked, change, modifier = Modifier.semantics { contentDescription = text }, enabled = enabled)
     }
 }
 
