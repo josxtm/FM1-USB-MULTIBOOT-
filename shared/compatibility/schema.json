@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "firmwares",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "firmwares": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "versions"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "versions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "firmwareId",
+          "version",
+          "source",
+          "recordedAt",
+          "build",
+          "result"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "firmwareId": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "enum": [
+              "screen",
+              "analyzer"
+            ]
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "build": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "result": {
+            "type": "object"
+          },
+          "supersedes": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "source": {
+                  "const": "screen"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "result": {
+                  "type": "object",
+                  "required": [
+                    "physicalTest",
+                    "lcd",
+                    "transport"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "physicalTest": {
+                      "const": true
+                    },
+                    "lcd": {
+                      "enum": [
+                        "pending",
+                        "pass",
+                        "partial",
+                        "fail",
+                        "not_applicable"
+                      ]
+                    },
+                    "transport": {
+                      "enum": [
+                        "usb",
+                        "ble",
+                        "unknown"
+                      ]
+                    },
+                    "protocol": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "knobs": {
+                      "enum": [
+                        "pending",
+                        "pass",
+                        "partial",
+                        "fail",
+                        "not_applicable"
+                      ]
+                    },
+                    "buttons": {
+                      "enum": [
+                        "pending",
+                        "pass",
+                        "partial",
+                        "fail",
+                        "not_applicable"
+                      ]
+                    },
+                    "leds": {
+                      "enum": [
+                        "pending",
+                        "pass",
+                        "partial",
+                        "fail",
+                        "not_applicable"
+                      ]
+                    },
+                    "durationSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "fps": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "notes": {
+                      "type": "string",
+                      "maxLength": 2000
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "source": {
+                  "const": "analyzer"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "result": {
+                  "type": "object",
+                  "required": [
+                    "researchStatus"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "researchStatus": {
+                      "enum": [
+                        "pending",
+                        "investigating",
+                        "verified",
+                        "inconclusive"
+                      ]
+                    },
+                    "parentFirmware": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "protocol": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "findings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "notes": {
+                      "type": "string",
+                      "maxLength": 2000
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

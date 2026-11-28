@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "firmwares": [
+    {
+      "id": "skiff-atlatl",
+      "name": "SKIFF Atlatl",
+      "versions": []
+    },
+    {
+      "id": "felucca",
+      "name": "Felucca",
+      "versions": []
+    },
+    {
+      "id": "sloop",
+      "name": "Sloop",
+      "versions": []
+    },
+    {
+      "id": "nachtfahrt",
+      "name": "Nachtfahrt",
+      "versions": []
+    },
+    {
+      "id": "nachtbar",
+      "name": "Nachtbar",
+      "versions": []
+    },
+    {
+      "id": "amb-1",
+      "name": "AMB-1",
+      "versions": []
+    },
+    {
+      "id": "x0x",
+      "name": "X0X",
+      "versions": []
+    },
+    {
+      "id": "melodee",
+      "name": "Melodee",
+      "versions": []
+    },
+    {
+      "id": "ghoulbox",
+      "name": "Ghoulbox",
+      "versions": []
+    },
+    {
+      "id": "jiant-fm",
+      "name": "JIANT FM",
+      "versions": []
+    },
+    {
+      "id": "hybrid-piano",
+      "name": "Hybrid Piano",
+      "versions": []
+    },
+    {
+      "id": "baudgirl-va",
+      "name": "Baudgirl VA",
+      "versions": []
+    },
+    {
+      "id": "ctl-1",
+      "name": "CTL-1",
+      "versions": []
+    },
+    {
+      "id": "loom-8",
+      "name": "LOOM-8",
+      "versions": []
+    },
+    {
+      "id": "m-vave-oficial",
+      "name": "M-VAVE oficial",
+      "versions": []
+    }
+  ],
+  "events": []
+}
