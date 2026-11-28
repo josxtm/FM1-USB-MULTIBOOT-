@@ -1,0 +1,101 @@
+name: FM1 Practice - additional visual sources
+on:
+  push:
+    branches: [docs/fm1-practice-visual-v083]
+    paths: ['.github/workflows/fm1-practice-visual-extras.yml']
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/fm1-practice-visual-extras.yml']
+permissions:
+  contents: read
+jobs:
+  extras:
+    if: github.event_name != 'pull_request' || github.head_ref == 'docs/fm1-practice-visual-v083'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Retrieve author visual references and external editor capture
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, urllib.request, urllib.parse, pathlib, subprocess, shutil, re
+          from html.parser import HTMLParser
+          out=pathlib.Path("visual-extra-private");out.mkdir(exist_ok=True)
+          report=[]
+          def get(url):
+              if url.startswith("data:"):
+                  header,data=url.split(",",1)
+                  return base64.b64decode(data) if ";base64" in header else urllib.parse.unquote_to_bytes(data)
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 FM1 personal study"}),timeout=30) as r: return r.read(16000001)
+          def save(name,firmware,title,source,b,kind,gitsha=None):
+              if len(b)>16000000: raise ValueError("oversize")
+              ext="png" if b.startswith(b"\x89PNG\r\n\x1a\n") else "jpg" if b.startswith(b"\xff\xd8\xff") else "webp" if b.startswith(b"RIFF") and b[8:12]==b"WEBP" else None
+              if not ext: raise ValueError("not a supported raster image")
+              blob=hashlib.sha1(b"blob "+str(len(b)).encode()+b"\0"+b).hexdigest()
+              if gitsha and blob!=gitsha: raise ValueError("Git hash mismatch")
+              fn=name+"."+ext;(out/fn).write_bytes(b)
+              report.append(dict(firmware=firmware,title=title,source=source,kind=kind,filename=fn,sha256=hashlib.sha256(b).hexdigest(),gitsha=gitsha,bytes=len(b),status="VERIFIED" if gitsha else "SOURCE_RETRIEVED"))
+          def attempt(firmware,fn):
+              try: fn()
+              except Exception as e: report.append(dict(firmware=firmware,status="PENDING",error=str(e)))
+          attempt("SHRUB",lambda:save("shrub-motion","SHRUB","Motion sequencer (guide V1.40)","https://shrub.audio/art/screens/motion-sequencer.png",get("https://shrub.audio/art/screens/motion-sequencer.png"),"author manual image"))
+          def hortator():
+              u="https://raw.githubusercontent.com/DeadActive/Hortator/main/docs/panel.jpg"
+              try: b=get(u)
+              except Exception:
+                  b=base64.b64decode(json.loads(get("https://api.github.com/repos/DeadActive/Hortator/git/blobs/f383dbe942c81e43a03f2dd661607cd332317aa2"))["content"])
+              save("hortator-panel","Hortator","Author control panel",u,b,"author annotated panel","f383dbe942c81e43a03f2dd661607cd332317aa2")
+          attempt("Hortator",hortator)
+          class Parser(HTMLParser):
+              def __init__(self):super().__init__();self.images=[]
+              def handle_starttag(self,tag,attrs):
+                  if tag=="img":self.images.append(dict(attrs))
+          def baud():
+              page="https://baudgirl.com/work/FM-1%2BVA/manual/102"
+              p=Parser();p.feed(get(page).decode("utf-8","replace"))
+              candidates=[x for x in p.images if re.search(r"(the home screen|the pattern screen|the three engines offered)",x.get("alt",""),re.I)]
+              print("Baud candidates",[(x.get("alt",""),str(x.get("src",""))[:100]) for x in candidates[:12]])
+              count=0
+              for x in candidates:
+                  if count>=3:break
+                  src=x.get("src") or x.get("data-src")
+                  if not src:continue
+                  url=urllib.parse.urljoin(page,src)
+                  try:
+                      save("baud-"+str(count+1),"Baud Girl (FM-1+VA)",x.get("alt","Manual 102"),page if url.startswith("data:") else url,get(url),"author manual image")
+                      count+=1
+                  except Exception as e: print("Baud image rejected",str(e))
+              if count==0: raise ValueError("No raster image with matching manual alt")
+          attempt("Baud Girl (FM-1+VA)",baud)
+          def clipper():
+              page="https://isod89.github.io/clipper-fm1/webapp/editor/"
+              chrome=shutil.which("google-chrome") or shutil.which("chromium")
+              if not chrome:raise ValueError("No headless Chromium")
+              target=out/"clipper-temp.png"
+              subprocess.run([chrome,"--headless","--no-sandbox","--disable-dev-shm-usage","--disable-gpu","--hide-scrollbars","--window-size=1280,800","--virtual-time-budget=10000","--screenshot="+str(target.resolve()),page],check=True,timeout=60,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+              save("clipper-editor","Clipper","Web editor (no physical device connected)",page,target.read_bytes(),"browser capture of external editor, not FM-1 LCD")
+              target.unlink()
+          attempt("Clipper",clipper)
+          pathlib.Path("visual-extra-report").mkdir(exist_ok=True)
+          pathlib.Path("visual-extra-report/EXTRAS.json").write_text(json.dumps(report,indent=2))
+          print(json.dumps(report,indent=2))
+          PY
+      - name: Seal personal-study assets
+        if: always()
+        run: |
+          node <<'JS'
+          const fs=require('node:fs'),c=require('node:crypto');
+          const pub=c.createPublicKey({key:Buffer.from('MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoS7Yxk0VPjnkWdSsafTgSLq05dwk4kKnVNwkbmXoHmJLV2Y13gGIJ7iLBUIza2XOEze9vaAppNsCh75WWdWv7qhkUHUHbGQz/rWZpRiwl+T0GhtG9ZTUq1DQjSSjR28Rz0uWEGGmRsINdX176RmbwmJT8FauECj6AVfGyhLXlnFaDCMIAcaIOiwkubfcVNmbSg7sj/TV/5zyz3IaL+3gr3Qw1gyrdSDiTTWdijaO4sqLv9zstXyfM+k+JVlw9wCCpVfsdaB4nLu7Yr1fPjp3UHa30VKd6o/PY96cY9F4waq03usbet4djPsW6nu+oudNf0UOdywLp4Vpl5WpS4yTJQIDAQAB','base64'),format:'der',type:'spki'});
+          const files={};if(fs.existsSync('visual-extra-private'))for(const n of fs.readdirSync('visual-extra-private'))if(/\.(png|jpg|webp)$/.test(n))files[n]=fs.readFileSync('visual-extra-private/'+n).toString('base64');
+          const k=c.randomBytes(32),iv=c.randomBytes(12),cipher=c.createCipheriv('aes-256-gcm',k,iv);
+          const ct=Buffer.concat([cipher.update(JSON.stringify(files),'utf8'),cipher.final(),cipher.getAuthTag()]);
+          fs.mkdirSync('visual-extra-report',{recursive:true});
+          fs.writeFileSync('visual-extra-report/EXTRAS-SEALED.json',JSON.stringify({format:'FM1-SEALED-1',key:c.publicEncrypt({key:pub,oaepHash:'sha256'},k).toString('base64'),iv:iv.toString('base64'),ciphertext:ct.toString('base64')}));
+          console.log('Sealed extras',Object.keys(files));
+          JS
+      - name: Upload encrypted bundle and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FM1-PRACTICE-visual-extras-v083
+          path: visual-extra-report/
+          retention-days: 7
