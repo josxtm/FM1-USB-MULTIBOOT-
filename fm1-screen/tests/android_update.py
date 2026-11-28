@@ -53,14 +53,28 @@ def main():
     adb("shell", "am", "start", "-W", "-n", f"{PACKAGE}/.MainActivity")
     wait_for_text("FM-1 display")
     adb("shell", "input", "keyevent", "KEYCODE_HOME")
+    time.sleep(1.5)
     launcher = adb("shell", "cmd", "package", "resolve-activity", "--brief", "-a",
                    "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", PACKAGE)
     (results / "launcher-resolution.txt").write_text(launcher)
     component = launcher.strip().splitlines()[-1]
     assert component in (f"{PACKAGE}/.MainActivity", f"{PACKAGE}/{PACKAGE}.MainActivity"), launcher
-    adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN", "-c",
-        "android.intent.category.LAUNCHER", "-n", component)
-    wait_for_text("FM-1 display")
+    launch = adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN", "-c",
+                 "android.intent.category.LAUNCHER", "-f", "0x10200000", "-n", component)
+    (results / "launcher-start.txt").write_text(launch)
+    try:
+        wait_for_text("FM-1 display", 60)
+    except Exception:
+        for name, args in (("activities", ("shell", "dumpsys", "activity", "activities")),
+                           ("windows", ("shell", "dumpsys", "window")),
+                           ("logcat", ("logcat", "-d", "-t", "1000")),
+                           ("ui", ("shell", "cat", "/sdcard/fm1-ui.xml"))):
+            try:
+                (results / f"launcher-{name}.txt").write_text(adb(*args))
+            except Exception as error:
+                print(f"Diagnostic {name}: {error}")
+        (results / "launcher-failure.png").write_bytes(adb("exec-out", "screencap", "-p", binary=True))
+        raise
     for source, name in (
         (upgrade, "upgrade.apk"), (test, "wrong-id.apk"),
         (upgrade.with_name("wrong-signature.apk"), "wrong-signature.apk"),
