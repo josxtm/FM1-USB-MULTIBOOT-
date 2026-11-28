@@ -30,6 +30,7 @@ sealed interface MirrorEvent {
     data class Pixels(val patch: Patch, val sequence: Int? = null) : MirrorEvent
     data class Panel(val state: PanelState) : MirrorEvent
     data class Ack(val sequence: Int, val operation: Int, val ok: Boolean) : MirrorEvent
+    data object PanelIgnored : MirrorEvent
     data object Sync : MirrorEvent
     data object Invalid : MirrorEvent
 }
@@ -155,11 +156,11 @@ object MirrorPackets {
         return decodeIdentified(wire, message)
     }
 
-    internal fun decodeIdentified(wire: Wire, message: ByteArray): MirrorEvent? =
+    internal fun decodeIdentified(wire: Wire, message: ByteArray, materializePanel: Boolean = true): MirrorEvent? =
         when (wire) {
             Wire.BIG1 -> decodeBig1(message)
             Wire.BIG2 -> decodeBig2(message)
-            Wire.BASE -> decodeBase(message)
+            Wire.BASE -> decodeBase(message, materializePanel)
             Wire.AUTO -> null
         }
 
@@ -316,7 +317,7 @@ object MirrorPackets {
         else -> null
     }
 
-    private fun decodeBase(m: ByteArray): MirrorEvent {
+    private fun decodeBase(m: ByteArray, materializePanel: Boolean): MirrorEvent {
         val data = unpackBase(m) ?: return MirrorEvent.Invalid
         if (data.size < 7 || data.u(0) != 0 || data.u(1) != 0x59) return MirrorEvent.Invalid
         val size = data.le16(3) or (data.u(5) shl 16)
@@ -340,6 +341,7 @@ object MirrorPackets {
                 else MirrorEvent.Pixels(Patch(x, y, w, h, pixels), b.u(4))
             }
             0x53 -> if ((size == 21 || size >= 27) && b.le16(13) <= 4096) {
+                if (!materializePanel) return MirrorEvent.PanelIgnored
                 val lights = b.le16(15)
                 MirrorEvent.Panel(PanelState(b.le16(0), b.le32(2), (6..12).map { b[it].toInt() },
                     b.le16(13), lights and 0x7FFF, b.le32(17), lights and 0x8000 != 0,

@@ -68,10 +68,12 @@ def reveal_and_tap(label):
     for _ in range(4):
         tree = hierarchy()
         item = find(tree, label)
-        if item is not None and bounds(item)[3] - bounds(item)[1] > 38:
+        if item is not None and bounds(item)[3] - bounds(item)[1] >= 13:
             press(center(item))
             time.sleep(.28)
             return
+        if tree is None:
+            continue
         scroll = next(n for n in tree.iter("node") if n.get("class") == "android.widget.ScrollView")
         x1, y1, x2, y2 = bounds(scroll)
         x = (x1 + x2) // 2
@@ -110,7 +112,7 @@ def has_panel_color(rgb: bytes, tolerance: int = 0):
 
 GEAR = "Abrir configuración"
 CLOSE = "Cerrar configuración"
-CATEGORIES = ("Conexión", "Firmware", "Pantalla", "Rendimiento", "Apariencia", "Diagnóstico", "Información")
+CATEGORIES = ("Conexión", "Vista", "Colores", "Avanzado")
 PAGES = ("Full view", "Controls view", "Screen view")
 VIEWS = ("01-full-control", "02-screen-control", "03-big-screen")
 
@@ -134,14 +136,15 @@ def rotate(rotation, size):
     return screen_at_size(size)
 
 
-def launch(apk, resolution, dpi, rotation):
+def launch(apk, resolution, dpi, rotation, demo=False):
     prior = subprocess.run(["adb", "shell", "pm", "path", PACKAGE], capture_output=True, text=True, timeout=15)
     assert "package:" not in prior.stdout, "The test requires a clean emulator"
     adb("install", apk)
     adb("shell", "wm", "size", f"{resolution[0]}x{resolution[1]}")
     adb("shell", "wm", "density", str(dpi))
     adb("shell", "cmd", "window", "user-rotation", "lock", str(rotation))
-    adb("shell", "am", "start", "-W", "-n", ACTIVITY)
+    extra = ("--ez", "fm1.demo", "true") if demo else ()
+    adb("shell", "am", "start", "-W", "-n", ACTIVITY, *extra)
 
 
 def expect_page(index):
@@ -226,55 +229,128 @@ def configuration_categories(out, size):
         shot(out, f"category-{index + 1:02}", size)
 
 
+def open_category(label):
+    tap(label)
+    node(CLOSE)
+
+
+def wait_panel_color(rgb, tolerance=0):
+    for _ in range(14):
+        if has_panel_color(rgb, tolerance):
+            return
+        time.sleep(.15)
+    raise AssertionError(f"Expected the panel color {rgb.hex()}")
+
+
+def test_media(out):
+    tap("Capturas")
+    tap("Guardar Interfaz completa")
+    for _ in range(12):
+        items = adb("shell", "ls '/sdcard/Pictures/FM1 SCREEN' 2>/dev/null || true").splitlines()
+        items = [name for name in items if "-interfaz-" in name and name.endswith(".png")]
+        if items:
+            png = adb("exec-out", "cat", "'/sdcard/Pictures/FM1 SCREEN/" + items[-1] + "'", binary=True)
+            if png.startswith(b"\x89PNG\r\n\x1a\n"):
+                (out / "capture-interface.png").write_bytes(png)
+                break
+        time.sleep(.3)
+    else:
+        raise AssertionError("The MediaStore interface capture did not complete")
+    if find(hierarchy(), "DEMO") is not None:
+        for option, suffix, size in (("LCD 240 × 240", "-lcd-", 240), ("LCD ampliado", "-lcd-x4-", 960)):
+            tap("Capturas")
+            tap(f"Guardar {option}")
+            for _ in range(15):
+                names = adb("shell", "ls '/sdcard/Pictures/FM1 SCREEN' 2>/dev/null || true").splitlines()
+                matches = [name for name in names if suffix in name and name.endswith(".png") and
+                    (size != 240 or "-lcd-x4-" not in name)]
+                if matches:
+                    png = adb("exec-out", "cat", "'/sdcard/Pictures/FM1 SCREEN/" + matches[-1] + "'", binary=True)
+                    if png.startswith(b"\x89PNG\r\n\x1a\n"):
+                        assert struct.unpack_from(">II", png, 16) == (size, size)
+                        (out / f"capture-lcd-{size}.png").write_bytes(png)
+                        break
+                time.sleep(.3)
+            else:
+                raise AssertionError(f"Missing LCD PNG at {size} × {size}")
+
+        tap(GEAR)
+        open_category("Vista")
+        tap("Capturas y grabación")
+        reveal_and_tap("Grabar MP4")
+        node("Detener MP4")
+        time.sleep(.7)
+        reveal_and_tap("Detener MP4")
+        reveal_and_tap("Guardar MP4")
+        for _ in range(15):
+            names = adb("shell", "ls '/sdcard/Movies/FM1 SCREEN' 2>/dev/null || true").splitlines()
+            items = [name for name in names if name.startswith("FM1-SCREEN-DEMO-") and name.endswith(".mp4")]
+            if items:
+                mp4 = adb("exec-out", "cat", "'/sdcard/Movies/FM1 SCREEN/" + items[-1] + "'", binary=True)
+                if b"moov" in mp4:
+                    tracks = [match.start() + 12 for match in re.finditer(b"hdlr", mp4)]
+                    kinds = [mp4[offset:offset + 4] for offset in tracks]
+                    assert b"vide" in kinds and b"soun" not in kinds, "The recording needs one video stream and no audio"
+                    (out / "capture-lcd.mp4").write_bytes(mp4)
+                    break
+            time.sleep(.3)
+        else:
+            raise AssertionError("The MediaStore MP4 did not complete")
+        tap(CLOSE)
+
+
 def validate_tablet(out, size, build):
-    tap("Información")
-    node(f"FM1 SCREEN v1.0 · comp. {build:03}")
-    tap("Firmware")
-    tap("Selección de firmware")
-    assert find(hierarchy(), "Automática") is not None
-    adb("shell", "input", "keyevent", "KEYCODE_BACK")
-    node("Protocolo")
-    tap("Rendimiento")
+    open_category("Conexión")
+    tap("Conexión avanzada")
+    node("Perfil de firmware")
+    node("Protocolo manual")
+    node("Solicitar duplicación")
+    open_category("Vista")
+    tap("DINÁMICO")
+    node("Telemetría física sin confirmar")
+    tap("Vista avanzada")
     tap("ECO")
-    tap("ULTRA LOW LATENCY")
-    tap("Apariencia")
-    tap("Tema")
+    open_category("Colores")
     tap("SILVER")
-    assert has_panel_color(bytes.fromhex("C7CED3"), tolerance=18), "Silver did not recolor the open panel background"
+    wait_panel_color(bytes.fromhex("C7CED3"), tolerance=18)
     shot(out, "theme-silver", size)
-    tap("Tema")
     tap("DARK")
     shot(out, "theme-dark", size)
-    tap("Colores personalizados")
+    tap("CUSTOM")
     tap("Fondo principal")
-    tap("Muestras")
-    tap("#4FCDBF")
-    assert has_panel_color(bytes.fromhex("4FCDBF"), tolerance=18), "Custom swatch did not recolor the open view"
+    reveal_and_tap("Muestras")
+    reveal_and_tap("#4FCDBF")
+    wait_panel_color(bytes.fromhex("4FCDBF"), tolerance=18)
     shot(out, "theme-custom", size)
-    # Persist the selected light preset and the selected performance mode across process restart.
-    tap("Tema")
+    tap("Aceptar")
+    tap("DARK")
+    tap("CUSTOM")
+    wait_panel_color(bytes.fromhex("4FCDBF"), tolerance=18)
     tap("SILVER")
     tap(CLOSE)
     adb("shell", "am", "force-stop", PACKAGE)
     adb("shell", "am", "start", "-W", "-n", ACTIVITY)
     node(GEAR)
-    for _ in range(10):
-        if has_panel_color(bytes.fromhex("C7CED3")):
-            break
-        time.sleep(.12)
-    else:
-        raise AssertionError("The restored SILVER background did not reach the screen")
+    wait_panel_color(bytes.fromhex("C7CED3"))
     tap(GEAR)
-    tap("Rendimiento")
-    node("Respuesta inmediata · sin suavizado")
+    open_category("Vista")
+    node("Telemetría física sin confirmar")
+    tap("Vista avanzada")
+    eco = node("ECO")
+    tree = hierarchy()
+    assert any(item.get("selected") == "true" and bounds(item) == bounds(eco)
+        for item in tree.iter("node")), "ECO was not restored"
+    open_category("Avanzado")
+    tap("Información y licencias")
+    node(f"FM1 SCREEN v1.0 · comp. {build:03}")
+    tap("Información y licencias")
     tap("Diagnóstico")
-    node("Estado MIDI")
-    node("Compartir diagnóstico")
-    tap("Diagnóstico avanzado")
-    node("RX cerrado · TX cerrado · 0 reconexiones")
-    tap("Diagnóstico avanzado")
-    tap("Consola MIDI / SysEx")
-    tap("Filtro MIDI")
+    node("Analizar 30 segundos")
+    tap("Comunicaciones")
+    node("USB-C · Protocolo sin confirmar")
+    tap("Comunicaciones")
+    reveal_and_tap("Consola técnica")
+    reveal_and_tap("Filtro MIDI")
     tap("Clock F8")
     tap(CLOSE)
 
@@ -314,19 +390,25 @@ def verify(apk, out, device, build, original=None):
     before, pre_stats = baseline(original, out, device) if original else ({}, None)
     portrait, density = {"tablet": ((1200, 1920), 160), "phone": ((1080, 1920), 440)}[device]
     landscape = portrait[::-1]
-    launch(apk, portrait, density, 0 if device == "phone" else 1)
+    launch(apk, portrait, density, 0 if device == "phone" else 1, demo=True)
     rotate(1, landscape)
+    node(GEAR)
+    if device == "tablet":
+        test_media(out)
     tap(GEAR)
+    node(CLOSE)
     shot(out, "settings", landscape)
-    tap("Pantalla")
-    tap("Modo demostración")
-    assert switch_checked("Modo demostración")
-    for label in ("SCREEN + CONTROL", "BIG SCREEN", "FULL CONTROL"):
-        tap(label)
-        node(CLOSE)
-        assert node(label).get("selected") == "true", f"View not selected: {label}"
+    open_category("Vista")
+    node("FM1 LIVE")
+    tap("SCREEN + CONTROL")
+    node("FM1 LIVE")
+    # Swipe on the exposed side while the drawer stays open.
+    y = landscape[1] // 4
+    adb("shell", "input", "swipe", *map(str, (landscape[0] * 2 // 5, y, landscape[0] // 12, y, 260)))
+    node("FM1 LIVE")
     tap(CLOSE)
-    expect_page(0)
+    expect_page(2)
+    tap(PAGES[0])
 
     all_bounds = {}
     total = 0
@@ -347,12 +429,11 @@ def verify(apk, out, device, build, original=None):
         press(gear)
         close_node = node(CLOSE)
         close = center(close_node)
-        node("Solicitar duplicación")
+        node("Conexión avanzada")
         if device == "tablet":
-            node("Solo visualización")
             node("Resincronizar pantalla")
         before_close = hierarchy()
-        assert find(before_close, "Selección de firmware") is None, "Firmware list is permanently expanded"
+        assert find(before_close, "Solo visualización") is None, "Advanced controls should start collapsed"
         # Verify that tapping empty background in the drawer never reaches the faceplate or backdrop.
         blank = (bounds(close_node)[2] + round(6 * density / 160), landscape[1] * 2 // 3)
         press(blank)
@@ -406,21 +487,17 @@ def verify(apk, out, device, build, original=None):
             if index == 2:
                 tap("Conexión")
                 shot(out, "settings-portrait", portrait)
-                tap("Información")
-                node(f"FM1 SCREEN v1.0 · comp. {build:03}")
-                tap("Apariencia")
-                tap("Tema")
+                open_category("Colores")
                 tap("SILVER")
-                assert has_panel_color(bytes.fromhex("C7CED3"), tolerance=18)
+                wait_panel_color(bytes.fromhex("C7CED3"), tolerance=18)
                 shot(out, "theme-silver-portrait", portrait)
-                tap("Tema")
                 tap("DARK")
                 shot(out, "theme-dark-portrait", portrait)
-                tap("Colores personalizados")
-                tap("Fondo principal")
+                reveal_and_tap("CUSTOM")
+                reveal_and_tap("Fondo principal")
                 reveal_and_tap("Muestras")
                 reveal_and_tap("#4FCDBF")
-                assert has_panel_color(bytes.fromhex("4FCDBF"), tolerance=18)
+                wait_panel_color(bytes.fromhex("4FCDBF"), tolerance=18)
                 shot(out, "theme-custom-portrait", portrait)
             tap(CLOSE)
             expect_page(index)

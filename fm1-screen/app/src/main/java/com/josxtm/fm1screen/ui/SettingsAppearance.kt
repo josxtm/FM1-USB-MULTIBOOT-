@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -53,83 +54,126 @@ internal fun AppearanceSettings(app: MainActivity) {
     val theme = app.theme ?: app.originalTheme
     val colors = DrawerColors.current
     var role by remember { mutableStateOf(ColorRole.BODY) }
-    var hex by remember(role, theme.name) { mutableStateOf(role.get(theme).hex) }
+    var original by remember { mutableStateOf<Theme?>(null) }
+    var hex by remember { mutableStateOf("") }
     var managingName by remember(theme.name) { mutableStateOf(theme.name.takeIf(app::isCustomTheme).orEmpty()) }
     var remove by remember(theme.name) { mutableStateOf(false) }
-
-    fun apply(color: Rgb) {
-        app.previewTheme(role.set(theme, color))
+    fun cancel() {
+        val previous = original
+        original = null
+        if (previous != null && app.theme?.name == "CUSTOM") app.previewTheme(previous)
+    }
+    DisposableEffect(app) { onDispose { cancel() } }
+    fun choose(value: Theme) {
+        cancel()
+        app.selectTheme(value)
+    }
+    fun preview(color: Rgb) {
+        hex = color.hex
+        app.previewTheme(role.set(app.theme ?: theme, color))
     }
 
-    ChoiceMenu("Tema", theme.name, app.themes, Theme::name, swatches = { Swatches(it, 12.dp) }) { app.selectTheme(it) }
-    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Note("Vista previa")
-        Swatches(theme, 22.dp)
+    val presets = app.themes.filterNot { app.isCustomTheme(it.name) }
+    presets.chunked(3).forEach { row ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            row.forEach { preset ->
+                ThemeTile(preset, theme.name == preset.name, Modifier.weight(1f)) { choose(preset) }
+            }
+            repeat(3 - row.size) { Box(Modifier.weight(1f)) }
+        }
     }
-    Disclosure("Colores personalizados") {
+    if (app.themes.any { app.isCustomTheme(it.name) }) Disclosure("Temas guardados") {
+        app.themes.filter { app.isCustomTheme(it.name) }.forEach { saved ->
+            ThemeTile(saved, theme.name == saved.name, Modifier.fillMaxWidth(), showName = true) { choose(saved) }
+        }
+    }
+
+    if (theme.name == "CUSTOM") {
+        Caption("Colores personalizados")
         ColorRole.entries.chunked(5).forEach { roles ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 roles.forEach { option ->
+                    val selected = original != null && role == option
                     Box(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(8.dp))
-                        .background(if (role == option) colors.selection.color else colors.raised.color)
-                        .selectable(role == option, role = Role.Button) { role = option }
-                        .semantics { contentDescription = option.label },
-                        contentAlignment = Alignment.Center) {
+                        .background(if (selected) colors.selection.color else colors.raised.color)
+                        .selectable(selected, role = Role.Button) {
+                            cancel()
+                            val current = app.theme ?: theme
+                            role = option
+                            original = current
+                            hex = option.get(current).hex
+                        }
+                        .semantics { contentDescription = option.label }, contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            SettingsIcon(option.glyph(), if (role == option) colors.onSelection.color else colors.text.color, 21.dp)
+                            SettingsIcon(option.glyph(), if (selected) colors.onSelection.color else colors.text.color, 21.dp)
                             Sample(option.get(theme), 10.dp)
                         }
                     }
                 }
             }
         }
-        Caption(role.label)
-        key(role, theme.name) { ColorPicker(role.get(theme)) { hex = it.hex; apply(it) } }
-        Disclosure("Muestras") {
-            val original = app.originalTheme
-            val samples = (listOf(original.body, original.key, original.knob, original.mark) +
-                app.themes.take(9).map(Theme::body)).distinct()
-            samples.chunked(5).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    row.forEach { sample ->
-                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))
-                            .clickable(role = Role.Button) { hex = sample.hex; apply(sample) }
-                            .semantics { contentDescription = sample.hex }, contentAlignment = Alignment.Center) {
-                            Sample(sample, 24.dp)
+        val before = original
+        if (before != null) {
+            Caption(role.label)
+            key(role) { ColorPicker(role.get(theme), ::preview) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(hex, {
+                    if (it.length <= 7) {
+                        hex = it
+                        Rgb.hex(it)?.let { color -> app.previewTheme(role.set(app.theme ?: theme, color)) }
+                    }
+                }, label = { Text("HEX") }, singleLine = true, modifier = Modifier.weight(1f).testTag("color-hex"))
+                Action("Restaurar color", Glyph.REFRESH) {
+                    val restored = role.reset(app.theme ?: theme, app.originalTheme)
+                    hex = role.get(restored).hex
+                    app.previewTheme(restored)
+                }
+            }
+            Row(Modifier.fillMaxWidth()) {
+                Action("Aceptar", Glyph.CHECK, Modifier.weight(1f), enabled = Rgb.hex(hex) != null) {
+                    original = null
+                    app.applyCustomTheme(before, app.theme ?: theme)
+                }
+                Action("Cancelar", Glyph.CLOSE, Modifier.weight(1f), click = ::cancel)
+            }
+            Disclosure("Muestras") {
+                val mint = app.originalTheme
+                val samples = (listOf(mint.body, mint.key, mint.knob, mint.mark) + presets.take(9).map(Theme::body)).distinct()
+                samples.chunked(5).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        row.forEach { sample ->
+                            Box(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(6.dp))
+                                .clickable(role = Role.Button) { preview(sample) }
+                                .semantics { contentDescription = sample.hex }, contentAlignment = Alignment.Center) {
+                                Sample(sample, 24.dp)
+                            }
                         }
+                        repeat(5 - row.size) { Box(Modifier.weight(1f)) }
                     }
                 }
             }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(hex, {
-                if (it.length <= 7) {
-                    hex = it
-                    Rgb.hex(it)?.let(::apply)
-                }
-            }, label = { Text("HEX") }, singleLine = true, modifier = Modifier.weight(1f).testTag("color-hex"))
-            Action("Restaurar color", Glyph.REFRESH) {
-                val original = role.reset(theme, app.originalTheme)
-                hex = role.get(original).hex
-                app.previewTheme(original)
+            if (minOf(theme.body.contrast(theme.label), theme.key.contrast(theme.padText),
+                    theme.padActive.contrast(theme.padText), theme.button.contrast(theme.keyText)) < 4.5) {
+                Note("Contraste bajo en alguna etiqueta")
             }
-        }
-        if (minOf(theme.body.contrast(theme.label), theme.key.contrast(theme.padText),
-                theme.padActive.contrast(theme.padText), theme.button.contrast(theme.keyText)) < 4.5) {
-            Note("Contraste bajo en alguna etiqueta")
         }
     }
     Row(Modifier.fillMaxWidth()) {
-        Action("Importar tema", Glyph.IMPORT, Modifier.weight(1f), click = app::importTheme)
+        Action("Importar tema", Glyph.IMPORT, Modifier.weight(1f)) { cancel(); app.importTheme() }
         Action("Exportar tema", Glyph.EXPORT, Modifier.weight(1f)) { app.exportTheme(theme) }
     }
-    Action("Restaurar Original Mint", Glyph.REFRESH) { app.selectTheme(app.originalTheme) }
+    Row(Modifier.fillMaxWidth()) {
+        Action("Restaurar tema", Glyph.REFRESH, Modifier.weight(1f)) { cancel(); app.restoreTheme() }
+        Action("Deshacer", Glyph.UNDO, Modifier.weight(1f), enabled = app.canUndoTheme) { cancel(); app.undoTheme() }
+    }
     Disclosure("Gestionar temas") {
         OutlinedTextField(managingName, { managingName = it.take(40) }, label = { Text("Nombre del tema") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
-        Action("Guardar tema", enabled = managingName.isNotBlank()) { app.saveTheme(theme.copy(name = managingName)) }
+        Action("Guardar tema", enabled = managingName.isNotBlank()) {
+            original = null
+            app.saveTheme(theme.copy(name = managingName))
+        }
         if (app.isCustomTheme(theme.name)) {
             Row(Modifier.fillMaxWidth()) {
                 Action("Renombrar", enabled = managingName.isNotBlank() && managingName != theme.name) {
@@ -151,6 +195,21 @@ internal fun AppearanceSettings(app: MainActivity) {
             text = { Note(theme.name) },
             confirmButton = { Action("Eliminar tema") { remove = false; app.removeTheme(theme) } },
             dismissButton = { Action("Cancelar") { remove = false } })
+    }
+}
+
+@Composable
+private fun ThemeTile(theme: Theme, selected: Boolean, modifier: Modifier, showName: Boolean = false,
+                      choose: () -> Unit) {
+    val colors = DrawerColors.current
+    Column(modifier.height(48.dp).clip(RoundedCornerShape(8.dp))
+        .background(if (selected) colors.selection.color else colors.raised.color)
+        .selectable(selected, role = Role.Button, onClick = choose)
+        .semantics { contentDescription = theme.name },
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Swatches(theme, 10.dp)
+        if (showName || theme.name == "CUSTOM") Note(theme.name)
+        else if (selected) SettingsIcon(Glyph.CHECK, colors.onSelection.color, 15.dp)
     }
 }
 

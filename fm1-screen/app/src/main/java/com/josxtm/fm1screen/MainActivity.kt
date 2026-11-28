@@ -11,8 +11,10 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.view.Choreographer
+import android.view.PixelCopy
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -39,6 +41,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.josxtm.fm1screen.capture.Recording
+import com.josxtm.fm1screen.capture.CaptureKind
+import com.josxtm.fm1screen.capture.writePng
+import com.josxtm.fm1screen.capture.saveMedia
 import com.josxtm.fm1screen.data.AndroidLoad
 import com.josxtm.fm1screen.data.AndroidLoadSampler
 import com.josxtm.fm1screen.data.FirmwareProfile
@@ -46,7 +51,11 @@ import com.josxtm.fm1screen.data.ProfileJson
 import com.josxtm.fm1screen.data.ProfileLibrary
 import com.josxtm.fm1screen.data.ThemeLibrary
 import com.josxtm.fm1screen.protocol.PanelState
+import com.josxtm.fm1screen.protocol.PanelUpdates
 import com.josxtm.fm1screen.performance.PerformanceMonitor
+import com.josxtm.fm1screen.performance.HealthAnalysis
+import com.josxtm.fm1screen.performance.HealthFinding
+import com.josxtm.fm1screen.performance.HealthSample
 import com.josxtm.fm1screen.performance.Percentiles
 import com.josxtm.fm1screen.performance.PresentationMode
 import com.josxtm.fm1screen.performance.Stage
@@ -67,6 +76,7 @@ import com.josxtm.fm1screen.transport.Target
 import com.josxtm.fm1screen.transport.TransportListener
 import com.josxtm.fm1screen.ui.Settings
 import com.josxtm.fm1screen.ui.SettingsGear
+import com.josxtm.fm1screen.ui.QuickCapture
 import com.josxtm.fm1screen.ui.faceplate.FaceplateUi
 import com.josxtm.fm1screen.ui.faceplate.FaceplateView
 import com.josxtm.fm1screen.ui.faceplate.PanelChip
@@ -94,6 +104,25 @@ class MainActivity : ComponentActivity(), TransportListener {
     private val mailbox = LatestFrame()
     private val performanceMonitor = PerformanceMonitor()
     private val loadSampler = AndroidLoadSampler()
+    private val diagnosticsWorker = Executors.newSingleThreadExecutor()
+    private var diagnosticsSamplePending = false
+    private var diagnosticsVisible = false
+    private data class AnalysisRun(val started: Long, val lost: Long, val reconnects: Int,
+                                   val samples: MutableList<HealthSample> = mutableListOf())
+    private var analysis: AnalysisRun? = null
+    private var sessionStarted = 0L
+    var analysisRemaining by mutableStateOf<Int?>(null)
+        private set
+    var analysisFinding by mutableStateOf<HealthFinding?>(null)
+        private set
+
+    var thermalStatus by mutableStateOf<Int?>(null)
+        private set
+    private val panelUpdates = PanelUpdates()
+    private val showPanel = Runnable {
+        val state = panelUpdates.take()
+        if (state != null && !demo && !dead && dynamicPanel && foreground && connected) feed.panel(state)
+    }
     private lateinit var displayClock: Choreographer
     var uiDiscardedFrames by mutableStateOf(0L)
         private set
@@ -105,7 +134,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         private set
     var androidLoad by mutableStateOf(AndroidLoad())
         private set
-    var presentation by mutableStateOf(PresentationMode.BALANCED)
+    var presentation by mutableStateOf(PresentationMode.ULTRA)
         private set
     private var watch = false
     private var foreground = false
@@ -157,9 +186,12 @@ class MainActivity : ComponentActivity(), TransportListener {
     var dynamicPanel by mutableStateOf(false)
         private set
     fun selectDynamicPanel(value: Boolean) {
+        if (dynamicPanel == value) return
+        cancelAnalysis()
         dynamicPanel = value
         prefs.edit().putBoolean("dynamicPanel", value).apply()
-        feed.panel(null)
+        clearPanel()
+        updateTelemetry()
     }
     var demo by mutableStateOf(false)
         private set
@@ -173,11 +205,13 @@ class MainActivity : ComponentActivity(), TransportListener {
         private set
     var recordingActive by mutableStateOf(false)
         private set
+    private var exportingMedia = false
     var videoReady by mutableStateOf(false)
         private set
 
     val scaling get() = feed.scaling
     val hasImage get() = feed.hasImage
+    val hasPanelTelemetry get() = feed.lights.hasTelemetry
     val originalTheme get() = themeLibrary.original
 
     private val permission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -199,15 +233,13 @@ class MainActivity : ComponentActivity(), TransportListener {
         }
     }
     private val saveJson = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json"), ::saveTo)
-    private val savePng = registerForActivityResult(ActivityResultContracts.CreateDocument("image/png"), ::saveTo)
-    private val saveMp4 = registerForActivityResult(ActivityResultContracts.CreateDocument("video/mp4"), ::saveTo)
     private val saveText = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain"), ::saveTo)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         displayClock = Choreographer.getInstance()
         dynamicPanel = prefs.getBoolean("dynamicPanel", false)
-        presentation = enumValue(prefs.getString("presentation", null), PresentationMode.BALANCED)
+        presentation = enumValue(prefs.getString("presentation", null), PresentationMode.ULTRA)
         feed.presentationMode = presentation
         enableEdgeToEdge()
         themeLibrary = ThemeLibrary(this)
@@ -230,6 +262,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         feed.transport = transport
         transport.setPresentationMode(presentation)
         transport.use(link)
+        if (BuildConfig.DEBUG && intent.getBooleanExtra("fm1.demo", false)) changeDemo(true)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 val active = theme ?: originalTheme
@@ -250,7 +283,10 @@ class MainActivity : ComponentActivity(), TransportListener {
                     }
                     if (!faceplate.displayAlone && !faceplate.sheetOpen) {
                         Box(Modifier.align(Alignment.TopEnd).then(safeArea).padding(end = 4.dp)) {
-                            SettingsGear(active) { faceplate.sheetOpen = true }
+                            androidx.compose.foundation.layout.Row {
+                                QuickCapture(this@MainActivity, active)
+                                SettingsGear(active) { faceplate.sheetOpen = true }
+                            }
                         }
                     }
                 }
@@ -274,8 +310,26 @@ class MainActivity : ComponentActivity(), TransportListener {
             last = feed.draws
             lastAt = now
             rxDepth = performanceMonitor.ingress
-            performanceStages = performanceMonitor.snapshot()
-            androidLoad = loadSampler.sample()
+            if ((diagnosticsVisible || analysis != null) && !diagnosticsSamplePending) {
+                diagnosticsSamplePending = true
+                val power = getSystemService(PowerManager::class.java)
+                val mode = presentation
+                val sessionAtSample = sessionStarted
+                diagnosticsWorker.execute {
+                    val stages = performanceMonitor.snapshot()
+                    val load = loadSampler.sample()
+                    val temp = power?.currentThermalStatus
+                    main.post {
+                        diagnosticsSamplePending = false
+                        if (!dead && presentation == mode && sessionStarted == sessionAtSample) {
+                            performanceStages = stages
+                            androidLoad = load
+                            thermalStatus = temp
+                            collectAnalysis(now)
+                        }
+                    }
+                }
+            }
             if (!dead) main.postDelayed(this, 1000)
         }
     }
@@ -283,13 +337,18 @@ class MainActivity : ComponentActivity(), TransportListener {
     override fun onResume() {
         super.onResume()
         foreground = true
+        updateTelemetry()
+        applyScreenFlag()
         restoreBluetooth()
         configure()
     }
 
     override fun onPause() {
         foreground = false
-        feed.panel(null)
+        cancelAnalysis()
+        updateTelemetry()
+        applyScreenFlag()
+        clearPanel()
         feed.releaseAll()
         transport.pause()
         prefs.edit().putString("page", faceplate.page.raw).putString("deck", faceplate.deck.raw)
@@ -300,6 +359,8 @@ class MainActivity : ComponentActivity(), TransportListener {
     override fun onDestroy() {
         dead = true
         main.removeCallbacks(metrics)
+        main.removeCallbacks(showPanel)
+        diagnosticsWorker.shutdown()
         displayClock.removeFrameCallback(drawLatest)
         recording?.stop()
         transport.close()
@@ -320,12 +381,51 @@ class MainActivity : ComponentActivity(), TransportListener {
     }
 
     private fun applyScreenFlag() {
-        if (stayAwake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (stayAwake && foreground && streaming && requestBlocked == null &&
+            mirrorStats.state != StreamState.NO_RESPONSE && mirrorStats.state != StreamState.BLOCKED) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    fun observeDiagnostics(visible: Boolean) { diagnosticsVisible = visible }
+
+    val canAnalyze get() = streaming && connected && !demo && mirrorStats.wire != null
+    val queueOccupancy get() = 100.0 * maxOf(
+        rxDepth.bytes.toDouble() / MidiIngress.LIMIT_BYTES,
+        rxDepth.chunks.toDouble() / MidiIngress.LIMIT_CHUNKS,
+    )
+
+    fun startAnalysis() {
+        if (!canAnalyze || analysis != null) return
+        analysisFinding = null
+        analysis = AnalysisRun(SystemClock.elapsedRealtime(), mirrorStats.lostBytes, midiPorts.reconnections)
+        analysisRemaining = 30
+    }
+
+    fun cancelAnalysis() {
+        analysis = null
+        analysisRemaining = null
+    }
+
+    private fun collectAnalysis(now: Long) {
+        val run = analysis ?: return
+        val left = (30 - ((now - run.started) / 1000).toInt()).coerceAtLeast(0)
+        val latency = performanceStages[Stage.INTERNAL_LATEST]
+            ?.takeIf { it.count >= 10 && (mirrorStats.sinceGraphicsMs ?: Long.MAX_VALUE) <= 2_000 }?.p95Ms
+        run.samples.add(HealthSample(androidLoad.normalizedCpuPercent, queueOccupancy, latency,
+            (thermalStatus ?: 0) >= PowerManager.THERMAL_STATUS_SEVERE))
+        analysisRemaining = left
+        if (left > 0) return
+        analysisFinding = HealthAnalysis.evaluate(run.samples, dynamicPanel, mirrorStats.lostBytes > run.lost,
+            midiPorts.reconnections > run.reconnects, mirrorStats.state == StreamState.NO_RESPONSE,
+            mirrorStats.state == StreamState.RECOVERING && mirrorStats.coverage < 240 * 240)
+        cancelAnalysis()
     }
 
     fun selectPresentation(value: PresentationMode) {
         if (presentation == value) return
+        cancelAnalysis()
         presentation = value
         feed.presentationMode = value
         performanceMonitor.clearSamples()
@@ -372,7 +472,10 @@ class MainActivity : ComponentActivity(), TransportListener {
     }
 
     fun selectProtocol(wire: Wire) {
-        if (protocol != wire) viewOnly = true
+        if (protocol != wire) {
+            cancelAnalysis()
+            viewOnly = true
+        }
         protocol = wire
         if (watch && !midiPorts.scope.allows(wire)) {
             setWatching(false)
@@ -415,9 +518,14 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     fun setWatching(value: Boolean) {
         if (value && requestBlocked != null) return
+        if (watch != value) sessionStarted++
         watch = value
         streaming = value
-        if (!value) viewOnly = true
+        applyScreenFlag()
+        if (!value) {
+            cancelAnalysis()
+            viewOnly = true
+        }
         configure()
     }
 
@@ -449,10 +557,12 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     fun changeDemo(value: Boolean) {
         demo = value
+        updateTelemetry()
+        applyScreenFlag()
         recording?.stop()
         if (value) {
             viewOnly = true
-            feed.panel(null)
+            clearPanel()
             feed.demo()
         } else {
             feed.paint(null)
@@ -473,8 +583,24 @@ class MainActivity : ComponentActivity(), TransportListener {
         if (newCallback) displayClock.postFrameCallback(drawLatest)
     }
 
+    private fun updateTelemetry() {
+        if (::transport.isInitialized) transport.setPanelTelemetry(dynamicPanel && foreground && connected && !demo)
+    }
+
+    private fun clearPanel() {
+        panelUpdates.clear()
+        feed.panel(null)
+    }
+
     override fun panel(state: PanelState?) {
-        main.post { if (!demo && !dead && dynamicPanel && foreground && connected) feed.panel(state) }
+        if (dead) return
+        if (state == null) {
+            panelUpdates.clear()
+            main.post { if (!dead) feed.panel(null) }
+        } else if (panelUpdates.offer(state)) {
+            // Coalesce telemetry separately from the Choreographer LCD path.
+            main.postDelayed(showPanel, 33)
+        }
     }
 
     override fun stats(stats: MirrorStats) {
@@ -482,7 +608,9 @@ class MainActivity : ComponentActivity(), TransportListener {
             if (dead) return@post
             val wasAuthorized = canAuthorizeControl
             val identityChanged = mirrorStats.identity != stats.identity
+            val stateChanged = mirrorStats.state != stats.state
             mirrorStats = stats
+            if (stateChanged) applyScreenFlag()
             if (identityChanged && autoProfile && stats.identity.atlatl) {
                 updateProfile(profiles.firstOrNull { it.id == "skiff-atlatl" })
             }
@@ -490,7 +618,14 @@ class MainActivity : ComponentActivity(), TransportListener {
         }
     }
 
-    override fun ports(status: MidiPorts) { main.post { if (!dead) midiPorts = status } }
+    override fun ports(status: MidiPorts) {
+        main.post {
+            if (!dead) {
+                midiPorts = status
+                applyScreenFlag()
+            }
+        }
+    }
 
     override fun devices(devices: List<Target>) { main.post { if (!dead) deviceList = devices } }
 
@@ -498,11 +633,18 @@ class MainActivity : ComponentActivity(), TransportListener {
         main.post {
             if (dead) return@post
             connectionText = details
+            if (this.connected != connected) sessionStarted++
             this.connected = connected
+            updateTelemetry()
+            applyScreenFlag()
             if (connected) updateProfileForDevice(details.substringBefore(" · "))
             if (!connected) {
+                if (analysis != null) {
+                    analysisFinding = HealthFinding("Revisar la conexión", "El enlace MIDI se desconectó durante la observación.")
+                }
+                cancelAnalysis()
                 viewOnly = true
-                feed.panel(null)
+                clearPanel()
                 feed.setControls(false)
                 if (autoProfile) updateProfile(null)
                 configure()
@@ -547,7 +689,8 @@ class MainActivity : ComponentActivity(), TransportListener {
             appendLine("Bloqueo de solicitud: ${requestBlocked ?: "ninguno"} | Control: ${controlBlocked ?: "elegible"}")
             appendLine("Diagnóstico: $mirrorStats | Dibujados/s: $rendersPerSecond | Presentaciones omitidas: $uiDiscardedFrames")
             appendLine("Rendimiento: ${presentation.title} | Cola: $rxDepth | Copias RGB565 parciales: $transferBytes B")
-            appendLine("Proceso Android: $androidLoad")
+            appendLine("Proceso Android: $androidLoad | Térmico: ${thermalStatus ?: "sin muestra"}")
+            analysisFinding?.let { appendLine("Análisis: ${it.action} · ${it.reason}") }
             appendLine("Latencias internas en ms, desde callback MIDI hasta registrar el dibujo. Sin medida física extremo a extremo.")
             performanceStages.forEach { (stage, stats) -> appendLine("${stage.title}: $stats") }
             appendLine()
@@ -599,6 +742,36 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     fun previewTheme(next: Theme) { theme = next }
 
+    private val themeUndo = ArrayDeque<Theme>()
+    var canUndoTheme by mutableStateOf(false)
+        private set
+
+    fun applyCustomTheme(previous: Theme, value: Theme) {
+        if (previous != value) rememberTheme(previous)
+        selectTheme(themeLibrary.storeCustomPreset(value))
+        themes = themeLibrary.list()
+    }
+
+    fun restoreTheme() {
+        theme?.takeIf { it != originalTheme }?.let(::rememberTheme)
+        selectTheme(originalTheme)
+    }
+
+    private fun rememberTheme(previous: Theme) {
+        if (themeUndo.size == 12) themeUndo.removeFirst()
+        themeUndo.addLast(previous)
+        canUndoTheme = true
+    }
+
+    fun undoTheme() {
+        val target = themeUndo.removeLastOrNull() ?: return
+        canUndoTheme = themeUndo.isNotEmpty()
+        if (target.name == "CUSTOM") {
+            selectTheme(themeLibrary.storeCustomPreset(target))
+            themes = themeLibrary.list()
+        } else selectTheme(target)
+    }
+
     fun isCustomTheme(name: String) = themeLibrary.isCustom(name)
 
     fun saveTheme(value: Theme, replace: String? = null) {
@@ -618,7 +791,14 @@ class MainActivity : ComponentActivity(), TransportListener {
     fun importTheme() {
         uriReader = {
             val newTheme = ThemeLibrary.decode(JSONObject(it))
-            saveTheme(newTheme)
+            val preset = themes.firstOrNull { existing -> existing.name.equals(newTheme.name, true) &&
+                !isCustomTheme(existing.name) }
+            when {
+                preset?.name == "CUSTOM" -> applyCustomTheme(theme ?: originalTheme, newTheme.copy(name = "CUSTOM"))
+                preset == newTheme -> selectTheme(newTheme)
+                preset != null -> saveTheme(newTheme.copy(name = "${newTheme.name.take(28)} importado"))
+                else -> saveTheme(newTheme)
+            }
         }
         openJson.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
     }
@@ -643,11 +823,77 @@ class MainActivity : ComponentActivity(), TransportListener {
         saveJson.launch(name)
     }
 
-    fun png() {
-        if (!hasImage) return
-        val bitmap = feed.bitmap
-        uriWriter = { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-        savePng.launch("FM1-SCREEN-${if (demo) "DEMO-" else ""}${System.currentTimeMillis()}.png")
+    internal fun png(kind: CaptureKind, share: Boolean = false) {
+        if (exportingMedia || !hasImage && kind != CaptureKind.INTERFACE) return
+        exportingMedia = true
+        val name = "FM1-SCREEN-${if (demo) "DEMO-" else ""}${kind.suffix}-${System.currentTimeMillis()}.png"
+        if (kind != CaptureKind.INTERFACE) {
+            val bitmap = feed.bitmap
+            val scale = if (kind == CaptureKind.ENLARGED_LCD) 4 else 1
+            queueMedia(name, "image/png", share) { bitmap.writePng(it, scale) }
+            return
+        }
+        val decor = window.decorView
+        if (decor.width <= 0 || decor.height <= 0) {
+            exportingMedia = false
+            return
+        }
+        val result = runCatching {
+            val ratio = minOf(1.0, kotlin.math.sqrt(8_000_000.0 / (decor.width.toLong() * decor.height)))
+            val snapshot = Bitmap.createBitmap((decor.width * ratio).toInt().coerceAtLeast(1),
+                (decor.height * ratio).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+            try {
+                PixelCopy.request(window, snapshot, { status ->
+                    if (dead || status != PixelCopy.SUCCESS) {
+                        snapshot.recycle()
+                        exportingMedia = false
+                        if (!dead) message = "No se pudo capturar la interfaz"
+                    } else queueMedia(name, "image/png", share, cleanup = snapshot::recycle) { snapshot.writePng(it, 1) }
+                }, main)
+            } catch (ex: Exception) {
+                snapshot.recycle()
+                throw ex
+            }
+        }
+        result.onFailure { exportingMedia = false; message = it.localizedMessage ?: "No se pudo capturar la interfaz" }
+    }
+
+    private fun queueMedia(name: String, mime: String, share: Boolean, cleanup: () -> Unit = {},
+                           write: (OutputStream) -> Unit) {
+        disk.execute {
+            val result = runCatching {
+                if (!share) {
+                    saveMedia(contentResolver, name, mime, write)
+                    null
+                } else {
+                    val folder = File(cacheDir, "media").apply { mkdirs() }
+                    folder.listFiles()?.filter { it.lastModified() < System.currentTimeMillis() - 86_400_000L }
+                        ?.forEach { it.delete() }
+                    val file = File(folder, name)
+                    try {
+                        file.outputStream().use(write)
+                        FileProvider.getUriForFile(this, "$packageName.diagnostics", file)
+                    } catch (ex: Exception) {
+                        file.delete()
+                        throw ex
+                    }
+                }
+            }
+            cleanup()
+            main.post {
+                exportingMedia = false
+                if (dead) return@post
+                result.onSuccess { uri ->
+                    if (uri == null) message = "Archivo guardado"
+                    else startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                        type = mime
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        clipData = ClipData.newRawUri(name, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }, "Compartir archivo"))
+                }.onFailure { message = it.localizedMessage ?: "Error al exportar el archivo" }
+            }
+        }
     }
 
     fun record() {
@@ -656,7 +902,7 @@ class MainActivity : ComponentActivity(), TransportListener {
             previous.stop()
             return
         }
-        if (!hasImage || demo) return
+        if (!hasImage || demo && !BuildConfig.DEBUG || exportingMedia) return
         videoReady = false
         video?.delete()
         video = null
@@ -674,10 +920,12 @@ class MainActivity : ComponentActivity(), TransportListener {
         }
     }
 
-    fun exportVideo() {
+    fun exportVideo(share: Boolean = false) {
         val file = video ?: return
-        uriWriter = { out -> file.inputStream().use { it.copyTo(out) } }
-        saveMp4.launch("FM1-SCREEN-${System.currentTimeMillis()}.mp4")
+        if (exportingMedia) return
+        exportingMedia = true
+        queueMedia("FM1-SCREEN-${if (demo) "DEMO-" else ""}${System.currentTimeMillis()}.mp4",
+            "video/mp4", share) { out -> file.inputStream().use { it.copyTo(out) } }
     }
 
     private fun saveTo(uri: Uri?) {

@@ -34,6 +34,8 @@ internal enum class Glyph(pathData: String) {
     CLOSE("M6 6l12 12M18 6L6 18"),
     USB("M12 3v15m-3-12 3-3 3 3M12 16l-5-3V9m5 5 5-3V8m-2-2h4v4h-4z M12 18a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"),
     CHIP("M6 6h12v12H6z M9 9h6v6H9z M9 3v3m6-3v3m-6 12v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3"),
+    CAMERA("M3 7h5l1.5-2h5L16 7h5v12H3z M12 10a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"),
+    UNDO("M9 5L4 10l5 5 M4 10h9a6 6 0 0 1 6 6v3"),
     SCREEN("M3 4h18v13H3z M12 17v3m-5 0h10"),
     BOLT("M13 2L4 14h7l-1 8 10-13h-8l1-7z"),
     PALETTE("M12 3a9 9 0 0 0 0 18h1a2 2 0 0 0 1.5-3.3 1.5 1.5 0 0 1 1.2-2.4H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3z M7 11h.1m2-4h.1m4-1h.1m4 2h.1"),

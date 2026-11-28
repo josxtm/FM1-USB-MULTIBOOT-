@@ -31,6 +31,43 @@ class MirrorSessionTest {
         assertTrue(f.stats.bytesPerSecond > 0)
     }
 
+    @Test fun staticModeKeepsPixelsAndAuthorizedCommandsWhileSkippingPhysicalTelemetry() {
+        val static = Fixture()
+        val dynamic = Fixture()
+        static.session.panelTelemetry = false
+        for (f in listOf(static, dynamic)) {
+            f.authorize()
+            f.input(panel())
+            f.input(pixel(0, 0x7654))
+            f.input(byteArrayOf(0x90.toByte(), 61, 99))
+            f.advance(50)
+            f.session.key(1, true)
+        }
+        assertNull(static.panel)
+        assertEquals(3, dynamic.panel?.heldKeys)
+        val pixels = ShortArray(SIDE * SIDE)
+        val other = ShortArray(SIDE * SIDE)
+        requireNotNull(static.frame).copyRgb565To(pixels)
+        requireNotNull(dynamic.frame).copyRgb565To(other)
+        assertArrayEquals(pixels, other)
+        assertEquals(0x7654.toShort(), pixels[0])
+        assertEquals(static.writes.map(ByteArray::toList), dynamic.writes.map(ByteArray::toList))
+        assertArrayEquals(MirrorPackets.key(0, 1, true), static.writes.last())
+    }
+
+    @Test fun telemetryCoalescingRetainsRelativeStepsAndLatestAbsoluteState() {
+        val updates = com.josxtm.fm1screen.protocol.PanelUpdates()
+        val first = PanelState(1, 2, listOf(1, -1, 0, 0, 0, 0, 0), 10, 5, 0, false, 0, 0)
+        val second = first.copy(heldButtons = 0, heldKeys = 4, master = 20, encoderSteps = List(7) { 2 })
+        assertTrue(updates.offer(first))
+        assertFalse(updates.offer(second))
+        assertEquals(second.copy(encoderSteps = listOf(3, 1, 2, 2, 2, 2, 2)), updates.take())
+        assertNull(updates.take())
+        assertTrue(updates.offer(first))
+        updates.clear()
+        assertNull(updates.take())
+    }
+
     @Test fun commandsWaitForCompatibilityAndAckAndCannotSave() {
         val f = Fixture()
         f.session.configure(Wire.AUTO, maySend = true, watch = true, remote = true)
@@ -143,7 +180,7 @@ class MirrorSessionTest {
         var panel: PanelState? = null
         var stats = MirrorStats()
         var suspensions = 0
-        val session = MirrorSession(this, { writes.add(it) }, this)
+        val session = MirrorSession(this, { writes.add(it) }, this).apply { panelTelemetry = true }
         override fun elapsedMillis() = time
         override fun nanoTime() = time * 1_000_000L
         override fun frameBuffer(source: FrameBuffer?, timing: FrameTiming?) { frame = source?.freeze() }

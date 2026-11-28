@@ -2,6 +2,7 @@
 package com.josxtm.fm1screen.capture
 
 import android.graphics.Bitmap
+import android.media.Image
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -48,7 +49,7 @@ class Recording(
             codec.start()
             codecStarted = true
             val info = MediaCodec.BufferInfo()
-            val pixels = IntArray(SIDE * SIDE)
+            val converter = YuvFrame()
             val start = System.nanoTime()
             var track = -1
             var next = 0L
@@ -67,23 +68,8 @@ class Recording(
                             inputEnded = true
                             endDeadline = System.nanoTime() + 4_000_000_000L
                         } else {
-                            latest.getPixels(pixels, 0, SIDE, 0, 0, SIDE, SIDE)
                             val image = checkNotNull(codec.getInputImage(index)) { "Codificador sin planos YUV" }
-                            val planes = image.planes
-                            for (y in 0 until SIDE) for (x in 0 until SIDE) {
-                                val rgb = pixels[y * SIDE + x]
-                                val r = rgb ushr 16 and 255
-                                val g = rgb ushr 8 and 255
-                                val b = rgb and 255
-                                val luma = ((66 * r + 129 * g + 25 * b + 128) shr 8) + 16
-                                planes[0].buffer.put(y * planes[0].rowStride + x * planes[0].pixelStride, luma.toByte())
-                                if (x % 2 == 0 && y % 2 == 0) {
-                                    val u = ((-38 * r - 74 * g + 112 * b + 128) shr 8) + 128
-                                    val v = ((112 * r - 94 * g - 18 * b + 128) shr 8) + 128
-                                    planes[1].buffer.put(y / 2 * planes[1].rowStride + x / 2 * planes[1].pixelStride, u.toByte())
-                                    planes[2].buffer.put(y / 2 * planes[2].rowStride + x / 2 * planes[2].pixelStride, v.toByte())
-                                }
-                            }
+                            converter.copy(latest, image)
                             codec.queueInputBuffer(index, 0, SIDE * SIDE * 3 / 2, stamp, 0)
                             next++
                             if (elapsed > (next + FPS) * 1_000_000L / FPS) next = elapsed * FPS / 1_000_000L
@@ -118,6 +104,54 @@ class Recording(
             runCatching { muxer?.release() }
             if (codecStarted) runCatching { codec.stop() }
             codec.release()
+        }
+    }
+
+    /** Reuses the RGB and planar YUV buffers. An immutable LCD bitmap is converted once even when repeated. */
+    private class YuvFrame {
+        private val widthHalf = SIDE / 2
+        private val rgb = IntArray(SIDE * SIDE)
+        private val y = ByteArray(SIDE * SIDE)
+        private val u = ByteArray(widthHalf * widthHalf)
+        private val v = ByteArray(widthHalf * widthHalf)
+        private var source: Bitmap? = null
+
+        fun copy(bitmap: Bitmap, image: Image) {
+            if (source !== bitmap) {
+                bitmap.getPixels(rgb, 0, SIDE, 0, 0, SIDE, SIDE)
+                for (row in 0 until SIDE) for (x in 0 until SIDE) {
+                    val index = row * SIDE + x
+                    val pixel = rgb[index]
+                    val r = pixel ushr 16 and 255
+                    val g = pixel ushr 8 and 255
+                    val b = pixel and 255
+                    y[index] = ((((66 * r + 129 * g + 25 * b + 128) shr 8)) + 16).toByte()
+                    if (row % 2 == 0 && x % 2 == 0) {
+                        val c = row / 2 * widthHalf + x / 2
+                        u[c] = (((-38 * r - 74 * g + 112 * b + 128) shr 8) + 128).toByte()
+                        v[c] = (((112 * r - 94 * g - 18 * b + 128) shr 8) + 128).toByte()
+                    }
+                }
+                source = bitmap
+            }
+            val planes = image.planes
+            write(planes[0], y, SIDE)
+            write(planes[1], u, widthHalf)
+            write(planes[2], v, widthHalf)
+        }
+
+        private fun write(plane: Image.Plane, pixels: ByteArray, width: Int) {
+            val buffer = plane.buffer
+            for (row in 0 until width) {
+                val dest = row * plane.rowStride
+                val from = row * width
+                if (plane.pixelStride == 1) {
+                    buffer.position(dest)
+                    buffer.put(pixels, from, width)
+                } else {
+                    for (x in 0 until width) buffer.put(dest + x * plane.pixelStride, pixels[from + x])
+                }
+            }
         }
     }
 

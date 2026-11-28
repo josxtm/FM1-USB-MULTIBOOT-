@@ -72,12 +72,12 @@ jobs:
         if: steps.version.outputs.validation_run == ''
         run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug
       - name: Build and verify APK
-        if: steps.version.outputs.validation_run == '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/fm1-screen-android'))
+        if: steps.version.outputs.validation_run == '' && (github.event_name != 'pull_request')
         env:
           FM1_BUILD: ${{ steps.version.outputs.build }}
           FM1_LABEL: ${{ steps.version.outputs.label }}
-          PREVIOUS_BUILD: '018'
-          PREVIOUS_CERTIFICATE: 6e69705d1869f1e1bc699ff14f8c6b139b4414e26ddd1d9f3ef10673e269312b
+          PREVIOUS_BUILD: '021'
+          PREVIOUS_CERTIFICATE: 0d90f0ee699fa801adb2b6168f2518ca3e683a9e38a4c1b8f0c1f4105046eadd
           FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
           FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
           FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
@@ -131,7 +131,7 @@ jobs:
             fm1-screen/app/build/test-results/testDebugUnitTest/*.xml
             fm1-screen/app/build/reports/lint-results-debug.html
       - uses: actions/upload-artifact@v4
-        if: steps.version.outputs.validation_run == '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/fm1-screen-android'))
+        if: steps.version.outputs.validation_run == '' && (github.event_name != 'pull_request')
         with:
           name: FM1-SCREEN-v1.0-comp.${{ steps.version.outputs.label }}
           path: fm1-screen/distribution/*
@@ -196,6 +196,7 @@ jobs:
           name: FM1-SCREEN-GUI-comp.${{ needs.apk.outputs.label }}-${{ matrix.device }}
           path: |
             fm1-screen/distribution/screenshots/*.png
+            fm1-screen/distribution/screenshots/*.mp4
             fm1-screen/distribution/screenshots/validation.json
           if-no-files-found: warn
           retention-days: 30

@@ -1,5 +1,14 @@
 # Cambios de FM1 SCREEN
 
+## v1.0 · compilación 027
+
+- Cuatro apartados en configuración y cambio de vista con el panel abierto.
+- FM1 LIVE estático por defecto y telemetría dinámica agrupada fuera de la presentación LCD. El control autorizado sigue siendo independiente.
+- ULTRA LOW LATENCY para instalaciones nuevas. Se conservan los perfiles guardados.
+- Captura nativa, ampliada o de la interfaz. PNG y MP4 se guardan en MediaStore y se comparten con el selector de Android.
+- CUSTOM con 15 roles, vista previa, aceptación, cancelación, deshacer y persistencia.
+- Diagnóstico de 30 segundos con métricas internas, CPU normalizada, estado térmico y recomendaciones sin cambios automáticos.
+
 ## v1.0 · compilación 019
 
 - Acceso por un engranaje único fuera de la navegación por gestos.

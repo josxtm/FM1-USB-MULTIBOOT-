@@ -3,7 +3,7 @@ package com.josxtm.fm1screen.transport
 
 /** Copies Android MIDI's ephemeral chunks into a bounded queue. Loss is delivered before the next chunk. */
 class MidiIngress @JvmOverloads constructor(
-    private val maxBytes: Int = 65_536, private val maxChunks: Int = 512, private val nanoTime: (() -> Long)? = null,
+    private val maxBytes: Int = LIMIT_BYTES, private val maxChunks: Int = LIMIT_CHUNKS, private val nanoTime: (() -> Long)? = null,
 ) {
     sealed interface Entry {
         data class Chunk(val bytes: ByteArray, val receivedNanos: Long, val queuedNanos: Long) : Entry
@@ -11,6 +11,11 @@ class MidiIngress @JvmOverloads constructor(
     }
 
     data class Depth(val chunks: Int = 0, val bytes: Int = 0, val peakChunks: Int = 0, val peakBytes: Int = 0)
+
+    companion object {
+        const val LIMIT_BYTES = 65_536
+        const val LIMIT_CHUNKS = 512
+    }
 
     private var peakChunks = 0
     private var peakBytes = 0

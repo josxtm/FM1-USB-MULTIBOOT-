@@ -23,6 +23,9 @@ import org.junit.Test
 class AtlatlSessionTest {
     @Test fun sourceVerifiedIdentityDoesNotTrustVidPidAlone() {
         assertEquals(MirrorScope.FELUCCA, DeviceIdentity.scope("Felucca", 0x1209, 1))
+        assertEquals(MirrorScope.FELUCCA, DeviceIdentity.scope("Hegelton Instruments – Félùcca", 0x1209, 1))
+        assertEquals(MirrorScope.NONE, DeviceIdentity.scope("Hegelton Instruments Felucca", 0x1209, 2))
+        assertEquals(MirrorScope.NONE, DeviceIdentity.scope("Unknown Felucca", 0x1209, 1))
         assertEquals(MirrorScope.FELUCCA, DeviceIdentity.scope("FM-1_742125", 0x1209, 1))
         assertEquals(MirrorScope.NONE, DeviceIdentity.scope("Generic USB MIDI", 0x1209, 1))
         assertEquals(MirrorScope.NONE, DeviceIdentity.scope("Felucca Update", 0x1209, 1))

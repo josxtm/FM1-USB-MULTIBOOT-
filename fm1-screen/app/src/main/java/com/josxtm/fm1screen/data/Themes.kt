@@ -27,9 +27,19 @@ class ThemeLibrary(context: Context) {
     )
     init { Palette.load(tokens) }
 
-    fun list() = presets + prefs.all.filterKeys { it.startsWith("custom-") }.values.mapNotNull {
+    fun list() = presets.map { saved ->
+        if (saved.name != "CUSTOM") saved else prefs.getString("customPreset", null)?.let { raw ->
+            runCatching { decode(JSONObject(raw)).copy(name = "CUSTOM") }.getOrNull()
+        } ?: saved
+    } + prefs.all.filterKeys { it.startsWith("custom-") }.values.mapNotNull {
         runCatching { decode(JSONObject(it as String)) }.getOrNull()
     }.sortedBy { it.name }
+
+    fun storeCustomPreset(value: Theme): Theme {
+        val custom = value.copy(name = "CUSTOM")
+        prefs.edit().putString("customPreset", encode(custom).toString()).apply()
+        return custom
+    }
 
     fun isCustom(name: String) = prefs.contains("custom-$name")
     fun store(theme: Theme, replaceName: String? = null): Theme {

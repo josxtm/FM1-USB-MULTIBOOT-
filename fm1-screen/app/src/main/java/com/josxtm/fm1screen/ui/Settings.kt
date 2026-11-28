@@ -15,6 +15,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -76,11 +77,9 @@ import com.josxtm.fm1screen.ui.theme.color
 
 private enum class Category(val title: String, val glyph: Glyph) {
     CONNECTION("Conexión", Glyph.USB),
-    SCREEN("Pantalla", Glyph.SCREEN),
-    PERFORMANCE("Rendimiento", Glyph.BOLT),
-    APPEARANCE("Apariencia", Glyph.PALETTE),
-    DIAGNOSTICS("Diagnóstico", Glyph.ACTIVITY),
-    ABOUT("Información", Glyph.INFO),
+    VIEW("Vista", Glyph.SCREEN),
+    COLORS("Colores", Glyph.PALETTE),
+    ADVANCED("Avanzado", Glyph.ACTIVITY),
 }
 
 internal val DrawerColors = staticCompositionLocalOf<SettingsColors> { error("SettingsColors missing") }
@@ -122,7 +121,15 @@ internal fun Settings(app: MainActivity, theme: Theme, visible: Boolean, close: 
             MaterialTheme(colorScheme = scheme) {
                 BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                     Box(Modifier.fillMaxSize().background(colors.text.color.copy(alpha = 0.07f))
-                        .semantics { hideFromAccessibility() }.clickable(interactionSource = null, indication = null, onClick = close))
+                        .semantics { hideFromAccessibility() }
+                        .pointerInput(app.faceplate) {
+                            var distance = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { distance = 0f },
+                                onDragEnd = { if (kotlin.math.abs(distance) > 60.dp.toPx()) app.faceplate.move(if (distance < 0) 1 else -1) },
+                            ) { _, dx -> distance += dx }
+                        }
+                        .clickable(interactionSource = null, indication = null, onClick = close))
                     val width = when {
                         maxWidth >= 900.dp -> (maxWidth * 0.30f).coerceIn(280.dp, 336.dp)
                         maxWidth >= 536.dp -> (maxWidth * 0.53f).coerceIn(280.dp, 332.dp)
@@ -146,13 +153,9 @@ internal fun Settings(app: MainActivity, theme: Theme, visible: Boolean, close: 
                                 fontSize = 17.sp, modifier = Modifier.weight(1f))
                             IconAction("Cerrar configuración", Glyph.CLOSE, colors.text.color, click = close)
                         }
-                        Category.entries.chunked(4).forEach { tabs ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                tabs.forEach { tab ->
-                                    Tile(tab.title, tab.glyph, page == tab, Modifier.weight(1f),
-                                        description = tab.title) { page = tab }
-                                }
-                                for (i in tabs.size until 4) Box(Modifier.weight(1f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Category.entries.forEach { tab ->
+                                Tile(tab.title, tab.glyph, page == tab, Modifier.weight(1f)) { page = tab }
                             }
                         }
                         HorizontalDivider(Modifier.padding(top = 5.dp), color = colors.divider.color)
@@ -164,15 +167,13 @@ internal fun Settings(app: MainActivity, theme: Theme, visible: Boolean, close: 
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 when (category) {
-                                    Category.CONNECTION -> {
-                                        ConnectionSettings(app)
-                                        Disclosure("Perfiles de firmware") { FirmwareSettings(app) }
+                                    Category.CONNECTION -> ConnectionSettings(app)
+                                    Category.VIEW -> ScreenSettings(app, close)
+                                    Category.COLORS -> AppearanceSettings(app)
+                                    Category.ADVANCED -> {
+                                        Disclosure("Diagnóstico") { DiagnosticsSettings(app) }
+                                        Disclosure("Información y licencias") { AboutSettings() }
                                     }
-                                    Category.SCREEN -> ScreenSettings(app, close)
-                                    Category.PERFORMANCE -> PerformanceSettings(app)
-                                    Category.APPEARANCE -> AppearanceSettings(app)
-                                    Category.DIAGNOSTICS -> DiagnosticsSettings(app)
-                                    Category.ABOUT -> AboutSettings()
                                 }
                             }
                         }

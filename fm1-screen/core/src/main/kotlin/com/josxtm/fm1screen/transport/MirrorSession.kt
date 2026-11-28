@@ -53,6 +53,9 @@ data class MirrorStats(
     val retries: Int = 0, val lostBytes: Long = 0, val clockMessages: Long = 0,
     val identity: FirmwareIdentity = FirmwareIdentity(),
     val sound: String? = null,
+    val sessionMillis: Long? = null,
+    val sinceRenewalMs: Long? = null,
+    val manualResync: Long = 0,
 )
 
 interface MirrorListener {
@@ -87,6 +90,9 @@ class MirrorSession(
     private val framebuffer = FrameBuffer()
     private val framer = SysExFramer(::framedShort, ::framedSysEx)
     var presentationMode = PresentationMode.BALANCED
+    var panelTelemetry = false
+    private var watchStarted: Long? = null
+    private var manualResync = 0L
     var performance: PerformanceMonitor? = null
     private var framerCallbackNanos = 0L
     private var wire: Wire? = null
@@ -178,6 +184,7 @@ class MirrorSession(
         if (changed) resetStream()
         if (begin) {
             val now = clock.elapsedMillis()
+            watchStarted = now
             refresh = true
             fullSent = false
             repairs = 0
@@ -189,12 +196,16 @@ class MirrorSession(
             lastProbed = null
             if (scope == MirrorScope.FELUCCA && identitySent < 2) identityAt = now + 1150
         }
-        if (!watch) identityAt = Long.MAX_VALUE
+        if (!watch) {
+            identityAt = Long.MAX_VALUE
+            watchStarted = null
+        }
         if (changed || begin || !watch) publishStats()
     }
 
     fun requestRefresh() {
-        if (!watching || !compatibleOutput || !scope.allows(choice)) return
+        if (!waiting) return
+        manualResync++
         exhausted = false
         repairs = 0
         refresh = true
@@ -394,7 +405,7 @@ class MirrorSession(
             sample(MidiCategory.SYSEX) { "RX SysEx · ${bytes.size} B · ${bytes.hex(32)}" }
             return
         }
-        val event = MirrorPackets.decodeIdentified(protocol, bytes) ?: return
+        val event = MirrorPackets.decodeIdentified(protocol, bytes, panelTelemetry) ?: return
         val decodedIn = (clock.nanoTime() - start).coerceAtLeast(0)
         decodingMs = decodedIn / 1_000_000.0
         if (event is MirrorEvent.Pixels) {
@@ -419,7 +430,7 @@ class MirrorSession(
             }
             return
         }
-        if (wire == null && (event is MirrorEvent.Panel || event == MirrorEvent.Sync)) return
+        if (wire == null && (event is MirrorEvent.Panel || event == MirrorEvent.PanelIgnored || event == MirrorEvent.Sync)) return
         if (event is MirrorEvent.Hello && !event.enabled) {
             if (wire == protocol && waiting) loseLiveness("El firmware confirmó que el espejo se detuvo")
             return
@@ -429,6 +440,7 @@ class MirrorSession(
             heartbeat = true
         }
         signal(now)
+        if (event == MirrorEvent.PanelIgnored) return
         if (wire == null) {
             wire = protocol
             if (protocol == lastProbed) {
@@ -676,7 +688,8 @@ class MirrorSession(
             txRate, requests, replies, lastSysExTx?.hex(), lastSysExRx?.hex(),
             lastPixels.takeIf { it >= 0 }?.let { now - it }, lastMessage.takeIf { it >= 0 }?.let { now - it },
             blocks, completeFrames, retries, lostBytes,
-            clockCount, identity, sound,
+            clockCount, identity, sound, watchStarted?.let { now - it },
+            lastHello.takeIf { watching && it >= 0 }?.let { now - it }, manualResync,
         ))
     }
 

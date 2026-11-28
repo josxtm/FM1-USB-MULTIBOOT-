@@ -130,7 +130,7 @@ private fun StatusRow(theme: Theme, chip: PanelChip, spec: FaceplateLayout.Statu
     val rw = (m.ref.w - 2 * spec.margin) * m.sx
     val x = m.ox + m.ref.w * m.sx / 2 - rw / 2
     // The only new top-right target belongs to the activity, outside this animated layout.
-    val statusWidth = minOf(rw, availableWidth - x - 52f).coerceAtLeast(1f)
+    val statusWidth = minOf(rw, availableWidth - x - 100f).coerceAtLeast(1f)
     Box(Modifier.place(PRect(x, y, statusWidth, h))) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Chip(theme, chip, spec.chipHeight * s, spec.chipPad * s, spec.chipFont * s)

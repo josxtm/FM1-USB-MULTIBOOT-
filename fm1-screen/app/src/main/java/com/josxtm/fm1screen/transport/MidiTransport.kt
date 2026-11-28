@@ -63,6 +63,7 @@ class MidiTransport(
     private var choice = Wire.AUTO
     private var watch = false
     private var remote = false
+    private var telemetry = false
     private var usbPreference = preferredUsb
     private var selectedBle: Pair<BluetoothDevice, Target>? = null
     private var availableUsb = emptyList<MidiDeviceInfo>()
@@ -150,8 +151,12 @@ class MidiTransport(
     private val poll = object : Runnable {
         override fun run() {
             if (disposed) return
-            if (opening && SystemClock.elapsedRealtime() - openSince > 5000) drop("Tiempo de conexión agotado")
-            if (!healthy && device != null) drop("Enlace MIDI interrumpido")
+            if (opening && SystemClock.elapsedRealtime() - openSince > 5000) {
+                drop("Tiempo de conexión agotado")
+            }
+            if (!healthy && device != null) {
+                drop("Enlace MIDI interrumpido")
+            }
             if (healthy && device != null && SystemClock.elapsedRealtime() - openSince >= 5000) {
                 openDelay = 1500L
                 nextOpen = 0L
@@ -185,6 +190,13 @@ class MidiTransport(
             watch = watching
             remote = control
             session?.configure(choice, permitted, watch, remote, scope)
+        }
+    }
+
+    fun setPanelTelemetry(enabled: Boolean) {
+        worker.post {
+            telemetry = enabled
+            session?.panelTelemetry = enabled
         }
     }
 
@@ -411,6 +423,7 @@ class MidiTransport(
                 healthy = true
                 val active = MirrorSession(sessionClock, ::write, listener).apply {
                     presentationMode = modePresentation
+                    panelTelemetry = telemetry
                     performance = this@MidiTransport.performance
                 }
                 session = active
