@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 defaults:
   run:
@@ -22,24 +23,44 @@ jobs:
     timeout-minutes: 25
     outputs:
       build: ${{ steps.version.outputs.build }}
+      validation_run: ${{ steps.version.outputs.validation_run }}
     steps:
       - uses: actions/checkout@v4
+      - name: Read versionCode and check reusable APK
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build="$(sed -n 's/^fm1Build=//p' gradle.properties)"
+          [[ "$build" =~ ^[1-9][0-9]*$ ]]
+          validation_run=''
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            validation_run="$(git log -1 --format=%B | git interpret-trailers --parse | sed -n 's/^FM1-Validate-Run: //p')"
+          fi
+          if [[ -n "$validation_run" ]]; then
+            [[ "$validation_run" =~ ^[1-9][0-9]*$ ]]
+            package_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$validation_run" --jq .head_sha)"
+            [[ "$package_sha" =~ ^[0-9a-f]{40}$ ]]
+            git fetch --no-tags --depth=1 origin "$package_sha"
+            git diff --exit-code "$package_sha" HEAD -- . ':(exclude)tests' ':(exclude,glob)**/*.md'
+            python3 -m py_compile tests/android_smoke.py
+          fi
+          printf 'build=%s\nvalidation_run=%s\n' "$build" "$validation_run" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v4
+        if: steps.version.outputs.validation_run == ''
         with:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/wrapper-validation@v4
+        if: steps.version.outputs.validation_run == ''
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.version.outputs.validation_run == ''
       - uses: android-actions/setup-android@v3
+        if: steps.version.outputs.validation_run == ''
         with:
           packages: 'platforms;android-35 build-tools;35.0.0'
-      - name: Read versionCode
-        id: version
-        run: |
-          build="$(sed -n 's/^fm1Build=//p' gradle.properties)"
-          [[ "$build" =~ ^[1-9][0-9]*$ ]]
-          printf 'build=%s\n' "$build" >> "$GITHUB_OUTPUT"
       - name: Validate profiles and theme tokens
+        if: steps.version.outputs.validation_run == ''
         run: |
           python3 - <<'PY'
           import json, pathlib
@@ -47,9 +68,10 @@ jobs:
               json.loads(file.read_text())
           PY
       - name: Unit tests and lint
+        if: steps.version.outputs.validation_run == ''
         run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug
       - name: Build and verify APK
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.version.outputs.validation_run == ''
         env:
           FM1_BUILD: ${{ steps.version.outputs.build }}
           PREVIOUS_BUILD: 14
@@ -99,7 +121,7 @@ jobs:
           } | tee distribution/build-report.md
           cat distribution/build-report.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.version.outputs.validation_run == ''
         with:
           name: FM1-SCREEN-tests-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
@@ -107,7 +129,7 @@ jobs:
             fm1-screen/app/build/test-results/testDebugUnitTest/*.xml
             fm1-screen/app/build/reports/lint-results-debug.html
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.version.outputs.validation_run == ''
         with:
           name: FM1-SCREEN-v1.0-comp.${{ steps.version.outputs.build }}
           path: fm1-screen/distribution/*
@@ -130,6 +152,11 @@ jobs:
         with:
           name: FM1-SCREEN-v1.0-comp.${{ needs.apk.outputs.build }}
           path: fm1-screen/distribution
+          github-token: ${{ needs.apk.outputs.validation_run != '' && github.token || '' }}
+          run-id: ${{ needs.apk.outputs.validation_run || github.run_id }}
+      - name: Verify the published APK digest
+        working-directory: fm1-screen/distribution
+        run: sha256sum -c *.apk.sha256
       - name: Enable hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |

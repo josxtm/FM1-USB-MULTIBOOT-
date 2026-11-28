@@ -71,7 +71,7 @@ def verify(apk: str, out: Path, device: str, build: int):
     prior = subprocess.run(["adb", "shell", "pm", "path", PACKAGE], capture_output=True, text=True, timeout=15)
     assert "package:" not in prior.stdout, "The test requires a clean emulator"
     adb("install", apk)
-    portrait, density = {"tablet": ((1200, 1920), 160), "phone": ((1080, 2400), 440)}[device]
+    portrait, density = {"tablet": ((1200, 1920), 160), "phone": ((1080, 1920), 440)}[device]
     landscape = portrait[::-1]
     adb("shell", "wm", "size", f"{portrait[0]}x{portrait[1]}")
     adb("shell", "wm", "density", str(density))
