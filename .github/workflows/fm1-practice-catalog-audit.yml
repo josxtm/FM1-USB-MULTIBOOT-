@@ -1,0 +1,57 @@
+name: FM1 Practice - catalog metadata audit
+on:
+  push:
+    branches: [docs/fm1-practice]
+    paths: ['.github/workflows/fm1-practice-catalog-audit.yml']
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/fm1-practice-catalog-audit.yml']
+permissions:
+  contents: read
+jobs:
+  catalog:
+    if: github.event_name != 'pull_request' || github.head_ref == 'docs/fm1-practice'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Retrieve public repository metadata in GraphQL batches
+        run: |
+          python3 - <<'PY'
+          import os,json,re,urllib.request,concurrent.futures
+          def request(url, token=False, data=None):
+              headers={"User-Agent":"FM1-Practice-catalog-audit","Accept":"application/vnd.github+json"}
+              if token: headers["Authorization"]="Bearer "+os.environ["GH_TOKEN"]
+              if data: headers["Content-Type"]="application/json"
+              with urllib.request.urlopen(urllib.request.Request(url,headers=headers,data=json.dumps(data).encode() if data else None),timeout=45) as r:
+                  return r.read()
+          catalog=request("https://raw.githubusercontent.com/2bbb/fm1-firmware-collection/main/CATALOG.md").decode()
+          repos=sorted(set(re.findall(r"\x60([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\x60",catalog)),key=str.lower)
+          # Query metadata in batches, not a thousand sequential requests.
+          def batch(group):
+              fields=[]
+              for i,full in enumerate(group):
+                  owner,name=full.split("/")
+                  fields.append(f"r{i}:repository(owner:{json.dumps(owner)},name:{json.dumps(name)}){{nameWithOwner description isArchived isFork repositoryTopics(first:10){{nodes{{topic{{name}}}}}} parent{{nameWithOwner}}}}")
+              try:
+                  reply=json.loads(request("https://api.github.com/graphql",True,{"query":"query { "+" ".join(fields)+" }"}))
+                  data=reply.get("data") or {}
+                  return [{"repository":full,"metadata":data.get(f"r{i}")} for i,full in enumerate(group)]
+              except Exception as e:
+                  return [{"repository":full,"metadata":None,"error":str(e)} for full in group]
+          groups=[repos[i:i+40] for i in range(0,len(repos),40)]
+          with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+              rows=[x for group in pool.map(batch,groups) for x in group]
+          os.makedirs("catalog-audit",exist_ok=True)
+          with open("catalog-audit/METADATA.json","w",encoding="utf8") as f:json.dump(rows,f,ensure_ascii=False,indent=2)
+          print("Catalog entries:",len(rows),"Metadata:",sum(bool(x["metadata"]) for x in rows),"Descriptions:",sum(bool((x["metadata"] or {}).get("description")) for x in rows))
+          if not any(x["metadata"] for x in rows):raise SystemExit(1)
+          PY
+      - name: Upload metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FM1-PRACTICE-catalog-metadata
+          path: catalog-audit/METADATA.json
+          retention-days: 7

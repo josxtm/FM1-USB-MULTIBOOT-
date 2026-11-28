@@ -1,0 +1,41 @@
+{
+  "version": "0.9.1",
+  "date": "2026-11-28",
+  "archive": {
+    "name": "FM1-PRACTICE-v0.9.1.zip",
+    "bytes": 34906088,
+    "sha256": "5f776f4c8b116def26ff056f0f1f5b517b940376cc3a0e36a529947f56300a8e",
+    "files": 249,
+    "previous_files_preserved": 233
+  },
+  "standalone": {
+    "name": "FM1-PRACTICE-UNICO-v0.9.1.html",
+    "bytes": 17604954,
+    "sha256": "df0e5594ec9b064f0e2ea033a8ddd719433ccc8586e6cc0be699b0ddcc955802",
+    "pages": 50,
+    "resources": 56
+  },
+  "build": {
+    "name": "BUILD-v0.9.1.py",
+    "sha256": "ecc08894c074c1529b893a532f8df3ad7c720c0aa47431d1ba74788b5b9d0cb7"
+  },
+  "validation": {
+    "name": "VALIDACION-v0.9.1.txt",
+    "sha256": "86dcdf4a46bac3eb77b788c9dc7e209241f60e781975b98dd3122dff6435c821",
+    "chromium_viewports": [
+      "1280x800",
+      "390x844"
+    ],
+    "modules": 9,
+    "network_requests": 0,
+    "javascript_errors": 0,
+    "android_physical": false,
+    "fm1_physical": false
+  },
+  "documentary": {
+    "sections": 800,
+    "verified": 257,
+    "pending": 15
+  },
+  "storage": "Manifest only; archive and third-party images not published in this public repository."
+}

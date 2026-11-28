@@ -1,0 +1,54 @@
+{
+  "version": "1.0.0-RC1",
+  "date": "2026-11-28",
+  "archive": {
+    "name": "FM1-PRACTICE-v1.0.0-RC1.zip",
+    "bytes": 40925595,
+    "sha256": "8300078c26f71ba43196d8b8fb361cf1219d6d6a329d4bc970559b290c98b8dd",
+    "files": 271,
+    "previous_files_preserved": 249
+  },
+  "standalone": {
+    "name": "FM1-PRACTICE-UNICO-v1.0.0-RC1.html",
+    "bytes": 8951933,
+    "sha256": "5761b84f476de8248ced42d8ea4187f8b5b63bca2f41a1d60c1a4f5ff9788364",
+    "pages": 51,
+    "resources": 57,
+    "shared_blocks": 47
+  },
+  "build": {
+    "name": "BUILD-v1.0.0-RC1.py",
+    "sha256": "9927a11d42ae2bffa098fe088eb0f544e49f32385b4187e89894bf656798e83c"
+  },
+  "validation": {
+    "name": "VALIDACION-v1.0.0-RC1.txt",
+    "sha256": "90d217cadee86f56fba9e954c88d1c288cdf18ffd5fa012c8cfabe2720d91d80",
+    "chromium_viewports": [
+      "1280x800",
+      "390x844"
+    ],
+    "modules": 10,
+    "network_requests_during_test": 0,
+    "javascript_errors_during_test": 0,
+    "android_physical": false,
+    "fm1_physical": false
+  },
+  "documentary": {
+    "sections": 800,
+    "verified": 263,
+    "pending": 9,
+    "physical_install_pending": 40
+  },
+  "catalog": {
+    "total": 1004,
+    "metadata_matched": 997,
+    "descriptions": 933,
+    "provisional_new_tags": 562,
+    "previous_categories": 47,
+    "insufficient": 395,
+    "github_parent": 285,
+    "run_id": 46184112596,
+    "artifact_id": 15279345953
+  },
+  "storage": "Only manifest, public metadata workflow and own tools in repository; full archive retained separately, no third-party media uploaded in clear."
+}
