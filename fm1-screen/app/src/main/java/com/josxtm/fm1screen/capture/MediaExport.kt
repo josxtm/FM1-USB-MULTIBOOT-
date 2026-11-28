@@ -26,7 +26,8 @@ internal fun Bitmap.writePng(output: OutputStream, scale: Int) {
 
 internal fun saveMedia(resolver: ContentResolver, name: String, mime: String, write: (OutputStream) -> Unit) {
     val image = mime.startsWith("image/")
-    val collection = if (image) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    val volume = MediaStore.VOLUME_EXTERNAL_PRIMARY
+    val collection = if (image) MediaStore.Images.Media.getContentUri(volume) else MediaStore.Video.Media.getContentUri(volume)
     val directory = if (image) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_MOVIES
     val item = resolver.insert(collection, ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -36,7 +37,9 @@ internal fun saveMedia(resolver: ContentResolver, name: String, mime: String, wr
     }) ?: throw IOException("Android no pudo crear el archivo")
     try {
         (resolver.openOutputStream(item) ?: throw IOException("Android no pudo abrir el archivo")).use(write)
-        resolver.update(item, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        check(resolver.update(item, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null) == 1) {
+            "Android no pudo publicar el archivo"
+        }
     } catch (failure: Exception) {
         resolver.delete(item, null, null)
         throw failure
