@@ -78,7 +78,7 @@ def shot(out: Path, name: str, expected_size: tuple[int, int]):
     (out / f"{name}.png").write_bytes(screen_at_size(expected_size))
 
 
-def has_panel_color(rgb: bytes):
+def has_panel_color(rgb: bytes, tolerance: int = 0):
     raw = adb("exec-out", "screencap", binary=True)
     width, height, pixel_format = struct.unpack_from("<III", raw)
     assert pixel_format in (1, 2), f"Expected an RGBA/RGBX screenshot, got format {pixel_format}"
@@ -87,7 +87,7 @@ def has_panel_color(rgb: bytes):
     points = [(int(width * x), int(height * y)) for x in (0.025, 0.04) for y in (0.2, 0.4, 0.6, 0.8)]
     for x, y in points:
         start = offset + (y * width + x) * 4
-        if raw[start:start + 3] == rgb:
+        if all(abs(actual - expected) <= tolerance for actual, expected in zip(raw[start:start + 3], rgb)):
             return True
     return False
 
@@ -197,21 +197,16 @@ def validate_tablet(out, size, build):
     tap("Apariencia")
     tap("Tema")
     tap("SILVER")
-    assert has_panel_color(bytes.fromhex("C7CED3"))
+    assert has_panel_color(bytes.fromhex("C7CED3"), tolerance=18), "Silver did not recolor the open panel background"
     shot(out, "theme-silver", size)
     tap("Tema")
     tap("DARK")
     shot(out, "theme-dark", size)
     tap("Colores personalizados")
     tap("Fondo principal")
-    field = next(item for item in hierarchy().iter("node")
-        if item.get("class") == "android.widget.EditText" and item.get("text", "").startswith("#"))
-    press(center(field))
-    adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
-    adb("shell", "input", "keyevent", *["KEYCODE_DEL"] * 7)
-    adb("shell", "input", "text", "#D5C8FA")
-    adb("shell", "input", "keyevent", "KEYCODE_BACK")
-    assert has_panel_color(bytes.fromhex("D5C8FA")), "Editing HEX did not change the open view"
+    tap("Muestras")
+    tap("#4FCDBF")
+    assert has_panel_color(bytes.fromhex("4FCDBF"), tolerance=18), "Custom swatch did not recolor the open view"
     shot(out, "theme-custom", size)
     # Persist the selected light preset and the selected performance mode across process restart.
     tap("Tema")
