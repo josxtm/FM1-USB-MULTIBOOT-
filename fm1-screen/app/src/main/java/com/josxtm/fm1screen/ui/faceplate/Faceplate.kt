@@ -8,8 +8,7 @@
 //   Controls  a big display, one knob row (MAIN | KN 1-4) and a deck: BUTTONS (6 x 2 + OCT) or KEYS
 //   Screen    the display alone
 // Sideways swipes on the background move between the views (page dots and the sheet's tiles do the same); in
-// Controls a sideways swipe on the knob row switches its set, and one in the deck switches the deck. The grabber (a
-// tap, or a swipe down) opens the pull-down sheet. The feed is polled every frame while a faceplate is on screen.
+// Controls a sideways swipe on the knob row switches its set, and one in the deck switches the deck.
 package com.josxtm.fm1screen.ui.faceplate
 
 import androidx.compose.animation.AnimatedVisibility
@@ -55,9 +54,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -71,14 +68,14 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * The faceplate filling its space. [kind]: null picks the layout from the size. [chrome]: the status row / grabber
+ * The faceplate filling its space. [kind]: null picks the layout from the size. [chrome]: the status row
  * and the page dots. [poll]: this one polls the feed (the theme editor's preview doesn't). [skin]: an image behind it
  * (SkinStore; iOS ca42bbc).
  */
 @Composable
 fun FaceplateView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: PanelChip, protector: ScreenProtector,
                   modifier: Modifier = Modifier, kind: FaceplateLayout.Kind? = null, chrome: Boolean = true,
-                  poll: Boolean = true, onWord: (() -> Unit)? = null, openSheet: () -> Unit = {}) {
+                  poll: Boolean = true, onWord: (() -> Unit)? = null) {
     if (poll) {
         DisposableEffect(feed) {
             onDispose { feed.releaseAll() }
@@ -92,9 +89,9 @@ fun FaceplateView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: PanelChi
         Box(Modifier.fillMaxSize().swipe { ui.move(it) })
         Crossfade(ui.page, animationSpec = tween(250), label = "page") { page ->
             when (page) {
-                FaceplateUi.Page.FULL -> FullView(feed, ui, theme, chip, protector, k, w, h, chrome, onWord, openSheet)
-                FaceplateUi.Page.CONTROLS -> ControlsView(feed, ui, theme, chip, w, h, chrome, onWord, openSheet)
-                FaceplateUi.Page.SCREEN -> ScreenOnlyView(feed, ui, theme, chip, w, h, chrome, openSheet, onWord)
+                FaceplateUi.Page.FULL -> FullView(feed, ui, theme, chip, protector, k, w, h, chrome, onWord)
+                FaceplateUi.Page.CONTROLS -> ControlsView(feed, ui, theme, chip, w, h, chrome, onWord)
+                FaceplateUi.Page.SCREEN -> ScreenOnlyView(feed, ui, theme, chip, w, h, chrome, onWord)
             }
         }
         AnimatedVisibility(ui.displayAlone, enter = fadeIn(tween(250)) + scaleIn(tween(250), 0.92f),
@@ -126,13 +123,15 @@ fun Modifier.swipe(go: (Int) -> Unit): Modifier = pointerInput(Unit) {
 
 @Composable
 private fun StatusRow(theme: Theme, chip: PanelChip, spec: FaceplateLayout.Status, m: FaceplateLayout.Mapper,
-                      word: String, onWord: (() -> Unit)?, openSheet: () -> Unit) {
+                      word: String, onWord: (() -> Unit)?, availableWidth: Float) {
     val y = m.y(spec.y)
     val h = m.len(32f)
     val s = m.s
     val rw = (m.ref.w - 2 * spec.margin) * m.sx
     val x = m.ox + m.ref.w * m.sx / 2 - rw / 2
-    Box(Modifier.place(PRect(x, y, rw, h))) {
+    // The only new top-right target belongs to the activity, outside this animated layout.
+    val statusWidth = minOf(rw, availableWidth - x - 52f).coerceAtLeast(1f)
+    Box(Modifier.place(PRect(x, y, statusWidth, h))) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Chip(theme, chip, spec.chipHeight * s, spec.chipPad * s, spec.chipFont * s)
             Spacer(Modifier.weight(1f))
@@ -146,7 +145,6 @@ private fun StatusRow(theme: Theme, chip: PanelChip, spec: FaceplateLayout.Statu
                 autoSize = TextAutoSize.StepBased(minFontSize = dsp(spec.wordFont * s * 0.6f), maxFontSize = dsp(spec.wordFont * s)),
             )
         }
-        Grabber(theme, spec.grabberWidth * s, spec.barWidth * s, 44f, openSheet, Modifier.align(Alignment.Center))
     }
 }
 
@@ -163,35 +161,6 @@ private fun Chip(theme: Theme, chip: PanelChip, height: Float, pad: Float, font:
         Box(Modifier.size(7.dp).clip(CircleShape).background(dot.copy(alpha = if (chip == PanelChip.SEARCHING) 0.5f else 1f)))
         BasicText(chip.text, style = TextStyle(fontFamily = RfmFonts.ui, fontWeight = FontWeight.SemiBold,
                                                fontSize = dsp(font), color = theme.label.color), maxLines = 1)
-    }
-}
-
-/** the pull-down handle: a tap or a swipe down opens the sheet (88 x 44 hit area at least) */
-@Composable
-fun Grabber(theme: Theme, width: Float, bar: Float, height: Float, open: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
-        modifier.size(max(width, 88f).dp, max(height, 44f).dp).testTag("grabber")
-            .semantics { contentDescription = "Open controls, or swipe down"; role = Role.Button }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    down.consume()
-                    var dy = 0f
-                    var moved = false
-                    while (true) {
-                        val ev = awaitPointerEvent()
-                        val c = ev.changes.firstOrNull { it.id == down.id } ?: break
-                        c.consume()
-                        dy = (c.position.y - down.position.y) / density
-                        if (abs(c.position.x - down.position.x) / density > 8 || abs(dy) > 8) moved = true
-                        if (!c.pressed) break
-                    }
-                    if (!moved || dy > 20) open()
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(Modifier.size(bar.dp, 5.dp).clip(RoundedCornerShape(50)).background(theme.label.color.copy(alpha = 0.55f)))
     }
 }
 
@@ -216,22 +185,16 @@ private fun PageDots(theme: Theme, ui: FaceplateUi, scale: Float, cx: Float, cy:
 
 @Composable
 private fun FullView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: PanelChip, protector: ScreenProtector,
-                     kind: FaceplateLayout.Kind, w: Float, h: Float, chrome: Boolean, onWord: (() -> Unit)?,
-                     openSheet: () -> Unit) {
+                     kind: FaceplateLayout.Kind, w: Float, h: Float, chrome: Boolean, onWord: (() -> Unit)?) {
     val L = FaceplateLayout.full(kind)
     val compactNavigation = chrome && kind == FaceplateLayout.Kind.PHONE_LANDSCAPE
     val panelHeight = if (compactNavigation) (h - 44f).coerceAtLeast(1f) else h
     val m = FaceplateLayout.Mapper(kind.ref, PSize(w, panelHeight))
     val s = m.s
     val status = L.status
-    val grabber = L.grabber
     Box(Modifier.fillMaxSize()) {
         if (chrome && status != null) {
-            StatusRow(theme, chip, status, m, ui.word, onWord, openSheet)
-        } else if (chrome && grabber != null) {
-            val gr = grabber
-            Grabber(theme, gr.w * s, 40 * s, gr.h * s, openSheet,
-                    Modifier.centredAt(w / 2, max(22f, m.y(gr.midY)), max(gr.w * s, 88f), max(gr.h * s, 44f)))
+            StatusRow(theme, chip, status, m, ui.word, onWord, w)
         }
         if (compactNavigation) {
             Box(Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 4.dp)) {
@@ -303,21 +266,16 @@ private fun KnRow(m: FaceplateLayout.Mapper, r: FaceplateLayout.KnRow.Row, theme
 
 @Composable
 private fun ControlsView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: PanelChip, w: Float, h: Float,
-                         chrome: Boolean, onWord: (() -> Unit)?, openSheet: () -> Unit) {
+                         chrome: Boolean, onWord: (() -> Unit)?) {
     val landscape = w > h
     val L = FaceplateLayout.controls(landscape)
     val m = FaceplateLayout.Mapper(L.ref, PSize(w, h), uniform = w > 600)
     val s = m.s
     fun toggleSet() { ui.knobSet = if (ui.knobSet == FaceplateUi.KnobSet.MAIN) FaceplateUi.KnobSet.KN else FaceplateUi.KnobSet.MAIN }
     val status = L.status
-    val grabber = L.grabber
     Box(Modifier.fillMaxSize()) {
         if (chrome && status != null) {
-            StatusRow(theme, chip, status, m, ui.word, onWord, openSheet)
-        } else if (chrome && grabber != null) {
-            val gr = grabber
-            Grabber(theme, gr.w * s, 40 * s, gr.h * s, openSheet,
-                    Modifier.centredAt(w / 2, max(22f, m.y(gr.midY)), max(gr.w * s, 88f), max(gr.h * s, 44f)))
+            StatusRow(theme, chip, status, m, ui.word, onWord, w)
         }
         val ds = L.displaySize * s
         ProtectedDisplay(feed, theme, ds, ui,
@@ -404,7 +362,7 @@ private fun DeckSwitch(theme: Theme, ui: FaceplateUi, scale: Float, modifier: Mo
 
 @Composable
 private fun ScreenOnlyView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: PanelChip, w: Float, h: Float,
-                           chrome: Boolean, openSheet: () -> Unit, onWord: (() -> Unit)? = null) {
+                           chrome: Boolean, onWord: (() -> Unit)? = null) {
     val portrait = h >= w
     val ref = if (portrait) FaceplateLayout.Kind.PHONE_PORTRAIT.ref else FaceplateLayout.Kind.PHONE_LANDSCAPE.ref
     val m = FaceplateLayout.Mapper(ref, PSize(w, h), uniform = true)
@@ -414,12 +372,10 @@ private fun ScreenOnlyView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip:
     Box(Modifier.fillMaxSize()) {
         if (chrome) {
             if (portrait && w < 600) {
-                StatusRow(theme, chip, FaceplateLayout.phoneStatus, m, ui.word, onWord, openSheet)   // (F, iOS 836a983: the firmware's name)
+                StatusRow(theme, chip, FaceplateLayout.phoneStatus, m, ui.word, onWord, w)   // (F, iOS 836a983: the firmware's name)
             } else if (portrait) {
                 StatusRow(theme, chip, FaceplateLayout.padStatus,
-                          FaceplateLayout.Mapper(FaceplateLayout.Kind.PAD_PORTRAIT.ref, PSize(w, h)), ui.word, onWord, openSheet)
-            } else {
-                Grabber(theme, 88f, 40f, 20f, openSheet, Modifier.centredAt(w / 2, 22f, 88f, 44f))
+                          FaceplateLayout.Mapper(FaceplateLayout.Kind.PAD_PORTRAIT.ref, PSize(w, h)), ui.word, onWord, w)
             }
         }
         ProtectedDisplay(feed, theme, side, ui, Modifier.centredAt(w / 2, h / 2, side, side))

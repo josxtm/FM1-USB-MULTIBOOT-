@@ -18,7 +18,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
@@ -26,7 +29,11 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -59,6 +66,7 @@ import com.josxtm.fm1screen.transport.MirrorStats
 import com.josxtm.fm1screen.transport.Target
 import com.josxtm.fm1screen.transport.TransportListener
 import com.josxtm.fm1screen.ui.Settings
+import com.josxtm.fm1screen.ui.SettingsGear
 import com.josxtm.fm1screen.ui.faceplate.FaceplateUi
 import com.josxtm.fm1screen.ui.faceplate.FaceplateView
 import com.josxtm.fm1screen.ui.faceplate.PanelChip
@@ -223,12 +231,25 @@ class MainActivity : ComponentActivity(), TransportListener {
                     connected -> PanelChip.IN_USE
                     else -> PanelChip.SEARCHING
                 }
-                val inset = if (faceplate.displayAlone) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
-                FaceplateView(feed, faceplate, active, chip, protector, modifier = inset,
-                    openSheet = { faceplate.sheetOpen = true })
-                if (faceplate.sheetOpen) Settings(this)
+                val safeArea = Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
+                Box(Modifier.fillMaxSize()) {
+                    val inset = if (faceplate.displayAlone) Modifier else safeArea
+                    val panelSemantics = if (faceplate.sheetOpen) Modifier.semantics { hideFromAccessibility() } else Modifier
+                    FaceplateView(feed, faceplate, active, chip, protector, modifier = inset.then(panelSemantics))
+                    Settings(this@MainActivity, active, faceplate.sheetOpen) {
+                        faceplate.sheetOpen = false
+                        clearMessage()
+                    }
+                    if (!faceplate.displayAlone && !faceplate.sheetOpen) {
+                        Box(Modifier.align(Alignment.TopEnd).then(safeArea).padding(end = 4.dp)) {
+                            SettingsGear(active) { faceplate.sheetOpen = true }
+                        }
+                    }
+                }
                 androidx.compose.runtime.LaunchedEffect(faceplate.displayAlone) { bars(faceplate.displayAlone) }
-                androidx.activity.compose.BackHandler(faceplate.displayAlone) { faceplate.displayAlone = false }
+                androidx.activity.compose.BackHandler(faceplate.displayAlone && !faceplate.sheetOpen) {
+                    faceplate.displayAlone = false
+                }
             }
         }
         main.postDelayed(metrics, 1000)

@@ -76,8 +76,8 @@ jobs:
         env:
           FM1_BUILD: ${{ steps.version.outputs.build }}
           FM1_LABEL: ${{ steps.version.outputs.label }}
-          PREVIOUS_BUILD: '017'
-          PREVIOUS_CERTIFICATE: ffec1cc65df4a283fecb7e68239bd1a59083829f1127fadbb8b37f0086c1751f
+          PREVIOUS_BUILD: '018'
+          PREVIOUS_CERTIFICATE: 6e69705d1869f1e1bc699ff14f8c6b139b4414e26ddd1d9f3ef10673e269312b
           FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
           FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
           FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
@@ -159,6 +159,18 @@ jobs:
       - name: Verify the published APK digest
         working-directory: fm1-screen/distribution
         run: sha256sum -c *.apk.sha256
+      - uses: actions/download-artifact@v4
+        if: needs.apk.outputs.build == '19'
+        with:
+          name: FM1-SCREEN-v1.0-comp.018
+          path: fm1-screen/distribution/baseline
+          github-token: ${{ github.token }}
+          run-id: '46140367587'
+      - name: Verify the reference APK
+        if: needs.apk.outputs.build == '19'
+        working-directory: fm1-screen/distribution/baseline
+        run: |
+          printf '%s  %s\n' 49a56204f41e0547cca54f2ed802dc225ee0c7da08ceed25c4542d6ffa6a3ac1 FM1-SCREEN-v1.0-comp.018.apk | sha256sum -c -
       - name: Enable hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
@@ -170,18 +182,21 @@ jobs:
           api-level: 36
           arch: x86_64
           target: google_apis
-          disable-animations: true
+          disable-animations: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: >-
             python3 fm1-screen/tests/android_smoke.py
             "fm1-screen/distribution/FM1-SCREEN-v1.0-comp.${{ needs.apk.outputs.label }}.apk"
             fm1-screen/distribution/screenshots
             "${{ matrix.device }}" "${{ needs.apk.outputs.build }}"
+            ${{ needs.apk.outputs.build == '19' && 'fm1-screen/distribution/baseline/FM1-SCREEN-v1.0-comp.018.apk' || '' }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: FM1-SCREEN-GUI-comp.${{ needs.apk.outputs.label }}-${{ matrix.device }}
-          path: fm1-screen/distribution/screenshots/*.png
+          path: |
+            fm1-screen/distribution/screenshots/*.png
+            fm1-screen/distribution/screenshots/validation.json
           if-no-files-found: warn
           retention-days: 30
       - uses: actions/upload-artifact@v4

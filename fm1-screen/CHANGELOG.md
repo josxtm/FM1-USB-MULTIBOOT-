@@ -1,5 +1,12 @@
 # Cambios de FM1 SCREEN
 
+## v1.0 · compilación 019
+
+- Acceso por un engranaje único fuera de la navegación por gestos.
+- Panel derecho adaptable con siete categorías, selectores compactos y superficies que siguen el tema activo.
+- Apariencia conserva el editor de 15 roles, la importación y exportación y la gestión de temas. Diagnóstico conserva métricas, exportación y consola en secciones desplegables.
+- La suite de emuladores comprueba posición del LCD, instalación limpia, orientación y navegación. Incluye 100 ciclos en tablet y usa la APK 018 como referencia.
+
 ## v1.0 · compilación 018
 
 - Perfiles ULTRA LOW LATENCY, BALANCED y ECO persistentes en Android.
