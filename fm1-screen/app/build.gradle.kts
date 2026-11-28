@@ -10,7 +10,6 @@ val signingPath = providers.environmentVariable("FM1_SIGNING_PATH").orNull
 android {
     namespace = "com.josxtm.fm1screen"
     compileSdk = 35
-    testBuildType = "release"
     sourceSets["main"].assets.srcDir(rootProject.file("assets"))
     val approvedIcon = file("src/officialIcon/AndroidManifest.xml")
     if (approvedIcon.isFile) {
@@ -22,7 +21,6 @@ android {
     defaultConfig {
         applicationId = "com.josxtm.fm1screen"
         minSdk = 29
-        testInstrumentationRunner = "com.josxtm.fm1screen.UpdateInstrumentation"
         targetSdk = 35
         versionCode = buildNumber.get()
         versionName = "1.0"
