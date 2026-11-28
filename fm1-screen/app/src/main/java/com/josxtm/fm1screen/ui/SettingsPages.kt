@@ -45,7 +45,7 @@ internal fun ConnectionSettings(app: MainActivity) {
     }
     if (app.link == LinkKind.BLE) Action("Buscar BLE MIDI", Glyph.SEARCH, click = app::scanBluetooth)
     val blocked = app.requestBlocked
-    Note(app.profile?.let { "${it.name} · ${it.version}" } ?: "Firmware sin identificar")
+    Note(app.profile?.let { "Perfil: ${it.name} · ${it.version}" } ?: "Firmware sin identificar")
     Note(if (app.streaming) "Duplicación solicitada" else "Duplicación desactivada")
     Disclosure("Conexión avanzada") {
         Toggle("Solicitar duplicación", app.streaming, app.streaming || blocked == null, app::setWatching)
@@ -58,6 +58,7 @@ internal fun ConnectionSettings(app: MainActivity) {
 @Composable
 internal fun FirmwareSettings(app: MainActivity) {
     val profile = app.profile
+    Disclosure("Selección manual y protocolo") {
     ChoiceMenu("Selección de firmware", if (app.autoProfile) "Automática" else profile?.name ?: "Sin perfil",
         listOf<FirmwareProfile?>(null) + app.profiles, { it?.name ?: "Automática" }, choose = app::selectProfile)
     if (profile != null) Note("${profile.name} · ${profile.version}")
@@ -65,6 +66,7 @@ internal fun FirmwareSettings(app: MainActivity) {
     Row(Modifier.fillMaxWidth()) {
         Action("Importar perfil", Glyph.IMPORT, Modifier.weight(1f), click = app::importProfile)
         Action("Exportar perfil", Glyph.EXPORT, Modifier.weight(1f), enabled = profile != null, click = app::exportProfile)
+    }
     }
     if (profile != null) Disclosure("Detalles del perfil") {
         Note(profile.evidence)
