@@ -45,8 +45,12 @@ internal fun ConnectionSettings(app: MainActivity) {
     }
     if (app.link == LinkKind.BLE) Action("Buscar BLE MIDI", Glyph.SEARCH, click = app::scanBluetooth)
     val blocked = app.requestBlocked
-    Toggle("Solicitar duplicación", app.streaming, app.streaming || blocked == null, app::setWatching)
-    Toggle("Solo visualización", app.viewOnly, !app.viewOnly || app.canAuthorizeControl, app::changeViewOnly)
+    Note(app.profile?.let { "${it.name} · ${it.version}" } ?: "Firmware sin identificar")
+    Note(if (app.streaming) "Duplicación solicitada" else "Duplicación desactivada")
+    Disclosure("Conexión avanzada") {
+        Toggle("Solicitar duplicación", app.streaming, app.streaming || blocked == null, app::setWatching)
+        Toggle("Solo visualización", app.viewOnly, !app.viewOnly || app.canAuthorizeControl, app::changeViewOnly)
+    }
     Action("Resincronizar pantalla", Glyph.REFRESH, enabled = app.streaming && blocked == null, click = app::refreshPicture)
     if (blocked != null && (app.connected || app.demo)) Note(blocked)
 }
