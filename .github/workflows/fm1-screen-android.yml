@@ -140,7 +140,7 @@ jobs:
           retention-days: 30
 
   visual:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[full-ci]'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.message || '', '[full-ci]') || contains(github.event.head_commit.message || '', '[visual-ci]')))
     needs: apk
     strategy:
       fail-fast: false

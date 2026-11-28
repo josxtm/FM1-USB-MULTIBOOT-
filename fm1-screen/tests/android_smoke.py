@@ -5,6 +5,7 @@ import io
 import json
 import math
 import re
+import shlex
 import subprocess
 import struct
 import sys
@@ -249,38 +250,58 @@ def expect_selected(label):
         for item in tree.iter("node")), f"{label} is not selected"
 
 
+def saved_media(out, destination, directory, matches, valid):
+    folder = f"/sdcard/{directory}/FM1 SCREEN"
+    listing = f"ls {shlex.quote(folder)} 2>/dev/null || true"
+    owner_listing = f"run-as {PACKAGE} sh -c {shlex.quote(listing)}"
+    temporary = out / "media-in-progress"
+    deadline = time.monotonic() + 24
+    while time.monotonic() < deadline:
+        names = set(adb("shell", listing).splitlines())
+        if not any(matches(name) for name in names):
+            owner = subprocess.run(["adb", "shell", owner_listing], capture_output=True, text=True, timeout=12)
+            names.update(owner.stdout.splitlines())
+        candidates = sorted(name for name in names if matches(name))
+        if candidates:
+            source = f"{folder}/{candidates[-1]}"
+            local = subprocess.run(["adb", "pull", source, str(temporary)], capture_output=True, timeout=20)
+            if local.returncode == 0 and temporary.exists():
+                content = temporary.read_bytes()
+            else:
+                inner = f"cat {shlex.quote(source)} 2>/dev/null || true"
+                content = subprocess.run(["adb", "exec-out", f"run-as {PACKAGE} sh -c {shlex.quote(inner)}"],
+                    capture_output=True, timeout=15).stdout
+            if valid(content):
+                (out / destination).write_bytes(content)
+                temporary.unlink(missing_ok=True)
+                return
+        time.sleep(.3)
+    diagnostics = out / "diagnostics"
+    diagnostics.mkdir(exist_ok=True)
+    (diagnostics / "media-query.txt").write_text(adb("shell",
+        "content query --uri content://media/external_primary/images/media "
+        "--projection _id:_display_name:relative_path:is_pending; "
+        "content query --uri content://media/external_primary/video/media "
+        "--projection _id:_display_name:relative_path:is_pending; " + listing))
+    (diagnostics / "logcat.txt").write_text(adb("logcat", "-d", "-t", "1000"))
+    tap(GEAR)
+    raise AssertionError(f"The saved file {destination} did not appear")
+
+
 def test_media(out):
+    def png(content):
+        return content.startswith(b"\x89PNG\r\n\x1a\n") and len(content) > 512
     tap("Capturas")
     tap("Guardar Interfaz completa")
-    for _ in range(12):
-        items = adb("shell", "ls '/sdcard/Pictures/FM1 SCREEN' 2>/dev/null || true").splitlines()
-        items = [name for name in items if "-interfaz-" in name and name.endswith(".png")]
-        if items:
-            png = adb("exec-out", "cat", "'/sdcard/Pictures/FM1 SCREEN/" + items[-1] + "'", binary=True)
-            if png.startswith(b"\x89PNG\r\n\x1a\n"):
-                (out / "capture-interface.png").write_bytes(png)
-                break
-        time.sleep(.3)
-    else:
-        raise AssertionError("The MediaStore interface capture did not complete")
+    saved_media(out, "capture-interface.png", "Pictures",
+        lambda x: "-interfaz-" in x and x.endswith(".png"), png)
     if find(hierarchy(), "DEMO") is not None:
         for option, suffix, size in (("LCD 240 × 240", "-lcd-", 240), ("LCD ampliado", "-lcd-x4-", 960)):
             tap("Capturas")
             tap(f"Guardar {option}")
-            for _ in range(15):
-                names = adb("shell", "ls '/sdcard/Pictures/FM1 SCREEN' 2>/dev/null || true").splitlines()
-                matches = [name for name in names if suffix in name and name.endswith(".png") and
-                    (size != 240 or "-lcd-x4-" not in name)]
-                if matches:
-                    png = adb("exec-out", "cat", "'/sdcard/Pictures/FM1 SCREEN/" + matches[-1] + "'", binary=True)
-                    if png.startswith(b"\x89PNG\r\n\x1a\n"):
-                        assert struct.unpack_from(">II", png, 16) == (size, size)
-                        (out / f"capture-lcd-{size}.png").write_bytes(png)
-                        break
-                time.sleep(.3)
-            else:
-                raise AssertionError(f"Missing LCD PNG at {size} × {size}")
-
+            saved_media(out, f"capture-lcd-{size}.png", "Pictures",
+                lambda x: suffix in x and x.endswith(".png") and (size != 240 or "-lcd-x4-" not in x),
+                lambda b: png(b) and struct.unpack_from(">II", b, 16) == (size, size))
         tap(GEAR)
         open_category("Vista")
         tap("Capturas y grabación")
@@ -289,20 +310,14 @@ def test_media(out):
         time.sleep(.7)
         reveal_and_tap("Detener MP4")
         reveal_and_tap("Guardar MP4")
-        for _ in range(15):
-            names = adb("shell", "ls '/sdcard/Movies/FM1 SCREEN' 2>/dev/null || true").splitlines()
-            items = [name for name in names if name.startswith("FM1-SCREEN-DEMO-") and name.endswith(".mp4")]
-            if items:
-                mp4 = adb("exec-out", "cat", "'/sdcard/Movies/FM1 SCREEN/" + items[-1] + "'", binary=True)
-                if b"moov" in mp4:
-                    tracks = [match.start() + 12 for match in re.finditer(b"hdlr", mp4)]
-                    kinds = [mp4[offset:offset + 4] for offset in tracks]
-                    assert b"vide" in kinds and b"soun" not in kinds, "The recording needs one video stream and no audio"
-                    (out / "capture-lcd.mp4").write_bytes(mp4)
-                    break
-            time.sleep(.3)
-        else:
-            raise AssertionError("The MediaStore MP4 did not complete")
+        def video_only(mp4):
+            if b"moov" not in mp4:
+                return False
+            kinds = [mp4[m.start() + 12:m.start() + 16] for m in re.finditer(b"hdlr", mp4)]
+            assert b"vide" in kinds and b"soun" not in kinds, "The recording needs video and no audio"
+            return True
+        saved_media(out, "capture-lcd.mp4", "Movies",
+            lambda x: x.startswith("FM1-SCREEN-DEMO-") and x.endswith(".mp4"), video_only)
         tap(CLOSE)
 
 
