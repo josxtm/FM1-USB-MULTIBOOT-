@@ -14,8 +14,6 @@ La app funciona sin Internet desde Android 10. Guarda las preferencias, los perf
 
 - [GUI RemoteFM1](docs/GUI-REMOTE-FM1.md)
 - [Arquitectura](ARCHITECTURE.md)
-- [Hoja de ruta multiplataforma](MULTIPLATFORM-ROADMAP.md)
-- [Viabilidad Raspberry Pi ARMv6](RPI-ARMV6-FEASIBILITY.md)
 - [Historial de cambios](CHANGELOG.md)
 - [Protocolos](PROTOCOLS.md)
 - [Compatibilidad de firmwares](FIRMWARE-COMPATIBILITY.md)

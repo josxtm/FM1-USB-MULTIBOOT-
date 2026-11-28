@@ -47,7 +47,7 @@ jobs:
               json.loads(file.read_text())
           PY
       - name: Unit tests and lint
-        run: ./gradlew --no-daemon :core:jvmTest :app:testDebugUnitTest :app:lintDebug
+        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug
       - name: Build and verify APK
         if: github.event_name != 'pull_request'
         env:
@@ -103,7 +103,7 @@ jobs:
         with:
           name: FM1-SCREEN-tests-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
-            fm1-screen/core/build/test-results/jvmTest/*.xml
+            fm1-screen/core/build/test-results/test/*.xml
             fm1-screen/app/build/test-results/testDebugUnitTest/*.xml
             fm1-screen/app/build/reports/lint-results-debug.html
       - uses: actions/upload-artifact@v4

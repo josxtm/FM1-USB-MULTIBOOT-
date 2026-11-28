@@ -1,13 +1,11 @@
 plugins {
-    id("org.jetbrains.kotlin.multiplatform")
+    id("org.jetbrains.kotlin.jvm")
 }
 
 kotlin {
-    jvm()
     jvmToolchain(17)
-    sourceSets {
-        jvmTest.dependencies {
-            implementation("junit:junit:4.13.2")
-        }
-    }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
 }

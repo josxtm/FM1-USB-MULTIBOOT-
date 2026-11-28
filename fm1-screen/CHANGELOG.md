@@ -2,6 +2,7 @@
 
 ## v1.0 · compilación 14
 
+- Entrega exclusivamente Android. La biblioteca interna usa Kotlin/JVM y conserva los módulos de comunicación, protocolos, estado y GUI existentes. Se retira el plugin Kotlin Multiplatform y la planificación de otros destinos de la documentación activa.
 - La prueba Android 16 para teléfono desplaza el panel de ajustes hasta el interruptor de demostración. La primera ejecución de la compilación 13 pasó en tablet y se detuvo en móvil antes de activar DEMO. La compilación 14 conserva la funcionalidad y los perfiles de la 13 con un versionCode nuevo.
 
 ## v1.0 · compilación 13

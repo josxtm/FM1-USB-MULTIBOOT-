@@ -1,8 +1,8 @@
-# Arquitectura de FM1 SCREEN
+# Arquitectura Android de FM1 SCREEN
 
 | Capa | Código | Responsabilidad |
 |---|---|---|
-| Core | `:core/src/commonMain` | SysEx, decodificación, framebuffer RGB565 de 240 × 240, sesión, comandos, tipos de perfil, roles de color y geometría. |
+| Núcleo Android | `:core/src/main` | Biblioteca Kotlin/JVM interna. SysEx, decodificación, framebuffer RGB565 de 240 × 240, sesión, comandos, modelos de perfil, roles de color y geometría. |
 | Transport | `:app/transport` | Enumera USB Host, abre MIDI USB o BLE por Android MIDI, selecciona un puerto, gestiona permisos y reconexión. Proporciona reloj monotónico, envío de bytes y ticks serializados al núcleo. |
 | GUI | `:app/ui` | Compose dibuja el panel adaptado de RemoteFM1Android. Los gestos llaman a `PanelOutput` y la interfaz recibe estados mediante `MirrorListener`. |
 | Assets | `assets/` y `:app/src/main/res` | Perfiles y temas JSON en un directorio común. Fuentes OFL y recursos Android en la app. |
@@ -12,4 +12,4 @@ La sesión recibe eventos en un hilo serial. Valida regiones y publica instantá
 
 Los perfiles declaran nombres y metadatos. El adaptador Android valida el JSON y el núcleo valida el modelo. Las opciones de control dependen de la identidad y de la negociación, con autorización expresa. El estado de cada control distingue telemetría del FM-1, interacción local provisional, valor inferido y valor desconocido. Los detentes inferidos de un encoder son relativos. Un potenciómetro informa un valor absoluto únicamente cuando el protocolo aporta telemetría.
 
-El núcleo tiene destino JVM y usa APIs de Kotlin común. Se verifican sus contratos en la JVM y desde Android. Los adaptadores de escritorio y de Apple figuran en la hoja de ruta. [ADR de arquitectura](docs/adr/0001-portable-core.md) · [Hoja de ruta](MULTIPLATFORM-ROADMAP.md).
+La biblioteca interna usa el plugin Kotlin/JVM para ejecutar pruebas unitarias sin un emulador ni acceso al sistema MIDI. La app se compila con Kotlin y Jetpack Compose para móvil y tablet Android.
