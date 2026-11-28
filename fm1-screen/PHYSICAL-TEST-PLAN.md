@@ -1,6 +1,6 @@
 # Validación física en español
 
-**Preparación**. Instala la APK del artefacto de Actions. Confirma `FM1 SCREEN v1.0 · comp. 016` en el panel de ajustes. Si la compilación instalada lleva otro certificado, exporta temas y perfiles antes de desinstalarla, instala la nueva e importa esos archivos. Usa un cable USB-C de datos con la tablet como host. Arranca el instrumento de forma normal con su firmware instalado. Desactiva DEMO y deja activado **Solo visualización**.
+**Preparación**. Instala la APK del artefacto de Actions. Confirma `FM1 SCREEN v1.0 · comp. 017` en el panel de ajustes. Si la compilación instalada lleva otro certificado, exporta temas y perfiles antes de desinstalarla, instala la nueva e importa esos archivos. Usa un cable USB-C de datos con la tablet como host. Arranca el instrumento de forma normal con su firmware instalado. Desactiva DEMO y deja activado **Solo visualización**.
 
 1. Conecta el FM-1 y concede permisos si Android los solicita. Abre **Conexión**, selecciona su puerto y anota el nombre que Android enumera. Escribe el firmware y la versión que indica el instrumento. Un perfil sugerido por el USB no certifica la versión.
 2. Confirma que el audio sale del FM-1 por su salida habitual. Haz una prueba tocando pads físicos con el volumen de la tablet silenciado. Conserva el audio del instrumento durante las pruebas siguientes.
@@ -11,6 +11,14 @@
 7. Desconecta y reconecta el USB. Verifica recuperación de la imagen, panel sin notas sostenidas y control remoto desautorizado. Si alguna nota queda sostenida tras quitar el cable, libérala desde el FM-1 y anota el gesto.
 8. Mantén diez minutos de sesión alternando actividad y reposo. Anota errores de imagen, latencia visible, sonido y reconexiones. Para latencia extremo a extremo, filma el LCD físico y la tablet simultáneamente a una frecuencia conocida y cuenta los cuadros entre cambios equivalentes.
 9. En **Diagnóstico**, exporta los registros a un archivo de texto con el selector Android. Incluye uno antes del sondeo, otro después y otro al final si hubo incidencias. Adjunta versión, tiempo transcurrido, protocolo, tres capturas y resultado del audio. Opcionalmente exporta un PNG o un MP4 del LCD desde **Vista**.
+
+## Validación prioritaria de SKIFF Atlatl v1.2.5
+
+1. Deja abierto un solo visor MIDI en Android. Conecta el FM-1 ya arrancado en Atlatl. En **Conexión**, selecciona **Felucca** si no se eligió automáticamente. Comprueba `1209:0001`. Si el monitor muestra RX abierto y TX cerrado con otro visor cerrado, toca **Reabrir puertos MIDI**.
+2. Selecciona **Auto** o **Big Screen V1**. Mantén **Solo visualización**. Exporta el diagnóstico antes de pedir el LCD y activa **Solicitar duplicación**. Debe aparecer el TX `F0 7D 46 53 01 F7`, seguido de renovaciones `… 00 F7`. Conserva por separado el tiempo del primer TX, la primera respuesta, el primer bloque y la primera cobertura completa.
+3. Comprueba si **Diagnóstico** muestra SKIFF Atlatl v1.2.5 y su identificador de paquete. Mueve una página del FM-1 y comprueba que cambia en la tablet. Deja luego el LCD estático durante 15 s y confirma que se conserva la imagen. Toca y detén el secuenciador, manteniendo el audio por el FM-1.
+4. Si se congela, guarda el registro antes de tocar **Resincronizar pantalla**. Revisa edad de bloques y de respuestas, TX, RX, reintentos y bytes descartados. Toca **Resincronizar pantalla** una vez y registra si regresan los bloques. Comprueba después una desconexión, una reconexión y diez minutos de funcionamiento. Al compartir el diagnóstico, incluye cable, alimentación y versión exacta del firmware.
+5. Con HYP-1, comprueba los puertos y exporta el diagnóstico de escucha. El modo del emulador HYP-1 silencia el instrumento, así que la prueba mantiene su modo normal.
 
 | Edición ya instalada | Configuración y resultado que se debe comprobar |
 |---|---|

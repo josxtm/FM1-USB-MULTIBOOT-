@@ -1,5 +1,11 @@
 # Cambios de FM1 SCREEN
 
+## v1.0 · compilación 017
+
+- Big Screen V1 para USB Felucca con inicio explícito, identificación SKIFF Atlatl y recuperación con reintentos acotados.
+- Monitor MIDI con RX/TX, tiempos, filtros y exportación o uso compartido desde Android.
+- Recepción acotada, pruebas de F8 intercalado y ensayo continuo de diez minutos.
+
 ## v1.0 · compilación 16
 
 - FULL CONTROL en teléfono horizontal reserva una franja propia para los indicadores de navegación. La prueba Android comprueba que su zona táctil quede fuera de los pads.

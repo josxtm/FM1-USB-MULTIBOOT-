@@ -27,23 +27,19 @@ import java.util.UUID
 
 enum class LinkKind(val title: String) { USB("USB-C"), BLE("Bluetooth LE MIDI") }
 
-data class Target(val id: String, val name: String, val recognized: Boolean, val details: String = "")
-
-object DeviceIdentity {
-    private val fm1 = Regex("""^FM[- ]?1(?:_[0-9A-F]{2,12}|[ ._-]+MIDI)?$""", RegexOption.IGNORE_CASE)
-    private val verifiedProducts = setOf(
-        "FRASIL FM-1", "FM1 COMMUNITY", "M-VAVE FM-1", "FM-1 BIG SCREEN", "LOOM-8 FM-1", "POLLY FM-1",
-    )
-    fun allowsRequests(name: String): Boolean =
-        !isLoader(name) && (fm1.matches(name.trim()) || name.trim().uppercase(java.util.Locale.ROOT) in verifiedProducts)
-    fun isLoader(name: String): Boolean = listOf("update", "download", "boot", "loader", "rescue").any {
-        name.contains(it, ignoreCase = true)
-    }
+data class Target(val id: String, val name: String, val scope: MirrorScope, val details: String = "") {
+    val recognized get() = scope != MirrorScope.NONE
 }
 
+data class MidiPorts(
+    val scope: MirrorScope = MirrorScope.NONE, val rxOpen: Boolean = false, val txOpen: Boolean = false,
+    val txAvailable: Boolean = false, val reconnections: Int = 0, val hyp1: Boolean = false,
+)
+
 interface TransportListener : MirrorListener {
+    fun ports(status: MidiPorts)
     fun devices(devices: List<Target>)
-    fun connection(details: String, connected: Boolean, recognized: Boolean)
+    fun connection(details: String, connected: Boolean)
 }
 
 @SuppressLint("MissingPermission", "NewApi")
@@ -71,7 +67,10 @@ class MidiTransport(
     private var generation = 0
     private var opening = false
     private var openSince = 0L
-    private var lastRetry = 0L
+    private var nextOpen = 0L
+    private var openDelay = 1500L
+    private var lastOpenedId: String? = null
+    private var reconnections = 0
     private var device: MidiDevice? = null
     private var output: MidiOutputPort? = null
     private var input: MidiInputPort? = null
@@ -89,6 +88,7 @@ class MidiTransport(
     }
     private var healthy = true
     private var permitted = false
+    private var scope = MirrorScope.NONE
     private var disposed = false
 
     private val changes = object : MidiManager.DeviceCallback() {
@@ -104,6 +104,10 @@ class MidiTransport(
             if (disposed) return
             if (opening && SystemClock.elapsedRealtime() - openSince > 5000) drop("Tiempo de conexión agotado")
             if (!healthy && device != null) drop("Enlace MIDI interrumpido")
+            if (healthy && device != null && SystemClock.elapsedRealtime() - openSince >= 5000) {
+                openDelay = 1500L
+                nextOpen = 0L
+            }
             refresh()
             worker.postDelayed(this, 1500)
         }
@@ -132,7 +136,18 @@ class MidiTransport(
             choice = protocol
             watch = watching
             remote = control
-            session?.configure(choice, permitted, watch, remote)
+            session?.configure(choice, permitted, watch, remote, scope)
+        }
+    }
+
+    fun refreshPicture() { worker.post { session?.requestRefresh() } }
+
+    fun reopenPorts() {
+        worker.post {
+            drop("Reabriendo puertos MIDI")
+            nextOpen = 0L
+            openDelay = 1500L
+            refresh()
         }
     }
 
@@ -142,7 +157,8 @@ class MidiTransport(
             if (mode == LinkKind.USB) usbPreference = target.id
             else selectedBle = availableBle[target.id]
             stopScan()
-            lastRetry = 0
+            nextOpen = 0
+            openDelay = 1500
             refresh()
         }
     }
@@ -172,7 +188,7 @@ class MidiTransport(
                         val peer = result.device
                         val name = result.scanRecord?.deviceName ?: runCatching { peer.name }.getOrNull() ?: "Dispositivo BLE MIDI"
                         if (!DeviceIdentity.isLoader(name)) {
-                            val target = Target(peer.address, name, DeviceIdentity.allowsRequests(name), "${result.rssi} dBm")
+                            val target = Target(peer.address, name, DeviceIdentity.scope(name), "${result.rssi} dBm")
                             availableBle[peer.address] = peer to target
                             emitTargets()
                         }
@@ -187,7 +203,7 @@ class MidiTransport(
             }
             val scanner = runCatching { bluetooth?.adapter?.bluetoothLeScanner }.getOrNull()
             if (scanner == null) {
-                listener.connection("Activa Bluetooth para buscar dispositivos MIDI", device != null, permitted)
+                listener.connection("Activa Bluetooth para buscar dispositivos MIDI", device != null)
                 return@post
             }
             scan = callback
@@ -210,7 +226,7 @@ class MidiTransport(
         worker.post {
             watch = false
             stopScan()
-            session?.configure(choice, permitted, false, false)
+            session?.configure(choice, permitted, false, false, scope)
         }
     }
 
@@ -234,9 +250,11 @@ class MidiTransport(
     private fun name(info: MidiDeviceInfo): String {
         val name = info.properties.getString(MidiDeviceInfo.PROPERTY_NAME).orEmpty()
         val product = info.properties.getString(MidiDeviceInfo.PROPERTY_PRODUCT).orEmpty()
+        val ids = usbDevice(info)
         return when {
             DeviceIdentity.isLoader("$name $product") -> "$name $product".trim()
-            DeviceIdentity.allowsRequests(product) -> product
+            DeviceIdentity.scope(product, ids?.vendorId, ids?.productId) != MirrorScope.NONE ||
+                DeviceIdentity.isHyp1(product) -> product
             name.isNotBlank() -> name
             product.isNotBlank() -> product
             else -> "Dispositivo MIDI"
@@ -251,7 +269,8 @@ class MidiTransport(
         val device = usbDevice(info)
         val ids = device?.let { "%04X:%04X".format(it.vendorId, it.productId) }
         val display = listOfNotNull(ids, "MIDI IN ${info.inputPortCount} · OUT ${info.outputPortCount}").joinToString(" · ")
-        return Target("${ids.orEmpty()}/$name", name, DeviceIdentity.allowsRequests(name), display)
+        return Target("${ids.orEmpty()}/$name", name,
+            DeviceIdentity.scope(name, device?.vendorId, device?.productId), display)
     }
 
     private fun emitTargets() {
@@ -264,7 +283,7 @@ class MidiTransport(
     private fun refresh() {
         if (disposed) return
         val service = midi ?: run {
-            listener.connection("Android MIDI no disponible", false, false)
+            listener.connection("Android MIDI no disponible", false)
             return
         }
         if (mode == LinkKind.USB) {
@@ -292,7 +311,7 @@ class MidiTransport(
             }
             if (device?.info?.let { current -> availableUsb.none { it.id == current.id } } == true) drop("FM-1 desconectado")
             val picked = availableUsb.filter { usbTarget(it).id == usbPreference }.singleOrNull()
-                ?: if (usbPreference == null) availableUsb.filter { usbTarget(it).recognized }.singleOrNull() else null
+                ?: if (usbPreference == null) availableUsb.filter { usbTarget(it).recognized || DeviceIdentity.isHyp1(name(it)) }.singleOrNull() else null
             if (!opening && device == null && picked != null) {
                 val target = usbTarget(picked)
                 open(target) { callback -> service.openDevice(picked, callback, worker) }
@@ -307,12 +326,13 @@ class MidiTransport(
 
     private fun open(target: Target, start: (MidiManager.OnDeviceOpenedListener) -> Unit) {
         val now = SystemClock.elapsedRealtime()
-        if (now - lastRetry < 1400) return
-        lastRetry = now
+        if (now < nextOpen) return
+        nextOpen = now + openDelay
+        openDelay = (openDelay * 2).coerceAtMost(12_000)
         openSince = now
         opening = true
         val token = ++generation
-        listener.connection("Conectando a ${target.name}", false, false)
+        listener.connection("Conectando a ${target.name}", false)
         runCatching {
             start(MidiManager.OnDeviceOpenedListener { opened ->
                 if (token != generation || disposed) {
@@ -321,7 +341,7 @@ class MidiTransport(
                 }
                 opening = false
                 if (opened == null) {
-                    listener.connection("Android no pudo abrir el puerto MIDI", false, false)
+                    listener.connection("Android no pudo abrir el puerto MIDI", false)
                     return@OnDeviceOpenedListener
                 }
                 device = opened
@@ -333,26 +353,43 @@ class MidiTransport(
                 // Android MidiManager owns the USB interface; no direct claims or raw USB transfers.
                 input = if (target.recognized && opened.info.inputPortCount > 0)
                     runCatching { opened.openInputPort(0) }.getOrNull() else null
+                scope = target.scope
                 permitted = target.recognized && input != null
+                if (lastOpenedId == target.id) reconnections++
+                lastOpenedId = target.id
+                listener.ports(MidiPorts(scope, rxOpen = true, txOpen = input != null,
+                    txAvailable = opened.info.inputPortCount > 0, reconnections = reconnections,
+                    hyp1 = DeviceIdentity.isHyp1(target.name)))
                 healthy = true
                 val active = MirrorSession(sessionClock, ::write, listener)
                 session = active
                 worker.post(tick)
+                val inbox = MidiIngress()
+                val drain = object : Runnable {
+                    override fun run() {
+                        if (session !== active) return
+                        repeat(48) {
+                            when (val entry = inbox.take()) {
+                                is MidiIngress.Entry.Chunk -> active.receive(entry.bytes, entry.receivedNanos)
+                                is MidiIngress.Entry.Loss -> active.inputLost(entry.bytes)
+                                null -> return
+                            }
+                        }
+                        worker.post(this)
+                    }
+                }
                 output?.connect(object : MidiReceiver() {
                     override fun onSend(msg: ByteArray, offset: Int, count: Int, timestamp: Long) {
-                        if (count <= 0 || count > 16_384) return
-                        val receiveAt = System.nanoTime()
-                        val bytes = msg.copyOfRange(offset, offset + count)
-                        worker.post { if (session === active) active.receive(bytes, receiveAt) }
+                        if (inbox.offer(msg, offset, count, System.nanoTime())) worker.post(drain)
                     }
                 })
-                active.configure(choice, permitted, watch, remote)
-                listener.connection("${target.name} · ${mode.title}", true, permitted)
+                active.configure(choice, permitted, watch, remote, scope)
+                listener.connection("${target.name} · ${mode.title}", true)
                 listener.log("${target.name} · ${target.details}")
             })
         }.onFailure {
             opening = false
-            listener.connection("Permiso MIDI no disponible", false, false)
+            listener.connection("Permiso MIDI no disponible", false)
         }
     }
 
@@ -381,7 +418,9 @@ class MidiTransport(
         input = null
         device = null
         permitted = false
-        listener.connection(reason, false, false)
+        scope = MirrorScope.NONE
+        listener.ports(MidiPorts(reconnections = reconnections))
+        listener.connection(reason, false)
     }
 
     companion object {

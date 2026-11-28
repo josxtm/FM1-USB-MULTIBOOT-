@@ -130,7 +130,12 @@ def verify(apk: str, out: Path, device: str, build: int):
     assert has_panel_color(silver), "Silver panel color was not restored after restarting the app"
     adb("shell", "cmd", "window", "user-rotation", "lock", "0")
     node("Keyboard, F3 to G5")
-    print("Installed the APK, navigated the three layouts, opened the editor and rotated the tablet.")
+    tap("Open controls, or swipe down")
+    tap("Diagnóstico")
+    node("RX cerrado · TX cerrado · 0 reconexiones")
+    node("Compartir diagnóstico")
+    tap("Clock F8")
+    print("Installed the APK, checked layouts, color persistence and diagnostic filtering on the tablet.")
 
 
 if __name__ == "__main__":

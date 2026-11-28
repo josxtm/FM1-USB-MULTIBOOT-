@@ -23,7 +23,7 @@ class MirrorPacketsTest {
 
     @Test fun sysexCanCrossCallbacksAndRealtimeDoesNotEnterPayload() {
         val frames = mutableListOf<ByteArray>()
-        val framer = SysExFramer(frames::add)
+        val framer = SysExFramer(receive = frames::add)
         val splits = listOf(bytes(1, 0xF0, 0x7D), bytes(0xF8, 0x42), bytes(0x53, 3, 0xF7))
         splits.forEach { framer.feed(it, 0, it.size) }
         assertEquals(1, frames.size)

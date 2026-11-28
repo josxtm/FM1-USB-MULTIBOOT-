@@ -64,6 +64,8 @@ import com.josxtm.fm1screen.data.ColorRole
 import com.josxtm.fm1screen.protocol.SIDE
 import com.josxtm.fm1screen.protocol.Wire
 import com.josxtm.fm1screen.transport.LinkKind
+import com.josxtm.fm1screen.transport.MidiCategory
+import com.josxtm.fm1screen.transport.MirrorScope
 import com.josxtm.fm1screen.ui.faceplate.FaceplateUi
 import com.josxtm.fm1screen.ui.faceplate.Scaling
 import com.josxtm.fm1screen.ui.theme.Palette
@@ -136,11 +138,15 @@ private fun LinkSettings(app: MainActivity) {
             }
         }
     }
-    Toggle("Solicitar duplicación", app.streaming, app.connected && app.recognized && !app.demo, app::setWatching)
+    Toggle("Solicitar duplicación", app.streaming, app.streaming || app.requestBlocked == null, app::setWatching)
+    app.requestBlocked?.let { Label(it, Palette.sheetMuted) }
+    val ports = app.midiPorts
+    if (ports.rxOpen && ports.txAvailable && !ports.txOpen && ports.scope != MirrorScope.NONE) {
+        Action("Reabrir puertos MIDI") { app.reopenPorts() }
+    }
+    if (app.streaming && app.requestBlocked == null) Action("Resincronizar pantalla") { app.refreshPicture() }
     Toggle("Solo visualización", app.viewOnly, !app.viewOnly || app.canAuthorizeControl, app::changeViewOnly)
-    Label(if (app.mirrorStats.wire == Wire.BASE && app.mirrorStats.protocolVersion >= 2)
-        "Panel fm1-base disponible · SAVE reservado al FM-1"
-        else "Controles remotos indisponibles hasta detectar un panel compatible", Palette.sheetMuted)
+    Label(app.controlBlocked ?: "Panel fm1-base disponible · SAVE reservado al FM-1", Palette.sheetMuted)
     Section("Protocolo")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Wire.entries.forEach { wire -> Action(wire.title, app.protocol == wire) { app.selectProtocol(wire) } }
@@ -304,31 +310,60 @@ private fun ColorPicker(color: Rgb, onColor: (Rgb) -> Unit) {
     }, valueRange = 0f..359.9f, modifier = Modifier.semantics { contentDescription = "Tono" })
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Diagnostics(app: MainActivity) {
     val stats = app.mirrorStats
     val coverage = (stats.coverage.toDouble() * 100 / (SIDE * SIDE)).roundToInt()
+    var filter by remember { mutableStateOf<MidiCategory?>(null) }
     Section("Señal")
-    Label("${stats.wire?.title ?: "Sin protocolo"} · $coverage % de píxeles recibidos")
-    Label("${stats.patchesPerSecond} bloques/s · ${app.rendersPerSecond} imágenes dibujadas/s")
+    Label("${stats.state.title} · ${stats.wire?.title ?: "Sin protocolo"} · $coverage % de cobertura")
+    Label("${stats.patchesPerSecond} bloques/s · ${stats.displaysPerSecond} publicaciones/s · ${app.rendersPerSecond} dibujadas/s")
     if (stats.wire == Wire.BIG2) Label("${stats.syncsPerSecond} fotogramas SYNC/s")
-    val identity = app.profile?.let { if (app.autoProfile) "${it.name} por nombre de producto" else "${it.name} (perfil manual)" }
-        ?: "Firmware sin identificar"
-    Label("${app.link.title} · $identity")
-    Label("${stats.bytesPerSecond} B/s · ${stats.midiMessages} mensajes MIDI desde la conexión")
-    Label("${stats.bad} paquetes inválidos · ${stats.gaps} saltos de secuencia · ${stats.discardedPackets} paquetes descartados",
+    Label("${stats.blocks} bloques · ${stats.fullFrames} pantallas completas")
+    if (stats.wire == Wire.BASE) Label("${stats.gaps} bloques ausentes según secuencia")
+    if (stats.wire == Wire.BIG1) Label("Big Screen V1 no incluye secuencia ni límite de fotograma", Palette.sheetMuted)
+    Label(stats.sinceGraphicsMs?.let { "Último bloque gráfico hace ${it / 1000.0} s" } ?: "Sin bloques gráficos")
+    stats.sinceSessionMs?.let { Label("Última señal de sesión hace ${it / 1000.0} s", Palette.sheetMuted) }
+    val firmware = stats.identity
+    val identity = when {
+        firmware.atlatl -> "SKIFF Atlatl ${firmware.version ?: ""}".trim()
+        firmware.reportedName != null -> firmware.reportedName.orEmpty()
+        app.profile != null -> app.profile?.name.orEmpty() + if (app.autoProfile) " · descriptor" else " · perfil manual"
+        else -> "Firmware sin identificar"
+    }
+    Label("${app.link.title} · $identity${firmware.packageId?.let { " · $it" }.orEmpty()}")
+    val ports = app.midiPorts
+    Label("RX ${if (ports.rxOpen) "abierto" else "cerrado"} · TX ${if (ports.txOpen) "abierto" else "cerrado"} · ${ports.reconnections} reconexiones")
+    Label("RX ${stats.midiMessages} mensajes · ${stats.bytesPerSecond} B/s · ${stats.clockMessages} Clock F8")
+    Label("TX ${stats.txMessages} mensajes · ${stats.txBytesPerSecond} B/s · ${stats.requests} solicitudes · ${stats.replies} respuestas")
+    Label("${stats.retries} reintentos de pantalla · ${stats.bad} paquetes inválidos · ${stats.discardedPackets} descartados · ${stats.lostBytes} B perdidos",
         Palette.sheetMuted)
+    stats.lastSysExTx?.let { Label("Último SysEx TX · " + it.take(160), Palette.sheetMuted) }
+    stats.lastSysExRx?.let { Label("Último SysEx RX · " + it.take(160), Palette.sheetMuted) }
+    app.controlBlocked?.let { Label("Control bloqueado · $it", Palette.sheetMuted) }
     Label("${app.uiDiscardedFrames} publicaciones agrupadas por Android", Palette.sheetMuted)
     Label(stats.decodingMs?.let { "Último mensaje decodificado en ${String.format(Locale.ROOT, "%.3f", it)} ms" }
         ?: "Decodificación sin muestra", Palette.sheetMuted)
-    Label(stats.processingMs?.let { "Recepción → framebuffer ${String.format(Locale.ROOT, "%.2f", it)} ms" } ?: "Procesamiento local sin muestra",
-        Palette.sheetMuted)
-    Action("Exportar registros") { app.exportLogs() }
+    Label(stats.processingMs?.let { "Recepción → framebuffer ${String.format(Locale.ROOT, "%.2f", it)} ms" }
+        ?: "Procesamiento local sin muestra", Palette.sheetMuted)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Action("Exportar registros") { app.exportLogs() }
+        Action("Compartir diagnóstico") { app.shareLogs() }
+    }
     Section("Consola MIDI / SysEx")
-    app.logs.asReversed().forEach { line -> Text(line, color = Palette.sheetMuted, fontFamily = RfmFonts.mono, fontSize = 10.sp) }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Action("Todo", filter == null) { filter = null }
+        MidiCategory.entries.forEach { category ->
+            Action(category.title, filter == category) { filter = category }
+        }
+    }
+    app.logs.asReversed().filter { filter == null || it.category == filter }.forEach {
+        Text(it.line, color = Palette.sheetMuted, fontFamily = RfmFonts.mono, fontSize = 10.sp)
+    }
     Section("Créditos")
-    Label("Panel adaptado de RemoteFM1Android. FM1 SCREEN se distribuye bajo GNU GPL v3, sin garantía.", Palette.sheetMuted)
-    Label("Código y licencias en josxtm/FM1-USB-MULTIBOOT-, rama feat/fm1-screen-android.", Palette.sheetMuted)
+    Label("Panel adaptado de RemoteFM1Android. FM1 SCREEN se distribuye bajo GNU GPL v3, sin garantía.")
+    Label("Código y licencias en josxtm/FM1-USB-MULTIBOOT-, rama feat/fm1-screen-android.")
 }
 
 @Composable

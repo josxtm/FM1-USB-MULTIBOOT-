@@ -10,12 +10,46 @@ import com.josxtm.fm1screen.protocol.ScreenFrame
 import com.josxtm.fm1screen.protocol.SysExFramer
 import com.josxtm.fm1screen.protocol.Wire
 
+enum class MirrorScope {
+    NONE, FM1, FELUCCA;
+
+    fun allows(wire: Wire): Boolean = when (this) {
+        NONE -> false
+        FM1 -> true
+        FELUCCA -> wire == Wire.AUTO || wire == Wire.BIG1
+    }
+}
+
+enum class MidiCategory(val title: String) {
+    CLOCK("Clock F8"), NOTE_ON("Note On"), NOTE_OFF("Note Off"), CONTROL("Control Change"),
+    SYSEX("SysEx"), GRAPHICS("Gráficos"), ERROR("Errores"), SESSION("Sesión"), OTHER("Otro MIDI")
+}
+
+enum class StreamState(val title: String) {
+    PASSIVE("Escucha pasiva"), BLOCKED("Solicitud bloqueada"), STARTING("Esperando gráficos"),
+    UPDATING("Recibiendo píxeles"), STATIC("Imagen estática, firmware responde"),
+    NO_CHANGES("Sin cambios, protocolo sin confirmación periódica"),
+    RECOVERING("Resincronizando"), NO_RESPONSE("Sin respuesta gráfica comprobada")
+}
+
+data class FirmwareIdentity(val reportedName: String? = null, val packageId: String? = null) {
+    val atlatl get() = packageId?.matches(Regex("FM-1_742[0-9A-Fa-f]{2,8}")) == true
+    val version get() = reportedName?.removePrefix("FELUCCA ")?.takeIf { it.startsWith("v") }
+}
+
 data class MirrorStats(
     val wire: Wire? = null, val protocolVersion: Int = 0, val coverage: Int = 0,
     val patchesPerSecond: Int = 0, val syncsPerSecond: Int = 0, val displaysPerSecond: Int = 0,
     val bad: Int = 0, val gaps: Int = 0, val processingMs: Double? = null,
     val bytesPerSecond: Long = 0, val midiMessages: Long = 0, val discardedPackets: Long = 0,
     val decodingMs: Double? = null,
+    val state: StreamState = StreamState.PASSIVE,
+    val txMessages: Long = 0, val txBytesPerSecond: Long = 0, val requests: Long = 0,
+    val replies: Long = 0, val lastSysExTx: String? = null, val lastSysExRx: String? = null,
+    val sinceGraphicsMs: Long? = null, val sinceSessionMs: Long? = null, val blocks: Long = 0, val fullFrames: Long = 0,
+    val retries: Int = 0, val lostBytes: Long = 0, val clockMessages: Long = 0,
+    val identity: FirmwareIdentity = FirmwareIdentity(),
+    val sound: String? = null,
 )
 
 interface MirrorListener {
@@ -23,6 +57,7 @@ interface MirrorListener {
     fun panel(state: PanelState?)
     fun stats(stats: MirrorStats)
     fun log(line: String)
+    fun midiLog(category: MidiCategory, line: String) = log(line)
     fun controlSuspended(reason: String)
 }
 
@@ -46,10 +81,28 @@ class MirrorSession(
     private val observer: MirrorListener,
 ) {
     private val framebuffer = FrameBuffer()
-    private val framer = SysExFramer(::message)
+    private val framer = SysExFramer(::shortMessage, ::message)
     private var wire: Wire? = null
     private var choice = Wire.AUTO
     private var compatibleOutput = false
+    private var scope = MirrorScope.FM1
+    private var identity = FirmwareIdentity()
+    private var sound: String? = null
+    private var identityAt = Long.MAX_VALUE
+    private var identitySent = 0
+    private var heartbeat = false
+    private var lastPixels = -1L
+    private var lastHello = -1L
+    private var nextFull = 0L
+    private var fullSent = false
+    private var repairs = 0
+    private var retries = 0
+    private var exhausted = false
+    private var awaitingRepair = false
+    private var completeFrames = 0L
+    private var blocks = 0L
+    private var waitingForFull = false
+    private var lostBytes = 0L
     private var watching = false
     private var controls = false
     private var alive = true
@@ -57,6 +110,7 @@ class MirrorSession(
     private var lastMessage = -1L
     private var nextProbe = Long.MAX_VALUE
     private var probe = 0
+    private var lastProbed: Wire? = null
     private var refresh = true
     private var expected = -1
     private var dirtySince = -1L
@@ -75,47 +129,129 @@ class MirrorSession(
     private data class Pending(val command: Command, val sequence: Int, val sentAt: Long, val attempts: Int)
     private val commands = ArrayDeque<Command>()
     private var pending: Pending? = null
-    private var nextLog = 0L
+    private val nextLog = LongArray(MidiCategory.entries.size)
+    private var clockCount = 0L
+    private var loggedClock = 0L
+    private var txMessages = 0L
+    private var txBytes = 0L
+    private var txRate = 0L
+    private var requests = 0L
+    private var replies = 0L
+    private var lastSysExRx: ByteArray? = null
+    private var lastSysExTx: ByteArray? = null
 
     private var bytesReceived = 0L
     private var bytesPerSecond = 0L
     private var duplicates = 0L
     private var decodingMs: Double? = null
 
-    fun configure(wireChoice: Wire, maySend: Boolean, watch: Boolean, remote: Boolean) {
-        val changed = choice != wireChoice
+    fun configure(
+        wireChoice: Wire, maySend: Boolean, watch: Boolean, remote: Boolean, policy: MirrorScope = MirrorScope.FM1,
+    ) {
+        if (!alive) return
+        val changed = choice != wireChoice || scope != policy
+        val begin = watch && (!watching || changed || maySend != compatibleOutput)
         if (!maySend || !watch || changed) {
             commands.clear()
             pending = null
-        } else if (controls && !remote && watch && !changed) {
+        } else if (controls && !remote) {
             clearControls()
         }
-        if (watching && (changed || !watch) && wire == Wire.BASE && compatibleOutput) {
-            send(MirrorPackets.releaseMirror())
+        if (watching && (changed || !watch) && wire == Wire.BASE && compatibleOutput && scope.allows(Wire.BASE)) {
+            transmit(MirrorPackets.releaseMirror())
         }
         choice = wireChoice
+        scope = policy
         compatibleOutput = maySend
         watching = watch
         controls = remote
         if (changed) resetStream()
+        if (begin) {
+            val now = clock.elapsedMillis()
+            refresh = true
+            fullSent = false
+            repairs = 0
+            exhausted = false
+            awaitingRepair = false
+            nextProbe = now + 80
+            nextFull = now
+            probe = 0
+            lastProbed = null
+            if (scope == MirrorScope.FELUCCA && identitySent < 2) identityAt = now + 1150
+        }
+        if (!watch) identityAt = Long.MAX_VALUE
+        if (changed || begin || !watch) publishStats()
+    }
+
+    fun requestRefresh() {
+        if (!watching || !compatibleOutput || !scope.allows(choice)) return
+        exhausted = false
+        repairs = 0
         refresh = true
-        nextProbe = clock.elapsedMillis() + 500
+        awaitingRepair = true
+        val now = clock.elapsedMillis()
+        nextFull = maxOf(now, lastHello + MIN_HELLO_GAP)
+        nextProbe = minOf(nextProbe, nextFull)
+    }
+
+    fun inputLost(bytes: Long) {
+        lostBytes += bytes
+        framer.reset()
+        expected = -1
+        refresh = true
+        loseLiveness("Se perdieron fragmentos en la entrada MIDI")
+        observer.midiLog(MidiCategory.ERROR, "RX saturado · $bytes B descartados · resincronización solicitada")
     }
 
     fun receive(data: ByteArray, receivedNanos: Long) {
         if (!alive) return
         rxNanos = receivedNanos
         bytesReceived += data.size
-        val now = clock.elapsedMillis()
-        if (now >= nextLog && data.isNotEmpty()) {
-            val prefix = data.take(16).joinToString(" ") {
-                (it.toInt() and 255).toString(16).padStart(2, '0').uppercase()
-            }
-            observer.log("MIDI RX ${data.size} B · $prefix")
-            nextLog = now + 350
-        }
         framer.feed(data, 0, data.size)
     }
+
+    private fun shortMessage(status: Int, data1: Int, data2: Int) {
+        if (status == 0xF8) {
+            clockCount++
+            return
+        }
+        val category = when (status and 0xF0) {
+            0x80 -> MidiCategory.NOTE_OFF
+            0x90 -> if (data2 == 0) MidiCategory.NOTE_OFF else MidiCategory.NOTE_ON
+            0xB0 -> MidiCategory.CONTROL
+            else -> MidiCategory.OTHER
+        }
+        sample(category) {
+            "RX ${hexByte(status)}${if (data1 >= 0) " ${hexByte(data1)}" else ""}" +
+                "${if (data2 >= 0) " ${hexByte(data2)}" else ""}"
+        }
+    }
+
+    private inline fun sample(category: MidiCategory, line: () -> String) {
+        val now = clock.elapsedMillis()
+        if (now >= nextLog[category.ordinal]) {
+            nextLog[category.ordinal] = now + 1000
+            observer.midiLog(category, line())
+        }
+    }
+
+    private fun transmit(data: ByteArray, label: String = "panel", request: Boolean = false): Boolean {
+        if (!send(data)) {
+            observer.midiLog(MidiCategory.ERROR, "TX falló · $label · ${data.hex()}")
+            return false
+        }
+        txMessages++
+        txBytes += data.size
+        lastSysExTx = data
+        if (request) requests++
+        observer.midiLog(MidiCategory.SYSEX, "TX $label · ${data.hex()} (aceptado por la API MIDI)")
+        return true
+    }
+
+    private fun ByteArray.hex(limit: Int = size): String =
+        take(limit).joinToString(" ") { hexByte(it.toInt() and 255) }
+
+    private fun hexByte(value: Int) = value.toString(16).padStart(2, '0').uppercase()
 
     fun button(index: Int, down: Boolean) {
         // SAVE remains unavailable as a remote physical gesture.
@@ -145,7 +281,7 @@ class MirrorSession(
         advance(clock.elapsedMillis())
     }
 
-    private fun canControl() = wire == Wire.BASE && version >= 2 && compatibleOutput && watching
+    private fun canControl() = wire == Wire.BASE && version >= 2 && waiting && !awaitingRepair && !exhausted
 
     fun clearControls() {
         commands.clear()
@@ -157,8 +293,9 @@ class MirrorSession(
 
     fun close() {
         if (!alive) return
-        if (wire == Wire.BASE && compatibleOutput && watching) send(MirrorPackets.releaseMirror())
+        if (wire == Wire.BASE && compatibleOutput && watching && scope.allows(Wire.BASE)) transmit(MirrorPackets.releaseMirror())
         alive = false
+        watching = false
         resetStream()
     }
 
@@ -166,11 +303,16 @@ class MirrorSession(
         wire = null
         version = 0
         probe = 0
+        lastProbed = null
         expected = -1
         framebuffer.reset()
         framer.reset()
         dirtySince = -1L
         lastMessage = -1L
+        lastPixels = -1L
+        heartbeat = false
+        awaitingRepair = false
+        waitingForFull = false
         processingMs = null
         decodingMs = null
         commands.clear()
@@ -181,41 +323,84 @@ class MirrorSession(
     }
 
     private fun message(bytes: ByteArray) {
+        lastSysExRx = bytes
+        val now = clock.elapsedMillis()
+        if (scope == MirrorScope.FELUCCA) {
+            val name = MirrorPackets.feluccaName(bytes)
+            val packageId = MirrorPackets.feluccaPackageReply(bytes)
+            if (name != null || packageId != null) {
+                identity = FirmwareIdentity(name ?: identity.reportedName, packageId ?: identity.packageId)
+                observer.midiLog(MidiCategory.SYSEX, "RX identificación · ${identity.reportedName ?: "?"} · ${identity.packageId ?: "?"}")
+                // A read-only identity answer can expose a loader whose descriptor was misleading.
+                if (packageId?.startsWith("ota-", ignoreCase = true) == true) {
+                    compatibleOutput = false
+                    exhausted = true
+                    observer.midiLog(MidiCategory.ERROR, "Identidad de cargador · envío bloqueado")
+                }
+                publishStats()
+                return
+            }
+        }
+        val soundReply = MirrorPackets.big1Sound(bytes)
+        if (soundReply != null && (choice == Wire.AUTO || choice == Wire.BIG1) &&
+            (wire == null || wire == Wire.BIG1) && scope.allows(Wire.BIG1)) {
+            sound = soundReply
+            if (lastHello >= 0 && now - lastHello <= 3000) {
+                replies++
+                heartbeat = true
+                signal(now)
+            }
+            sample(MidiCategory.GRAPHICS) { "RX Big Screen V1 · respuesta de sonido · ${bytes.hex(52)}" }
+            return
+        }
         val start = clock.nanoTime()
-        val protocol = MirrorPackets.identify(bytes) ?: return
-        if ((choice != Wire.AUTO && protocol != choice) || (wire != null && wire != protocol)) return
+        val protocol = MirrorPackets.identify(bytes)
+        if (protocol == null || (choice != Wire.AUTO && protocol != choice) || (wire != null && wire != protocol)) {
+            sample(MidiCategory.SYSEX) { "RX SysEx · ${bytes.size} B · ${bytes.hex(32)}" }
+            return
+        }
         val event = MirrorPackets.decodeIdentified(protocol, bytes) ?: return
         decodingMs = (clock.nanoTime() - start).coerceAtLeast(0) / 1_000_000.0
         if (event == MirrorEvent.Invalid) {
             invalid++
-            if (protocol == wire) refresh = true
+            if (protocol == wire) {
+                refresh = true
+                awaitingRepair = true
+            }
+            sample(MidiCategory.ERROR) { "RX ${protocol.title} · trama inválida · ${bytes.hex(24)}" }
             return
         }
         if (event is MirrorEvent.Ack) {
             val command = pending ?: return
             if (command.sequence == event.sequence && command.command.op == event.operation) {
                 pending = null
-                if (event.ok) {
-                    advance(clock.elapsedMillis())
-                } else {
-                    recoverControls("El FM-1 rechazó el control ${event.operation}", clock.elapsedMillis())
-                }
+                if (event.ok) advance(now)
+                else recoverControls("El FM-1 rechazó el control ${event.operation}", now)
             }
             return
         }
         if (wire == null && (event is MirrorEvent.Panel || event == MirrorEvent.Sync)) return
         if (event is MirrorEvent.Hello && !event.enabled) {
-            if (wire == protocol) resetStream()
+            if (wire == protocol && waiting) loseLiveness("El firmware confirmó que el espejo se detuvo")
             return
         }
-        val now = clock.elapsedMillis()
-        lastMessage = now
+        if (event is MirrorEvent.Hello) {
+            replies++
+            heartbeat = true
+        }
+        signal(now)
         if (wire == null) {
             wire = protocol
-            observer.log("SysEx verificado · ${protocol.title}")
-            nextProbe = now + 1000
+            if (protocol == lastProbed) {
+                fullSent = true
+                refresh = false
+                waitingForFull = true
+            }
+            version = when (protocol) { Wire.BIG1 -> 1; Wire.BIG2 -> 2; else -> 0 }
+            observer.midiLog(MidiCategory.SESSION, "SysEx verificado · ${protocol.title}")
             publishStats()
         }
+        sample(MidiCategory.GRAPHICS) { "RX ${protocol.title} · ${bytes.size} B · ${bytes.hex(24)}" }
         when (event) {
             is MirrorEvent.Hello -> {
                 if (version != event.version) {
@@ -230,22 +415,60 @@ class MirrorSession(
                         return
                     }
                     if (expected >= 0 && it != expected) {
-                        gaps++
+                        gaps += (it - expected) and 255
                         refresh = true
+                        awaitingRepair = true
                     }
                     expected = (it + 1) and 255
                 }
+                val wasFull = framebuffer.covered == SIDE * SIDE
                 framebuffer.apply(event.patch)
                 patchNanos = rxNanos
+                lastPixels = now
                 patches++
+                blocks++
+                if (!wasFull && framebuffer.covered == SIDE * SIDE) {
+                    if (protocol != Wire.BIG2) completeFrames++
+                    repairs = 0
+                    exhausted = false
+                    awaitingRepair = false
+                    waitingForFull = false
+                }
                 if (dirtySince < 0L) dirtySince = now
             }
             is MirrorEvent.Panel -> observer.panel(event.state)
             MirrorEvent.Sync -> {
                 completed++
+                if (framebuffer.covered == SIDE * SIDE) completeFrames++
                 if (now - lastPublish >= 16) publish(now)
             }
             else -> Unit
+        }
+    }
+
+    private val waiting get() = watching && compatibleOutput && scope.allows(choice) &&
+        identity.packageId?.startsWith("ota-", ignoreCase = true) != true
+
+    private fun signal(now: Long) {
+        if (exhausted || awaitingRepair && !waitingForFull && !refresh) {
+            repairs = 0
+            exhausted = false
+            awaitingRepair = false
+        }
+        lastMessage = now
+    }
+
+    private fun loseLiveness(reason: String) {
+        if (!awaitingRepair && !exhausted) observer.midiLog(MidiCategory.ERROR, reason)
+        awaitingRepair = true
+        if (wire == Wire.BASE && (controls || pending != null)) {
+            controls = false
+            commands.clear()
+            pending = null
+            if (waiting) transmit(MirrorPackets.releaseMirror(), "liberar panel tras interrupción")
+            refresh = true
+            observer.panel(null)
+            observer.controlSuspended(reason)
         }
     }
 
@@ -264,7 +487,7 @@ class MirrorSession(
         if (current != null) {
             if (now - current.sentAt < 180) return
             if (current.attempts < 3) {
-                send(current.command.packet(current.sequence))
+                transmit(current.command.packet(current.sequence))
                 pending = current.copy(sentAt = now, attempts = current.attempts + 1)
                 return
             }
@@ -273,13 +496,13 @@ class MirrorSession(
         }
         val command = commands.removeFirstOrNull() ?: return
         val seq = sequence++ and 255
-        if (send(command.packet(seq))) pending = Pending(command, seq, now, 1)
+        if (transmit(command.packet(seq))) pending = Pending(command, seq, now, 1)
     }
 
     private fun recoverControls(reason: String, now: Long) {
         observer.log(reason)
         observer.controlSuspended(reason)
-        send(MirrorPackets.releaseMirror())
+        transmit(MirrorPackets.releaseMirror())
         controls = false
         resetStream()
         refresh = true
@@ -289,26 +512,26 @@ class MirrorSession(
     fun tick() {
         if (!alive) return
         val now = clock.elapsedMillis()
-        if (lastMessage >= 0L && now - lastMessage > 7500 && watching) {
-            resetStream()
-            refresh = true
-            nextProbe = now
-        }
         val cadence = if (wire == Wire.BIG2) 60L else 28L
         if (dirtySince >= 0L && now - dirtySince >= cadence && now - lastPublish >= 16) publish(now)
-        if (watching && compatibleOutput && now >= nextProbe) {
-            val active = wire ?: choice.takeUnless { it == Wire.AUTO } ?: PROBES[probe++ % PROBES.size]
-            val first = wire == null
-            val full = refresh || first || (active != Wire.BASE && framebuffer.covered < SIDE * SIDE &&
-                now - lastPublish > 1200)
-            send(MirrorPackets.request(active, full))
-            nextProbe = now + if (first) 850L else 1000L
-            if (!first) refresh = false
+        if (waiting && !exhausted && pending == null && now >= nextProbe) renew(now)
+        if (waiting && scope == MirrorScope.FELUCCA && now >= identityAt && now - lastHello >= 220) {
+            val command = if (identitySent == 0) MirrorPackets.feluccaInfo() else MirrorPackets.feluccaPackage()
+            transmit(command, if (identitySent == 0) "Felucca INFO" else "Identidad de paquete")
+            identitySent++
+            identityAt = if (identitySent == 1) now + 900 else Long.MAX_VALUE
         }
         advance(now)
         if (now - metricsAt >= 1000L) {
             bytesPerSecond = bytesReceived * 1000 / (now - metricsAt)
+            txRate = txBytes * 1000 / (now - metricsAt)
             bytesReceived = 0
+            txBytes = 0
+            if (clockCount != loggedClock && now >= nextLog[MidiCategory.CLOCK.ordinal]) {
+                observer.midiLog(MidiCategory.CLOCK, "RX Clock F8 ×${clockCount - loggedClock} · acumulado $clockCount")
+                loggedClock = clockCount
+                nextLog[MidiCategory.CLOCK.ordinal] = now + 5000
+            }
             publishStats()
             patches = 0
             completed = 0
@@ -317,10 +540,83 @@ class MirrorSession(
         }
     }
 
-    private fun publishStats() = observer.stats(MirrorStats(wire, version, framebuffer.covered, patches, completed,
-        published, invalid, gaps, processingMs, bytesPerSecond, framer.messages, duplicates + framer.discarded, decodingMs))
+    private fun renew(now: Long) {
+        val candidate = wire?.takeIf(scope::allows) ?: choice.takeUnless { it == Wire.AUTO }
+            ?: if (scope == MirrorScope.FELUCCA) Wire.BIG1 else PROBES[probe % PROBES.size]
+        if (wire == null && choice == Wire.AUTO && scope == MirrorScope.FM1) {
+            if (probe >= PROBES.size * 2) {
+                exhausted = true
+                publishStats()
+                return
+            }
+            probe++
+            if (transmit(MirrorPackets.request(candidate, true), "${candidate.title} · sondeo", request = true)) {
+                lastProbed = candidate
+                lastHello = now
+                nextFull = now + 4000
+            }
+            nextProbe = now + 900
+            return
+        }
+        // V1 without a heartbeat can stay silent indefinitely on an unchanged LCD. Only heartbeat-equipped V1
+        // (Atlatl) and the documented v2/fm1-base hello responses provide proof that a session has gone quiet.
+        val livenessExpected = heartbeat || identity.atlatl && wire == Wire.BIG1 || wire == Wire.BIG2 || wire == Wire.BASE
+        val silent = livenessExpected && lastMessage >= 0 && now - lastMessage >= 4600
+        val incomplete = framebuffer.covered < SIDE * SIDE && now - lastPixels >= 3500
+        if (silent) loseLiveness("Sin respuestas de sesión tras las renovaciones MIDI")
+        val repair = fullSent && (refresh || silent || incomplete) && now >= nextFull
+        if (repair && repairs >= 3 && (silent || lastMessage < 0)) {
+            exhausted = true
+            observer.midiLog(MidiCategory.ERROR, "Límite de reintentos sin respuesta · reactivar o resincronizar manualmente")
+            publishStats()
+            return
+        }
+        val full = !fullSent || repair && repairs < 3
+        if (full) {
+            if (fullSent) {
+                repairs++
+                retries++
+                awaitingRepair = true
+            }
+            nextFull = now + (4000L shl repairs.coerceAtMost(3))
+        }
+        val sent = transmit(MirrorPackets.request(candidate, full), "${candidate.title} · ${if (full) "pantalla completa" else "renovación"}", request = true)
+        nextProbe = now + if (candidate == Wire.BASE) 1500L else 900L
+        if (sent) {
+            lastHello = now
+            if (full) {
+                fullSent = true
+                refresh = false
+                waitingForFull = true
+                framebuffer.forgetCoverage()
+            }
+        }
+    }
+
+    private fun publishStats() {
+        val now = clock.elapsedMillis()
+        val state = when {
+            !watching -> StreamState.PASSIVE
+            !waiting -> StreamState.BLOCKED
+            exhausted -> StreamState.NO_RESPONSE
+            awaitingRepair -> StreamState.RECOVERING
+            wire == null || lastPixels < 0 -> StreamState.STARTING
+            now - lastPixels < 1800 -> StreamState.UPDATING
+            heartbeat && lastMessage >= 0 && now - lastMessage < 4600 -> StreamState.STATIC
+            else -> StreamState.NO_CHANGES
+        }
+        observer.stats(MirrorStats(
+            wire, version, framebuffer.covered, patches, completed, published, invalid, gaps, processingMs,
+            bytesPerSecond, framer.messages, duplicates + framer.discarded, decodingMs, state, txMessages,
+            txRate, requests, replies, lastSysExTx?.hex(), lastSysExRx?.hex(),
+            lastPixels.takeIf { it >= 0 }?.let { now - it }, lastMessage.takeIf { it >= 0 }?.let { now - it },
+            blocks, completeFrames, retries, lostBytes,
+            clockCount, identity, sound,
+        ))
+    }
 
     companion object {
+        private const val MIN_HELLO_GAP = 900L
         private val PROBES = listOf(Wire.BIG2, Wire.BIG2, Wire.BIG2, Wire.BIG1, Wire.BASE)
     }
 }

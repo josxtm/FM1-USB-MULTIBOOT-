@@ -28,10 +28,14 @@ class FrameBuffer {
 
     fun snapshot(): IntArray = IntArray(pixels.size) { argb(pixels[it].toInt() and 0xFFFF) }
 
-    fun reset() {
-        pixels.fill(0)
+    fun forgetCoverage() {
         known.fill(false)
         covered = 0
+    }
+
+    fun reset() {
+        pixels.fill(0)
+        forgetCoverage()
     }
 
     companion object {

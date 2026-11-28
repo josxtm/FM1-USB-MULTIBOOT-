@@ -13,3 +13,5 @@
 Android abre USB MIDI y, de forma excluyente, BLE MIDI mediante `MidiManager`. `UsbManager` aporta instrumentación de dispositivos e interfaces. Una vez elegida la conexión, la sesión empieza escuchando. Los sondeos se habilitan solo con **Solicitar duplicación** y una identidad conocida. El descubrimiento automático reconoce la familia por una respuesta válida. Los mensajes SysEx quedan limitados a 4 KiB. El núcleo reensambla fragmentos, admite MIDI en tiempo real intercalado y valida longitud, checksum y límites de LCD antes de aplicar datos.
 
 El catálogo comunitario permite localizar proyectos y sus ediciones. El soporte de cada edición requiere examinar su emisor. [The Firmware Hub](https://thefirmwarehub.com/) · [Atribuciones y revisiones](docs/LICENCIAS-Y-ATRIBUCIONES.md).
+
+La política USB de la compilación 017 reconoce el descriptor Felucca cuando coincide con `1209:0001` y limita el sondeo a Big Screen V1 e identificación de solo lectura. [Mensajes, caducidad y diagnóstico de Atlatl](docs/FASE-3-COMUNICACIONES.md).

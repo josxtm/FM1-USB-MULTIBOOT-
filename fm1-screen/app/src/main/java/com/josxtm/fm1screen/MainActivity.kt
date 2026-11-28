@@ -2,6 +2,8 @@
 package com.josxtm.fm1screen
 
 import android.Manifest
+import android.content.ClipData
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
@@ -23,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -36,7 +39,11 @@ import com.josxtm.fm1screen.protocol.ScreenFrame
 import com.josxtm.fm1screen.protocol.Wire
 import com.josxtm.fm1screen.transport.DeviceIdentity
 import com.josxtm.fm1screen.transport.LinkKind
+import com.josxtm.fm1screen.transport.MidiCategory
+import com.josxtm.fm1screen.transport.MidiPorts
 import com.josxtm.fm1screen.transport.MidiTransport
+import com.josxtm.fm1screen.transport.MirrorScope
+import com.josxtm.fm1screen.transport.StreamState
 import com.josxtm.fm1screen.transport.MirrorStats
 import com.josxtm.fm1screen.transport.Target
 import com.josxtm.fm1screen.transport.TransportListener
@@ -54,6 +61,8 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.time.Instant
 import java.util.concurrent.Executors
+
+data class MidiLogEntry(val category: MidiCategory, val line: String)
 
 class MainActivity : ComponentActivity(), TransportListener {
     private val prefs by lazy { getSharedPreferences("preferences", MODE_PRIVATE) }
@@ -97,7 +106,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         private set
     var connected by mutableStateOf(false)
         private set
-    var recognized by mutableStateOf(false)
+    var midiPorts by mutableStateOf(MidiPorts())
         private set
     var connectionText by mutableStateOf("Buscando FM-1 por USB-C")
         private set
@@ -113,7 +122,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         private set
     var stayAwake by mutableStateOf(true)
         private set
-    var logs by mutableStateOf(emptyList<String>())
+    var logs by mutableStateOf(emptyList<MidiLogEntry>())
         private set
     var message by mutableStateOf<String?>(null)
         private set
@@ -264,7 +273,7 @@ class MainActivity : ComponentActivity(), TransportListener {
             checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
         val id = prefs.getString("bleDevice", null) ?: return
         val name = prefs.getString("bleName", null) ?: return
-        transport.restoreBle(Target(id, name, DeviceIdentity.allowsRequests(name), "Último dispositivo BLE"))
+        transport.restoreBle(Target(id, name, DeviceIdentity.scope(name), "Último dispositivo BLE"))
     }
 
     fun scanBluetooth() {
@@ -281,7 +290,11 @@ class MainActivity : ComponentActivity(), TransportListener {
     }
 
     fun selectProtocol(wire: Wire) {
+        if (protocol != wire) viewOnly = true
         protocol = wire
+        if (watch && !midiPorts.scope.allows(wire)) {
+            setWatching(false)
+        }
         prefs.edit().putString("wire", wire.name).apply()
         configure()
     }
@@ -305,15 +318,46 @@ class MainActivity : ComponentActivity(), TransportListener {
         updateProfile(profiles.singleOrNull { candidate -> candidate.deviceNames.any { it.equals(name, true) } })
     }
 
+    val requestBlocked: String?
+        get() = when {
+            demo -> "Desactiva el modo DEMO para solicitar la pantalla"
+            !connected || !midiPorts.rxOpen -> "Conecta un puerto MIDI del FM-1"
+            mirrorStats.identity.packageId?.startsWith("ota-", ignoreCase = true) == true -> "El equipo anuncia un cargador"
+            midiPorts.hyp1 -> "HYP-1 · LCD por SysEx sin verificar"
+            midiPorts.scope == MirrorScope.NONE -> "Identidad sin un protocolo autorizado · escucha pasiva"
+            !midiPorts.txAvailable -> "El dispositivo no anuncia un puerto MIDI IN para enviarle la solicitud"
+            !midiPorts.txOpen -> "Puerto MIDI IN del dispositivo no disponible. Cierra otros visores MIDI y vuelve a conectar."
+            !midiPorts.scope.allows(protocol) -> "Felucca · selecciona Auto o Big Screen V1"
+            else -> null
+        }
+
     fun setWatching(value: Boolean) {
+        if (value && requestBlocked != null) return
         watch = value
         streaming = value
         if (!value) viewOnly = true
         configure()
     }
 
-    val canAuthorizeControl get() = connected && recognized && watch && !demo && foreground &&
-        mirrorStats.wire == Wire.BASE && mirrorStats.protocolVersion >= 2
+    val controlBlocked: String?
+        get() = when {
+            requestBlocked != null -> requestBlocked
+            !watch -> "Activa Solicitar duplicación"
+            !foreground -> "FM1 SCREEN debe estar en primer plano"
+            mirrorStats.wire != Wire.BASE || mirrorStats.protocolVersion < 2 ->
+                "Control remoto requiere una sesión de panel fm1-base v2 o posterior"
+            mirrorStats.state == StreamState.RECOVERING || mirrorStats.state == StreamState.NO_RESPONSE ->
+                "Esperando recuperar el panel"
+            else -> null
+        }
+
+    val canAuthorizeControl get() = controlBlocked == null
+
+    fun reopenPorts() = transport.reopenPorts()
+
+    fun refreshPicture() {
+        if (watch && requestBlocked == null) transport.refreshPicture()
+    }
 
     fun changeViewOnly(value: Boolean) {
         if (!value && !canAuthorizeControl) return
@@ -336,9 +380,9 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     private fun configure() {
         if (!::transport.isInitialized) return
-        val remote = connected && recognized && !viewOnly && !demo && mirrorStats.wire == Wire.BASE && mirrorStats.protocolVersion >= 2
-        feed.setControls(remote && watch && foreground)
-        transport.configure(protocol, watch && !demo && foreground, !viewOnly && !demo && foreground)
+        val remote = !viewOnly && canAuthorizeControl
+        feed.setControls(remote)
+        transport.configure(protocol, watch && !demo && foreground, remote)
     }
 
     override fun frame(pixels: ScreenFrame?, receivedNanos: Long) {
@@ -370,24 +414,25 @@ class MainActivity : ComponentActivity(), TransportListener {
     override fun stats(stats: MirrorStats) {
         main.post {
             if (dead) return@post
-            val changed = mirrorStats.wire != stats.wire || mirrorStats.protocolVersion != stats.protocolVersion
+            val wasAuthorized = canAuthorizeControl
+            val identityChanged = mirrorStats.identity != stats.identity
             mirrorStats = stats
-            if (changed) {
-                val remote = connected && recognized && !viewOnly && !demo && watch && foreground &&
-                    stats.wire == Wire.BASE && stats.protocolVersion >= 2
-                feed.setControls(remote)
+            if (identityChanged && autoProfile && stats.identity.atlatl) {
+                updateProfile(profiles.firstOrNull { it.id == "skiff-atlatl" })
             }
+            if (wasAuthorized != canAuthorizeControl) configure()
         }
     }
 
+    override fun ports(status: MidiPorts) { main.post { if (!dead) midiPorts = status } }
+
     override fun devices(devices: List<Target>) { main.post { if (!dead) deviceList = devices } }
 
-    override fun connection(details: String, connected: Boolean, recognized: Boolean) {
+    override fun connection(details: String, connected: Boolean) {
         main.post {
             if (dead) return@post
             connectionText = details
             this.connected = connected
-            this.recognized = recognized
             if (connected) updateProfileForDevice(details.substringBefore(" · "))
             if (!connected) {
                 viewOnly = true
@@ -407,35 +452,71 @@ class MainActivity : ComponentActivity(), TransportListener {
         }
     }
 
-    override fun log(line: String) {
+    override fun log(line: String) = midiLog(MidiCategory.SESSION, line)
+
+    override fun midiLog(category: MidiCategory, line: String) {
         main.post {
             if (dead) return@post
-            val entry = "${Instant.now()}  $line"
-            logs = (logs + entry).takeLast(200)
+            val entry = "${Instant.now()}  [${category.title}] $line"
+            logs = (logs + MidiLogEntry(category, entry)).takeLast(240)
             if (!disk.isShutdown) disk.execute {
                 val file = File(filesDir, "diagnostico-previo.txt")
-                if (file.length() > 128 * 1024) file.writeText("")
+                if (file.length() > 1024 * 1024) {
+                    val rotated = File(filesDir, "diagnostico-anterior.txt")
+                    rotated.delete()
+                    if (!file.renameTo(rotated)) file.writeText("")
+                }
                 file.appendText("$entry\n")
             }
         }
     }
 
-    fun exportLogs() {
+    private fun logSnapshot(): (OutputStream) -> Unit {
         val summary = buildString {
-            appendLine("FM1 SCREEN v1.0 · comp. ${BuildConfig.COMPILATION}")
-            appendLine("Transporte: ${link.title} | Conexión: $connectionText")
+            appendLine("FM1 SCREEN v1.0 · comp. %03d".format(BuildConfig.COMPILATION))
+            appendLine("Captura UTC: ${Instant.now()}")
+            appendLine("Transporte: ${link.title} | Conexión: $connectionText | Puertos: $midiPorts")
             appendLine("Perfil: ${profile?.name ?: "desconocido"} | Automático: $autoProfile | DEMO: $demo")
+            appendLine("Bloqueo de solicitud: ${requestBlocked ?: "ninguno"} | Control: ${controlBlocked ?: "elegible"}")
             appendLine("Diagnóstico: $mirrorStats | Dibujados/s: $rendersPerSecond | Agrupados en Android: $uiDiscardedFrames")
             appendLine()
         }
-        val current = logs.joinToString("\n")
-        uriWriter = { stream ->
+        val current = logs.joinToString("\n") { it.line }
+        return { stream ->
             stream.write(summary.toByteArray())
-            val previous = File(filesDir, "diagnostico-previo.txt")
-            if (previous.exists()) previous.inputStream().use { it.copyTo(stream) }
-            else stream.write(current.toByteArray())
+            val files = listOf("diagnostico-anterior.txt", "diagnostico-previo.txt")
+                .map { File(filesDir, it) }.filter { it.exists() }
+            if (files.isEmpty()) stream.write(current.toByteArray())
+            else files.forEach { file -> file.inputStream().use { it.copyTo(stream) } }
         }
+    }
+
+    fun exportLogs() {
+        uriWriter = logSnapshot()
         saveText.launch("FM1-SCREEN-diagnostico.txt")
+    }
+
+    fun shareLogs() {
+        val snapshot = logSnapshot()
+        disk.execute {
+            val result = runCatching {
+                val folder = File(cacheDir, "diagnostics").apply { mkdirs() }
+                val file = File(folder, "FM1-SCREEN-diagnostico.txt")
+                file.outputStream().use(snapshot)
+                FileProvider.getUriForFile(this, "$packageName.diagnostics", file)
+            }
+            main.post {
+                if (!dead) result.onSuccess { uri ->
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        clipData = ClipData.newRawUri("Diagnóstico MIDI", uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(Intent.createChooser(intent, "Compartir diagnóstico MIDI"))
+                }.onFailure { message = it.localizedMessage ?: "No se pudo compartir el diagnóstico" }
+            }
+        }
     }
 
     fun clearMessage() { message = null }

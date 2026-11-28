@@ -35,11 +35,13 @@ sealed interface MirrorEvent {
 }
 
 /** Reassembles bounded SysEx across callbacks and counts complete MIDI 1.0 messages. */
-class SysExFramer(private val receive: (ByteArray) -> Unit) {
+class SysExFramer(private val short: (Int, Int, Int) -> Unit = { _, _, _ -> }, private val receive: (ByteArray) -> Unit) {
     private val buffer = ByteArray(MAX_SYSEX)
     private var length = 0
     private var runningSize = 0
     private var remaining = 0
+    private var status = 0
+    private var first = -1
     var messages = 0L
         private set
     var discarded = 0L
@@ -49,6 +51,7 @@ class SysExFramer(private val receive: (ByteArray) -> Unit) {
         length = 0
         runningSize = 0
         remaining = 0
+        status = 0
     }
 
     fun feed(bytes: ByteArray, offset: Int, count: Int) {
@@ -56,7 +59,10 @@ class SysExFramer(private val receive: (ByteArray) -> Unit) {
         for (index in offset until offset + count) {
             val value = bytes[index].toInt() and 255
             if (value >= 0xF8) {
-                if (value != 0xF9 && value != 0xFD) messages++
+                if (value != 0xF9 && value != 0xFD) {
+                    messages++
+                    short(value, -1, -1)
+                }
                 continue
             }
             if (length != 0) {
@@ -87,20 +93,29 @@ class SysExFramer(private val receive: (ByteArray) -> Unit) {
                     length = 1
                 }
                 value in 0x80..0xEF -> {
+                    status = value
                     runningSize = if (value in 0xC0..0xDF) 1 else 2
                     remaining = runningSize
+                    first = -1
                 }
                 value >= 0xF0 -> {
+                    status = value
                     runningSize = 0
                     remaining = when (value) { 0xF1, 0xF3 -> 1; 0xF2 -> 2; else -> 0 }
-                    if (value == 0xF6) messages++
+                    first = -1
+                    if (value == 0xF6) {
+                        messages++
+                        short(value, -1, -1)
+                    }
                 }
                 remaining > 0 -> {
                     remaining--
                     if (remaining == 0) {
                         messages++
+                        if (first < 0) short(status, value, -1) else short(status, first, value)
                         remaining = runningSize
-                    }
+                        first = -1
+                    } else first = value
                 }
             }
         }
@@ -148,6 +163,38 @@ object MirrorPackets {
     }
 
     fun releaseMirror() = basePacket(0x50, intArrayOf(0))
+
+    // Felucca's editor INFO and the firmware's read-only package identity (ota_service, 0x11).
+    fun feluccaInfo() = byteArrayOf(0xF0.toByte(), 0x7D, 0x46, 0x4C, 1, 0xF7.toByte())
+    fun feluccaPackage() = basePacket(0x11, intArrayOf())
+
+    fun feluccaName(message: ByteArray): String? = asciiReply(message, 0x4C, 1, 24)
+    fun big1Sound(message: ByteArray): String? = asciiReply(message, 0x53, 2, 40)
+
+    private fun asciiReply(m: ByteArray, family: Int, command: Int, limit: Int): String? {
+        if (m.size < 6 || m.u(0) != 0xF0 || m.u(1) != 0x7D || m.u(2) != 0x46 || m.u(3) != family ||
+            m.u(4) != command || m.u(m.lastIndex) != 0xF7) return null
+        val name = buildString {
+            for (i in 5 until minOf(5 + limit, m.lastIndex)) {
+                val value = m.u(i)
+                if (value == 0) break
+                if (value !in 32..126) return null
+                append(value.toChar())
+            }
+        }.trim()
+        return name.takeIf { family == 0x53 || it.isNotEmpty() }
+    }
+
+    fun feluccaPackageReply(m: ByteArray): String? {
+        if (m.size != 41 || m.u(0) != 0xF0 || m.u(1) != 0 || m.u(2) != 0x32 || m.u(m.lastIndex) != 0xF7 ||
+            (1 until m.lastIndex).any { m.u(it) > 127 }) return null
+        val d = unpackBase(m) ?: return null
+        if (d.size != 34 || d.u(0) != 0 || d.u(1) != 0x59 || d.u(2) != 0x11 || d.u(3) != 27 ||
+            d.u(4) != 0 || d.u(5) != 0 || (6..33).sumOf { d.u(it) } and 255 != 255) return null
+        val end = (6..32).firstOrNull { d.u(it) == 0 } ?: 33
+        if (end == 6 || (6 until end).any { d.u(it) !in 32..126 } || (end..32).any { d.u(it) != 0 }) return null
+        return d.decodeToString(6, end)
+    }
 
     // Public entry points only expose documented panel operations.
     fun button(sequence: Int, index: Int, down: Boolean): ByteArray {
