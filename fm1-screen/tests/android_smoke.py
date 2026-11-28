@@ -257,7 +257,13 @@ def validate_tablet(out, size, build):
     tap(CLOSE)
     adb("shell", "am", "force-stop", PACKAGE)
     adb("shell", "am", "start", "-W", "-n", ACTIVITY)
-    assert has_panel_color(bytes.fromhex("C7CED3"))
+    node(GEAR)
+    for _ in range(10):
+        if has_panel_color(bytes.fromhex("C7CED3")):
+            break
+        time.sleep(.12)
+    else:
+        raise AssertionError("The restored SILVER background did not reach the screen")
     tap(GEAR)
     tap("Rendimiento")
     node("Respuesta inmediata · sin suavizado")
@@ -352,7 +358,7 @@ def verify(apk, out, device, build, original=None):
         cycle_checks(gear, close, blank, count)
         total += count
         expect_page(index)
-    print(f"{device}: {total} ciclos de apertura y cierre verificados en las 3 vistas")
+    print(f"{device}: {total} ciclos de apertura y cierre verificados en las 3 vistas", flush=True)
     toggle_script(gear, close, 12, .03)
     time.sleep(.30)
     tree = hierarchy()
@@ -371,6 +377,12 @@ def verify(apk, out, device, build, original=None):
     tap(PAGES[2])
     now_stats = measure(gear, close)
     expect_page(2)
+
+    (out / "validation.json").write_text(json.dumps({
+        "device": device, "cycle_count": total, "rapid_cycles": 12, "baseline_lcd_bounds": before,
+        "lcd_bounds": all_bounds, "baseline_gfxinfo": pre_stats, "current_gfxinfo": now_stats,
+        "note": "Tiempo de fotograma de la interfaz bajo apertura y cierre en emulador. DEMO sin MIDI.",
+    }, indent=2) + "\n")
 
     tap(GEAR)
     configuration_categories(out, landscape)
@@ -408,11 +420,6 @@ def verify(apk, out, device, build, original=None):
             tap(CLOSE)
             expect_page(index)
 
-    (out / "validation.json").write_text(json.dumps({
-        "device": device, "cycle_count": total, "rapid_cycles": 12, "baseline_lcd_bounds": before,
-        "lcd_bounds": all_bounds, "baseline_gfxinfo": pre_stats, "current_gfxinfo": now_stats,
-        "note": "Tiempo de fotograma de la interfaz bajo apertura y cierre en emulador. DEMO sin MIDI.",
-    }, indent=2) + "\n")
     print(f"{device}: clean install, LCD geometry, gestures, seven categories and settings verified.")
 
 
