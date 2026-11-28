@@ -45,3 +45,7 @@ El diagnóstico registra RX/TX de la API, última trama SysEx, solicitudes, resp
 ## Validación de software y hardware
 
 Las pruebas de protocolo usan vectores sintéticos derivados de la documentación, con fragmentación, concatenación, F8, paquetes corruptos, pantalla estática, pérdida de señal, resincronización y saturación. El ensayo acelerado modela 600 s. El ensayo de reloj real se activa con `FM1_WALL_CLOCK=1 ./gradlew :core:test --tests '*AtlatlSessionTest.tenMinuteWallClockRun' --rerun`. El workflow lo ejecuta en un trabajo separado, con XML descargable. Ningún ensayo sintético mide el cable, la cadencia del LCD, la CPU del FM-1 o la estabilidad física. [Plan físico](../PHYSICAL-TEST-PLAN.md).
+
+## Verificación de publicación de la compilación 017
+
+La ejecución PR 46100042294 del commit ea111c5 pasó las pruebas unitarias y Lint, pero omitió explícitamente el empaquetado APK, las pruebas visuales y el ensayo de duración por las condiciones del workflow. No equivale a una entrega instalable. Se requiere una ejecución push o workflow_dispatch con artefacto APK, checksum, firma y resultados de duración y emuladores. La validación física sigue pendiente.
