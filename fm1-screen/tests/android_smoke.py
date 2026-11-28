@@ -321,7 +321,12 @@ def verify(apk, out, device, build, original=None):
     tap("Pantalla")
     tap("Modo demostración")
     assert switch_checked("Modo demostración")
+    for label in ("SCREEN + CONTROL", "BIG SCREEN", "FULL CONTROL"):
+        tap(label)
+        node(CLOSE)
+        assert node(label).get("selected") == "true", f"View not selected: {label}"
     tap(CLOSE)
+    expect_page(0)
 
     all_bounds = {}
     total = 0
