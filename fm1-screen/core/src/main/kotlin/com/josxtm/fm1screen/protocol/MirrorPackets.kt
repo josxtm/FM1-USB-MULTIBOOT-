@@ -42,6 +42,9 @@ class SysExFramer(private val short: (Int, Int, Int) -> Unit = { _, _, _ -> }, p
     private var remaining = 0
     private var status = 0
     private var first = -1
+    private var startedNanos = 0L
+    var completedStartedNanos = 0L
+        private set
     var messages = 0L
         private set
     var discarded = 0L
@@ -52,9 +55,12 @@ class SysExFramer(private val short: (Int, Int, Int) -> Unit = { _, _, _ -> }, p
         runningSize = 0
         remaining = 0
         status = 0
+        startedNanos = 0L
+        completedStartedNanos = 0L
     }
 
-    fun feed(bytes: ByteArray, offset: Int, count: Int) {
+    @JvmOverloads
+    fun feed(bytes: ByteArray, offset: Int, count: Int, receivedNanos: Long = 0L) {
         require(offset >= 0 && count in 0..bytes.size && offset <= bytes.size - count)
         for (index in offset until offset + count) {
             val value = bytes[index].toInt() and 255
@@ -72,6 +78,7 @@ class SysExFramer(private val short: (Int, Int, Int) -> Unit = { _, _, _ -> }, p
                         val message = buffer.copyOf(length)
                         length = 0
                         messages++
+                        completedStartedNanos = startedNanos
                         receive(message)
                         continue
                     }
@@ -90,6 +97,7 @@ class SysExFramer(private val short: (Int, Int, Int) -> Unit = { _, _, _ -> }, p
                     runningSize = 0
                     remaining = 0
                     buffer[0] = bytes[index]
+                    startedNanos = receivedNanos
                     length = 1
                 }
                 value in 0x80..0xEF -> {
@@ -271,16 +279,21 @@ object MirrorPackets {
         val y = m.le7(5)
         val x = m.le7(7)
         if (!rectangle(x, y, 1, 1)) return MirrorEvent.Invalid
-        val pixels = ShortArray(SIDE - x)
+        var width = 0
+        for (i in 9 until m.lastIndex step 4) {
+            val count = m.u(i)
+            if (count == 0 || count > SIDE - x - width || m.u(i + 3) > 3) return MirrorEvent.Invalid
+            width += count
+        }
+        val pixels = ShortArray(width)
         var written = 0
         for (i in 9 until m.lastIndex step 4) {
             val count = m.u(i)
-            if (count == 0 || count > pixels.size - written || m.u(i + 3) > 3) return MirrorEvent.Invalid
             val color = m.le7(i + 1) or (m.u(i + 3) shl 14)
             pixels.fill(color.toShort(), written, written + count)
             written += count
         }
-        return MirrorEvent.Pixels(Patch(x, y, written, 1, pixels.copyOf(written)))
+        return MirrorEvent.Pixels(Patch(x, y, width, 1, pixels))
     }
 
     private fun decodeBig2(m: ByteArray): MirrorEvent? = when (m.u(4)) {

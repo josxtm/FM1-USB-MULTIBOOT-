@@ -4,25 +4,44 @@ package com.josxtm.fm1screen.protocol
 class FrameBuffer {
     private val pixels = ShortArray(SIDE * SIDE)
     private val known = BooleanArray(SIDE * SIDE)
+    private val dirty = DirtyRows()
     var covered = 0
         private set
 
-    fun apply(patch: Patch) {
+    fun apply(patch: Patch): Boolean {
         require(patch.x in 0 until SIDE && patch.y in 0 until SIDE)
         require(patch.width in 1..(SIDE - patch.x) && patch.height in 1..(SIDE - patch.y))
         require(patch.rgb565.size == patch.width * patch.height)
+        var changed = false
         for (row in 0 until patch.height) {
             val start = (patch.y + row) * SIDE + patch.x
+            var first = patch.width
+            var last = -1
             for (column in 0 until patch.width) {
                 val index = start + column
-                pixels[index] = patch.rgb565[row * patch.width + column]
-                if (!known[index]) {
+                val value = patch.rgb565[row * patch.width + column]
+                val seen = known[index]
+                if (seen && pixels[index] == value) continue
+                pixels[index] = value
+                if (!seen) {
                     known[index] = true
                     covered++
                 }
+                first = minOf(first, column)
+                last = column
+            }
+            if (last >= 0) {
+                dirty.include(patch.y + row, patch.x + first, patch.x + last + 1)
+                changed = true
             }
         }
+        return changed
     }
+
+    internal fun copyDirty(destination: ShortArray, pending: DirtyRows): Int =
+        dirty.copy(pixels, destination, pending)
+
+    internal fun clearDirty() = dirty.clear()
 
     fun freeze() = ScreenFrame(pixels.copyOf())
 
@@ -35,6 +54,7 @@ class FrameBuffer {
 
     fun reset() {
         pixels.fill(0)
+        dirty.clear()
         forgetCoverage()
     }
 

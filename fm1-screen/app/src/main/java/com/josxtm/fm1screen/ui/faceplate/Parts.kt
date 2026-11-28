@@ -149,13 +149,14 @@ fun DisplayView(feed: PanelFeed, theme: Theme, size: Float, modifier: Modifier =
         drawRoundRect(theme.bezel.color, Offset.Zero, Size(px, px), CornerRadius(br * u))
         val s = snapped * u
         val o = (px - s) / 2
-        feed.drawn()
         drawRect(Color.Black, Offset(o, o), Size(s, s))
+        val started = feed.beginDraw()
         drawImage(feed.image, srcOffset = androidx.compose.ui.unit.IntOffset.Zero,
                   srcSize = androidx.compose.ui.unit.IntSize(240, 240),
                   dstOffset = androidx.compose.ui.unit.IntOffset(o.roundToInt(), o.roundToInt()),
                   dstSize = androidx.compose.ui.unit.IntSize(s.roundToInt(), s.roundToInt()),
                   filterQuality = feed.filter)
+        feed.drawn(started)
     }
 }
 

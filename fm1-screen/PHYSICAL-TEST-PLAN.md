@@ -1,6 +1,6 @@
 # Validación física en español
 
-**Preparación**. Instala la APK del artefacto de Actions. Confirma `FM1 SCREEN v1.0 · comp. 017` en el panel de ajustes. Si la compilación instalada lleva otro certificado, exporta temas y perfiles antes de desinstalarla, instala la nueva e importa esos archivos. Usa un cable USB-C de datos con la tablet como host. Arranca el instrumento de forma normal con su firmware instalado. Desactiva DEMO y deja activado **Solo visualización**.
+**Preparación**. Instala la APK del artefacto de Actions. Confirma `FM1 SCREEN v1.0 · comp. 018` en el panel de ajustes. Si la compilación instalada lleva otro certificado, exporta temas y perfiles antes de desinstalarla, instala la nueva e importa esos archivos. Usa un cable USB-C de datos con la tablet como host. Arranca el instrumento de forma normal con su firmware instalado. Desactiva DEMO y deja activado **Solo visualización**.
 
 1. Conecta el FM-1 y concede permisos si Android los solicita. Abre **Conexión**, selecciona su puerto y anota el nombre que Android enumera. Escribe el firmware y la versión que indica el instrumento. Un perfil sugerido por el USB no certifica la versión.
 2. Confirma que el audio sale del FM-1 por su salida habitual. Haz una prueba tocando pads físicos con el volumen de la tablet silenciado. Conserva el audio del instrumento durante las pruebas siguientes.
@@ -11,6 +11,10 @@
 7. Desconecta y reconecta el USB. Verifica recuperación de la imagen, panel sin notas sostenidas y control remoto desautorizado. Si alguna nota queda sostenida tras quitar el cable, libérala desde el FM-1 y anota el gesto.
 8. Mantén diez minutos de sesión alternando actividad y reposo. Anota errores de imagen, latencia visible, sonido y reconexiones. Para latencia extremo a extremo, filma el LCD físico y la tablet simultáneamente a una frecuencia conocida y cuenta los cuadros entre cambios equivalentes.
 9. En **Diagnóstico**, exporta los registros a un archivo de texto con el selector Android. Incluye uno antes del sondeo, otro después y otro al final si hubo incidencias. Adjunta versión, tiempo transcurrido, protocolo, tres capturas y resultado del audio. Opcionalmente exporta un PNG o un MP4 del LCD desde **Vista**.
+
+## Medición de latencia de SKIFF Atlatl v1.2.5
+
+El propietario confirmó que la 017 recibió el LCD físico. Para comparar, filma el LCD del FM-1 y el de la tablet en la misma toma, preferiblemente a 240 fps, con el mismo cable, ajustes y condiciones de secuenciador. Desde Vista elige cada perfil de rendimiento de la 018. Registra los cuadros entre cambios iguales en ambas pantallas y exporta un diagnóstico por perfil. Anota si se omitieron presentaciones y si hubo pérdidas de datos o audio. El monitor informa de tramos internos de Android. [Método y resultados del ensayo sintético](docs/FASE-4-LATENCIA.md).
 
 ## Validación prioritaria de SKIFF Atlatl v1.2.5
 

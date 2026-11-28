@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import com.josxtm.fm1screen.BuildConfig
 import com.josxtm.fm1screen.MainActivity
 import com.josxtm.fm1screen.data.ColorRole
+import com.josxtm.fm1screen.performance.PresentationMode
 import com.josxtm.fm1screen.protocol.SIDE
 import com.josxtm.fm1screen.protocol.Wire
 import com.josxtm.fm1screen.transport.LinkKind
@@ -188,6 +189,12 @@ private fun DisplaySettings(app: MainActivity, close: () -> Unit) {
                     close()
                 }
             }
+        }
+    }
+    Section("Rendimiento gráfico")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        PresentationMode.entries.forEach { mode ->
+            Action(mode.title, app.presentation == mode) { app.selectPresentation(mode) }
         }
     }
     Toggle("Mantener pantalla encendida", app.stayAwake, change = app::keepScreen)
@@ -342,7 +349,20 @@ private fun Diagnostics(app: MainActivity) {
     stats.lastSysExTx?.let { Label("Último SysEx TX · " + it.take(160), Palette.sheetMuted) }
     stats.lastSysExRx?.let { Label("Último SysEx RX · " + it.take(160), Palette.sheetMuted) }
     app.controlBlocked?.let { Label("Control bloqueado · $it", Palette.sheetMuted) }
-    Label("${app.uiDiscardedFrames} publicaciones agrupadas por Android", Palette.sheetMuted)
+    Section("Rendimiento gráfico")
+    Label("Modo gráfico · ${app.presentation.title}")
+    val depth = app.rxDepth
+    Label("Cola RX ${depth.chunks} fragmentos / ${depth.bytes} B · pico ${depth.peakChunks} / ${depth.peakBytes} B")
+    Label("${app.uiDiscardedFrames} presentaciones omitidas · ${app.transferBytes} B transferidos por regiones",
+        Palette.sheetMuted)
+    val load = app.androidLoad
+    Label("CPU Android ${load.cpuPercent?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "—"} % · heap JVM ${load.javaHeapBytes / 1024} KiB · nativo ${load.nativeHeapBytes / 1024} KiB")
+    Label("Asignación ${load.allocatedBytesPerSecond?.let { "${it / 1024} KiB/s" } ?: "—"} · GC ${load.gcCount ?: "—"} ciclos / ${load.gcMillis ?: "—"} ms")
+    if (app.performanceStages.isEmpty()) Label("Latencia interna sin muestras de MIDI o LCD", Palette.sheetMuted)
+    app.performanceStages.forEach { (stage, stats) ->
+        Label(String.format(Locale.ROOT, "%s · P50 %.3f · P95 %.3f · P99 %.3f ms · n=%d",
+            stage.title, stats.p50Ms, stats.p95Ms, stats.p99Ms, stats.count), Palette.sheetMuted)
+    }
     Label(stats.decodingMs?.let { "Último mensaje decodificado en ${String.format(Locale.ROOT, "%.3f", it)} ms" }
         ?: "Decodificación sin muestra", Palette.sheetMuted)
     Label(stats.processingMs?.let { "Recepción → framebuffer ${String.format(Locale.ROOT, "%.2f", it)} ms" }

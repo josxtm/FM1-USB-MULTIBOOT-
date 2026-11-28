@@ -76,8 +76,8 @@ jobs:
         env:
           FM1_BUILD: ${{ steps.version.outputs.build }}
           FM1_LABEL: ${{ steps.version.outputs.label }}
-          PREVIOUS_BUILD: '016'
-          PREVIOUS_CERTIFICATE: 46b461bc29780033e99fb6344729e149208dcf33da12739999d04f287c259529
+          PREVIOUS_BUILD: '017'
+          PREVIOUS_CERTIFICATE: ffec1cc65df4a283fecb7e68239bd1a59083829f1127fadbb8b37f0086c1751f
           FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
           FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
           FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}

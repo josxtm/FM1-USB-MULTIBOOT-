@@ -2,12 +2,18 @@
 package com.josxtm.fm1screen.transport
 
 /** Copies Android MIDI's ephemeral chunks into a bounded queue. Loss is delivered before the next chunk. */
-class MidiIngress(private val maxBytes: Int = 65_536, private val maxChunks: Int = 512) {
+class MidiIngress @JvmOverloads constructor(
+    private val maxBytes: Int = 65_536, private val maxChunks: Int = 512, private val nanoTime: (() -> Long)? = null,
+) {
     sealed interface Entry {
-        data class Chunk(val bytes: ByteArray, val receivedNanos: Long) : Entry
+        data class Chunk(val bytes: ByteArray, val receivedNanos: Long, val queuedNanos: Long) : Entry
         data class Loss(val bytes: Long) : Entry
     }
 
+    data class Depth(val chunks: Int = 0, val bytes: Int = 0, val peakChunks: Int = 0, val peakBytes: Int = 0)
+
+    private var peakChunks = 0
+    private var peakBytes = 0
     private val pending = ArrayDeque<Entry.Chunk>()
     private var queuedBytes = 0
     private var lost = 0L
@@ -22,13 +28,18 @@ class MidiIngress(private val maxBytes: Int = 65_536, private val maxChunks: Int
             pending.clear()
             queuedBytes = 0
         } else {
-            pending.addLast(Entry.Chunk(bytes.copyOfRange(offset, offset + count), receivedNanos))
+            val copy = bytes.copyOfRange(offset, offset + count)
+            pending.addLast(Entry.Chunk(copy, receivedNanos, nanoTime?.invoke() ?: receivedNanos))
             queuedBytes += count
+            peakChunks = maxOf(peakChunks, pending.size)
+            peakBytes = maxOf(peakBytes, queuedBytes)
         }
         if (scheduled) return false
         scheduled = true
         return true
     }
+
+    @Synchronized fun depth() = Depth(pending.size, queuedBytes, peakChunks, peakBytes)
 
     @Synchronized
     fun take(): Entry? {

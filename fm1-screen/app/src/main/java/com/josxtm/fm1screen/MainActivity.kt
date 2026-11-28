@@ -11,6 +11,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.view.Choreographer
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,17 +32,26 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.josxtm.fm1screen.capture.Recording
+import com.josxtm.fm1screen.data.AndroidLoad
+import com.josxtm.fm1screen.data.AndroidLoadSampler
 import com.josxtm.fm1screen.data.FirmwareProfile
 import com.josxtm.fm1screen.data.ProfileJson
 import com.josxtm.fm1screen.data.ProfileLibrary
 import com.josxtm.fm1screen.data.ThemeLibrary
 import com.josxtm.fm1screen.protocol.PanelState
-import com.josxtm.fm1screen.protocol.ScreenFrame
+import com.josxtm.fm1screen.performance.PerformanceMonitor
+import com.josxtm.fm1screen.performance.Percentiles
+import com.josxtm.fm1screen.performance.PresentationMode
+import com.josxtm.fm1screen.performance.Stage
+import com.josxtm.fm1screen.protocol.FrameBuffer
+import com.josxtm.fm1screen.protocol.FrameTiming
+import com.josxtm.fm1screen.protocol.LatestFrame
 import com.josxtm.fm1screen.protocol.Wire
 import com.josxtm.fm1screen.transport.DeviceIdentity
 import com.josxtm.fm1screen.transport.LinkKind
 import com.josxtm.fm1screen.transport.MidiCategory
 import com.josxtm.fm1screen.transport.MidiPorts
+import com.josxtm.fm1screen.transport.MidiIngress
 import com.josxtm.fm1screen.transport.MidiTransport
 import com.josxtm.fm1screen.transport.MirrorScope
 import com.josxtm.fm1screen.transport.StreamState
@@ -72,20 +83,39 @@ class MainActivity : ComponentActivity(), TransportListener {
     private lateinit var themeLibrary: ThemeLibrary
     private lateinit var profileLibrary: ProfileLibrary
     private lateinit var protector: ScreenProtector
-    private val incomingLock = Any()
-    private var pendingFrame: ScreenFrame? = null
-    private var framePosted = false
-    private var overwrittenFrames = 0L
+    private val mailbox = LatestFrame()
+    private val performanceMonitor = PerformanceMonitor()
+    private val loadSampler = AndroidLoadSampler()
+    private lateinit var displayClock: Choreographer
     var uiDiscardedFrames by mutableStateOf(0L)
+        private set
+    var transferBytes by mutableStateOf(0L)
+        private set
+    var performanceStages by mutableStateOf(emptyMap<Stage, Percentiles>())
+        private set
+    var rxDepth by mutableStateOf(MidiIngress.Depth())
+        private set
+    var androidLoad by mutableStateOf(AndroidLoad())
+        private set
+    var presentation by mutableStateOf(PresentationMode.BALANCED)
         private set
     private var watch = false
     private var foreground = false
-    private var dead = false
+    @Volatile private var dead = false
     private var uriReader: ((String) -> Unit)? = null
     private var uriWriter: ((OutputStream) -> Unit)? = null
     private var recording: Recording? = null
     private var video: File? = null
-    private val feed = PanelFeed()
+    private val feed = PanelFeed(performanceMonitor)
+    private val drawLatest = Choreographer.FrameCallback {
+        val started = System.nanoTime()
+        val update = feed.consume(mailbox) ?: return@FrameCallback
+        if (!demo && !dead) {
+            update.timing?.let { performanceMonitor.record(Stage.UI_QUEUE, started - it.publishedNanos) }
+            feed.paint(update)
+            if (update.timing == null) recording?.stop() else recording?.update(feed.bitmap)
+        }
+    }
     val faceplate = FaceplateUi()
 
     var theme by mutableStateOf<Theme?>(null)
@@ -160,6 +190,9 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        displayClock = Choreographer.getInstance()
+        presentation = enumValue(prefs.getString("presentation", null), PresentationMode.BALANCED)
+        feed.presentationMode = presentation
         enableEdgeToEdge()
         themeLibrary = ThemeLibrary(this)
         profileLibrary = ProfileLibrary(this)
@@ -177,8 +210,9 @@ class MainActivity : ComponentActivity(), TransportListener {
         if (!autoProfile) updateProfile(profiles.firstOrNull { it.id == prefs.getString("profile", "") })
         stayAwake = prefs.getBoolean("stayAwake", true)
         applyScreenFlag()
-        transport = MidiTransport(this, this, prefs.getString("usbDevice", null))
+        transport = MidiTransport(this, this, prefs.getString("usbDevice", null), performanceMonitor)
         feed.transport = transport
+        transport.setPresentationMode(presentation)
         transport.use(link)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -202,10 +236,17 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     private val metrics = object : Runnable {
         private var last = 0
+        private var lastAt = SystemClock.elapsedRealtime()
         override fun run() {
-            uiDiscardedFrames = synchronized(incomingLock) { overwrittenFrames }
-            rendersPerSecond = feed.draws - last
+            val now = SystemClock.elapsedRealtime()
+            uiDiscardedFrames = mailbox.superseded() + feed.skippedOnUi
+            transferBytes = mailbox.copiedBytes()
+            rendersPerSecond = ((feed.draws - last) * 1000L / (now - lastAt).coerceAtLeast(1)).toInt()
             last = feed.draws
+            lastAt = now
+            rxDepth = performanceMonitor.ingress
+            performanceStages = performanceMonitor.snapshot()
+            androidLoad = loadSampler.sample()
             if (!dead) main.postDelayed(this, 1000)
         }
     }
@@ -229,6 +270,7 @@ class MainActivity : ComponentActivity(), TransportListener {
     override fun onDestroy() {
         dead = true
         main.removeCallbacks(metrics)
+        displayClock.removeFrameCallback(drawLatest)
         recording?.stop()
         transport.close()
         disk.shutdown()
@@ -250,6 +292,16 @@ class MainActivity : ComponentActivity(), TransportListener {
     private fun applyScreenFlag() {
         if (stayAwake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    fun selectPresentation(value: PresentationMode) {
+        if (presentation == value) return
+        presentation = value
+        feed.presentationMode = value
+        performanceMonitor.clearSamples()
+        performanceStages = emptyMap()
+        transport.setPresentationMode(value)
+        prefs.edit().putString("presentation", value.name).apply()
     }
 
     fun selectScaling(value: Scaling) {
@@ -385,26 +437,10 @@ class MainActivity : ComponentActivity(), TransportListener {
         transport.configure(protocol, watch && !demo && foreground, remote)
     }
 
-    override fun frame(pixels: ScreenFrame?, receivedNanos: Long) {
-        val post = synchronized(incomingLock) {
-            if (framePosted && pendingFrame != null) overwrittenFrames++
-            pendingFrame = pixels
-            if (framePosted) false else {
-                framePosted = true
-                true
-            }
-        }
-        if (!post) return
-        main.post {
-            val latest = synchronized(incomingLock) {
-                framePosted = false
-                pendingFrame.also { pendingFrame = null }
-            }
-            if (!demo && !dead) {
-                feed.paint(latest)
-                if (latest == null) recording?.stop() else recording?.update(feed.bitmap)
-            }
-        }
+    override fun frameBuffer(source: FrameBuffer?, timing: FrameTiming?) {
+        if (dead) return
+        val newCallback = if (source != null && timing != null) mailbox.offer(source, timing) else mailbox.clear()
+        if (newCallback) displayClock.postFrameCallback(drawLatest)
     }
 
     override fun panel(state: PanelState?) {
@@ -478,7 +514,11 @@ class MainActivity : ComponentActivity(), TransportListener {
             appendLine("Transporte: ${link.title} | Conexión: $connectionText | Puertos: $midiPorts")
             appendLine("Perfil: ${profile?.name ?: "desconocido"} | Automático: $autoProfile | DEMO: $demo")
             appendLine("Bloqueo de solicitud: ${requestBlocked ?: "ninguno"} | Control: ${controlBlocked ?: "elegible"}")
-            appendLine("Diagnóstico: $mirrorStats | Dibujados/s: $rendersPerSecond | Agrupados en Android: $uiDiscardedFrames")
+            appendLine("Diagnóstico: $mirrorStats | Dibujados/s: $rendersPerSecond | Presentaciones omitidas: $uiDiscardedFrames")
+            appendLine("Rendimiento: ${presentation.title} | Cola: $rxDepth | Copias RGB565 parciales: $transferBytes B")
+            appendLine("Proceso Android: $androidLoad")
+            appendLine("Latencias internas en ms, desde callback MIDI hasta registrar el dibujo. Sin medida física extremo a extremo.")
+            performanceStages.forEach { (stage, stats) -> appendLine("${stage.title}: $stats") }
             appendLine()
         }
         val current = logs.joinToString("\n") { it.line }

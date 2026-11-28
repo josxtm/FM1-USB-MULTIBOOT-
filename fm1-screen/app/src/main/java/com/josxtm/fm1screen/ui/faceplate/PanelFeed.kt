@@ -14,7 +14,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import com.josxtm.fm1screen.data.FirmwareProfile
 import com.josxtm.fm1screen.protocol.PanelState
 import com.josxtm.fm1screen.protocol.SIDE
-import com.josxtm.fm1screen.protocol.ScreenFrame
+import com.josxtm.fm1screen.performance.PerformanceMonitor
+import com.josxtm.fm1screen.performance.PresentationMode
+import com.josxtm.fm1screen.performance.Stage
+import com.josxtm.fm1screen.protocol.FrameTiming
+import com.josxtm.fm1screen.protocol.FrameUpdate
+import com.josxtm.fm1screen.protocol.LatestFrame
 import java.nio.ShortBuffer
 import com.josxtm.fm1screen.transport.PanelOutput
 import com.josxtm.fm1screen.protocol.ControlOrigin
@@ -58,7 +63,7 @@ class KnobFeed {
     var version by mutableIntStateOf(0)
 }
 
-class PanelFeed {
+class PanelFeed(private val performance: PerformanceMonitor) {
     lateinit var transport: PanelOutput
     var bitmap = Bitmap.createBitmap(SIDE, SIDE, Bitmap.Config.ARGB_8888)
         private set
@@ -71,7 +76,9 @@ class PanelFeed {
     var canControl by mutableStateOf(false)
         private set
     var scaling by mutableStateOf(Scaling.AUTO)
-    val filter get() = if (scaling == Scaling.SMOOTH) FilterQuality.Low else FilterQuality.None
+    var presentationMode by mutableStateOf(PresentationMode.BALANCED)
+    val filter get() = if (presentationMode != PresentationMode.ULTRA && scaling == Scaling.SMOOTH)
+        FilterQuality.Low else FilterQuality.None
     val pixelPerfect get() = scaling == Scaling.PIXEL
     val lights = PanelLights()
     val knobs = KnobFeed()
@@ -82,6 +89,9 @@ class PanelFeed {
     private val framePixels = ShortArray(SIDE * SIDE)
     private val frameBuffer = ShortBuffer.wrap(framePixels)
     private var lastDrawn = -1
+    private var timing: FrameTiming? = null
+    var skippedOnUi = 0L
+        private set
     var draws = 0
         private set
 
@@ -104,17 +114,25 @@ class PanelFeed {
         canControl = enabled
     }
 
-    fun paint(pixels: ScreenFrame?) {
+    fun consume(mailbox: LatestFrame): FrameUpdate? = mailbox.consume(framePixels)
+
+    fun paint(update: FrameUpdate?) {
+        val timestamp = update?.timing
+        val started = System.nanoTime()
+        // A composed frame and the MP4 encoder can hold the previous bitmap concurrently.
+        // Once displayed, each native bitmap is kept unchanged.
         val next = Bitmap.createBitmap(SIDE, SIDE, Bitmap.Config.RGB_565)
-        if (pixels != null) {
-            pixels.copyRgb565To(framePixels)
+        if (timestamp != null) {
             frameBuffer.rewind()
             next.copyPixelsFromBuffer(frameBuffer)
+            performance.record(Stage.BITMAP, System.nanoTime() - started)
         }
-        show(next, pixels != null)
+        show(next, timestamp != null, timestamp)
     }
 
-    private fun show(next: Bitmap, valid: Boolean) {
+    private fun show(next: Bitmap, valid: Boolean, timestamp: FrameTiming? = null) {
+        if (frames != lastDrawn && timing != null) skippedOnUi++
+        timing = timestamp
         bitmap = next
         image = next.asImageBitmap()
         hasImage = valid
@@ -236,11 +254,17 @@ class PanelFeed {
         if (::transport.isInitialized) transport.releaseControls()
     }
 
-    fun drawn() {
-        if (frames != lastDrawn && hasImage) {
-            lastDrawn = frames
-            draws++
-        }
+    fun beginDraw(): Long = if (frames != lastDrawn && timing != null) System.nanoTime() else 0L
+
+    fun drawn(started: Long) {
+        if (started == 0L) return
+        val stamp = timing ?: return
+        val now = System.nanoTime()
+        lastDrawn = frames
+        draws++
+        performance.record(Stage.CANVAS, now - started)
+        performance.record(Stage.INTERNAL_LATEST, now - stamp.lastReceivedNanos)
+        performance.record(Stage.INTERNAL_OLDEST, now - stamp.firstReceivedNanos)
     }
 
     companion object {

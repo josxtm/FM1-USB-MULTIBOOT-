@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.josxtm.fm1screen.transport
 
+import com.josxtm.fm1screen.performance.PerformanceMonitor
+import com.josxtm.fm1screen.performance.PresentationMode
+import com.josxtm.fm1screen.performance.Stage
 import com.josxtm.fm1screen.protocol.FrameBuffer
+import com.josxtm.fm1screen.protocol.FrameTiming
 import com.josxtm.fm1screen.protocol.MirrorEvent
 import com.josxtm.fm1screen.protocol.MirrorPackets
 import com.josxtm.fm1screen.protocol.PanelState
 import com.josxtm.fm1screen.protocol.SIDE
-import com.josxtm.fm1screen.protocol.ScreenFrame
 import com.josxtm.fm1screen.protocol.SysExFramer
 import com.josxtm.fm1screen.protocol.Wire
 
@@ -53,7 +56,8 @@ data class MirrorStats(
 )
 
 interface MirrorListener {
-    fun frame(pixels: ScreenFrame?, receivedNanos: Long)
+    // The mutable framebuffer is owned by the MIDI worker and usable only during this synchronous callback.
+    fun frameBuffer(source: FrameBuffer?, timing: FrameTiming?)
     fun panel(state: PanelState?)
     fun stats(stats: MirrorStats)
     fun log(line: String)
@@ -81,7 +85,10 @@ class MirrorSession(
     private val observer: MirrorListener,
 ) {
     private val framebuffer = FrameBuffer()
-    private val framer = SysExFramer(::shortMessage, ::message)
+    private val framer = SysExFramer(::framedShort, ::framedSysEx)
+    var presentationMode = PresentationMode.BALANCED
+    var performance: PerformanceMonitor? = null
+    private var framerCallbackNanos = 0L
     private var wire: Wire? = null
     private var choice = Wire.AUTO
     private var compatibleOutput = false
@@ -117,6 +124,9 @@ class MirrorSession(
     private var lastPublish = 0L
     private var rxNanos = 0L
     private var patchNanos = 0L
+    private var firstPatchNanos = 0L
+    private var firstAppliedNanos = 0L
+    private var frameSynced = false
     private var patches = 0
     private var completed = 0
     private var published = 0
@@ -203,11 +213,35 @@ class MirrorSession(
         observer.midiLog(MidiCategory.ERROR, "RX saturado · $bytes B descartados · resincronización solicitada")
     }
 
-    fun receive(data: ByteArray, receivedNanos: Long) {
+    @JvmOverloads
+    fun receive(data: ByteArray, receivedNanos: Long, queuedNanos: Long = receivedNanos) {
         if (!alive) return
         rxNanos = receivedNanos
         bytesReceived += data.size
-        framer.feed(data, 0, data.size)
+        val monitor = performance
+        if (monitor == null) {
+            framer.feed(data, 0, data.size, receivedNanos)
+            return
+        }
+        val started = clock.nanoTime()
+        monitor.record(Stage.RX_QUEUE, started - queuedNanos)
+        framerCallbackNanos = 0L
+        framer.feed(data, 0, data.size, receivedNanos)
+        monitor.record(Stage.SYSEX, clock.nanoTime() - started - framerCallbackNanos)
+    }
+
+    private fun framedSysEx(bytes: ByteArray) = inFramer { message(bytes) }
+
+    private fun framedShort(status: Int, data1: Int, data2: Int) = inFramer { shortMessage(status, data1, data2) }
+
+    private inline fun inFramer(handle: () -> Unit) {
+        if (performance == null) {
+            handle()
+            return
+        }
+        val began = clock.nanoTime()
+        handle()
+        framerCallbackNanos += clock.nanoTime() - began
     }
 
     private fun shortMessage(status: Int, data1: Int, data2: Int) {
@@ -308,6 +342,7 @@ class MirrorSession(
         framebuffer.reset()
         framer.reset()
         dirtySince = -1L
+        frameSynced = false
         lastMessage = -1L
         lastPixels = -1L
         heartbeat = false
@@ -317,7 +352,7 @@ class MirrorSession(
         decodingMs = null
         commands.clear()
         pending = null
-        observer.frame(null, 0L)
+        observer.frameBuffer(null, null)
         observer.panel(null)
         publishStats()
     }
@@ -360,7 +395,12 @@ class MirrorSession(
             return
         }
         val event = MirrorPackets.decodeIdentified(protocol, bytes) ?: return
-        decodingMs = (clock.nanoTime() - start).coerceAtLeast(0) / 1_000_000.0
+        val decodedIn = (clock.nanoTime() - start).coerceAtLeast(0)
+        decodingMs = decodedIn / 1_000_000.0
+        if (event is MirrorEvent.Pixels) {
+            performance?.record(Stage.DECODE, decodedIn)
+            performance?.record(Stage.SYSEX_SPAN, rxNanos - framer.completedStartedNanos)
+        }
         if (event == MirrorEvent.Invalid) {
             invalid++
             if (protocol == wire) {
@@ -422,8 +462,18 @@ class MirrorSession(
                     expected = (it + 1) and 255
                 }
                 val wasFull = framebuffer.covered == SIDE * SIDE
-                framebuffer.apply(event.patch)
-                patchNanos = rxNanos
+                val applyAt = if (performance != null) clock.nanoTime() else 0
+                val changed = framebuffer.apply(event.patch)
+                performance?.record(Stage.FRAMEBUFFER, clock.nanoTime() - applyAt)
+                if (changed) {
+                    patchNanos = rxNanos
+                    frameSynced = false
+                    if (dirtySince < 0L) {
+                        dirtySince = now
+                        firstPatchNanos = framer.completedStartedNanos.coerceAtMost(rxNanos)
+                        if (performance != null) firstAppliedNanos = clock.nanoTime()
+                    }
+                }
                 lastPixels = now
                 patches++
                 blocks++
@@ -434,13 +484,12 @@ class MirrorSession(
                     awaitingRepair = false
                     waitingForFull = false
                 }
-                if (dirtySince < 0L) dirtySince = now
             }
             is MirrorEvent.Panel -> observer.panel(event.state)
             MirrorEvent.Sync -> {
                 completed++
                 if (framebuffer.covered == SIDE * SIDE) completeFrames++
-                if (now - lastPublish >= 16) publish(now)
+                frameSynced = true
             }
             else -> Unit
         }
@@ -472,13 +521,30 @@ class MirrorSession(
         }
     }
 
-    private fun publish(now: Long) {
-        if (dirtySince < 0L) return
+    fun frameDelayMillis(): Long? {
+        if (!alive || dirtySince < 0) return null
+        val batch = when {
+            wire != Wire.BIG2 -> presentationMode.batchMs
+            frameSynced -> 0L
+            else -> maxOf(60L, presentationMode.batchMs)
+        }
+        val due = maxOf(dirtySince + batch, lastPublish + presentationMode.intervalMs)
+        return (due - clock.elapsedMillis()).coerceAtLeast(0L)
+    }
+
+    /** Presentation can wake independently of the tick that services protocol renewal and control ACKs. */
+    fun publishDueFrame() {
+        if (frameDelayMillis() != 0L) return
+        val now = clock.elapsedMillis()
+        val publishedAt = clock.nanoTime()
         dirtySince = -1L
+        frameSynced = false
         lastPublish = now
         published++
-        processingMs = (clock.nanoTime() - patchNanos).coerceAtLeast(0) / 1_000_000.0
-        observer.frame(framebuffer.freeze(), patchNanos)
+        processingMs = (publishedAt - patchNanos).coerceAtLeast(0) / 1_000_000.0
+        performance?.record(Stage.COALESCE, publishedAt - firstAppliedNanos)
+        observer.frameBuffer(framebuffer, FrameTiming(firstPatchNanos, patchNanos, publishedAt))
+        framebuffer.clearDirty()
     }
 
     private fun advance(now: Long) {
@@ -512,8 +578,7 @@ class MirrorSession(
     fun tick() {
         if (!alive) return
         val now = clock.elapsedMillis()
-        val cadence = if (wire == Wire.BIG2) 60L else 28L
-        if (dirtySince >= 0L && now - dirtySince >= cadence && now - lastPublish >= 16) publish(now)
+        publishDueFrame()
         if (waiting && !exhausted && pending == null && now >= nextProbe) renew(now)
         if (waiting && scope == MirrorScope.FELUCCA && now >= identityAt && now - lastHello >= 220) {
             val command = if (identitySent == 0) MirrorPackets.feluccaInfo() else MirrorPackets.feluccaPackage()

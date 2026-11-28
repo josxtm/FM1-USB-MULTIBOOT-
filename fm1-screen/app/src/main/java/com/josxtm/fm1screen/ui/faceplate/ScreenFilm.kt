@@ -196,7 +196,6 @@ fun FullDisplay(feed: PanelFeed, ui: FaceplateUi) {
                 }
             }
             .semantics { contentDescription = "FM-1 display" }) {
-            feed.drawn()
             val fit = size.width
             val shown = when {
                 feed.scaling == Scaling.ZOOM -> fit * zoom
@@ -205,11 +204,13 @@ fun FullDisplay(feed: PanelFeed, ui: FaceplateUi) {
             }
             val pan = if (feed.scaling == Scaling.ZOOM) shift else Offset.Zero
             val center = (fit - shown) / 2
+            val started = feed.beginDraw()
             clipRect {
                 drawImage(feed.image, IntOffset.Zero, IntSize(240, 240),
                     IntOffset((center + pan.x).roundToInt(), (center + pan.y).roundToInt()),
                     IntSize(shown.roundToInt(), shown.roundToInt()), filterQuality = feed.filter)
             }
+            feed.drawn(started)
         }
     }
 }

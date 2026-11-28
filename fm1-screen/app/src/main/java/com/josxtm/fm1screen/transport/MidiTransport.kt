@@ -21,6 +21,9 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.ParcelUuid
 import android.os.SystemClock
+import com.josxtm.fm1screen.performance.PerformanceMonitor
+import com.josxtm.fm1screen.performance.PresentationMode
+import com.josxtm.fm1screen.performance.Stage
 import com.josxtm.fm1screen.protocol.Wire
 import java.io.IOException
 import java.util.UUID
@@ -48,6 +51,7 @@ class MidiTransport(
     context: Context,
     private val listener: TransportListener,
     preferredUsb: String?,
+    private val performance: PerformanceMonitor,
 ) : PanelOutput {
     private val app = context.applicationContext
     private val midi = app.getSystemService(MidiManager::class.java)
@@ -75,6 +79,9 @@ class MidiTransport(
     private var output: MidiOutputPort? = null
     private var input: MidiInputPort? = null
     private var session: MirrorSession? = null
+    private var inbox: MidiIngress? = null
+    private var modePresentation = PresentationMode.BALANCED
+    private var lastDepthAt = 0L
     private val sessionClock = object : SessionClock {
         override fun elapsedMillis() = SystemClock.elapsedRealtime()
         override fun nanoTime() = System.nanoTime()
@@ -83,9 +90,50 @@ class MidiTransport(
         override fun run() {
             val active = session ?: return
             active.tick()
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastDepthAt >= 1000) {
+                performance.ingress = inbox?.depth() ?: MidiIngress.Depth()
+                lastDepthAt = now
+            }
             worker.postDelayed(this, 16)
         }
     }
+    private var presentAt = Long.MAX_VALUE
+    private val present: Runnable = Runnable {
+        presentAt = Long.MAX_VALUE
+        session?.publishDueFrame()
+        schedulePresentation()
+    }
+
+    private fun schedulePresentation() {
+        val active = session ?: return
+        val delay = active.frameDelayMillis() ?: return
+        if (delay == 0L) {
+            cancelPresentation()
+            active.publishDueFrame()
+            return
+        }
+        val due = SystemClock.uptimeMillis() + delay
+        if (due >= presentAt) return
+        cancelPresentation()
+        presentAt = due
+        worker.postAtTime(present, due)
+    }
+
+    private fun cancelPresentation() {
+        if (presentAt == Long.MAX_VALUE) return
+        worker.removeCallbacks(present)
+        presentAt = Long.MAX_VALUE
+    }
+
+    fun setPresentationMode(value: PresentationMode) {
+        worker.post {
+            modePresentation = value
+            session?.presentationMode = value
+            schedulePresentation()
+        }
+    }
+
     private var healthy = true
     private var permitted = false
     private var scope = MirrorScope.NONE
@@ -361,26 +409,40 @@ class MidiTransport(
                     txAvailable = opened.info.inputPortCount > 0, reconnections = reconnections,
                     hyp1 = DeviceIdentity.isHyp1(target.name)))
                 healthy = true
-                val active = MirrorSession(sessionClock, ::write, listener)
+                val active = MirrorSession(sessionClock, ::write, listener).apply {
+                    presentationMode = modePresentation
+                    performance = this@MidiTransport.performance
+                }
                 session = active
                 worker.post(tick)
-                val inbox = MidiIngress()
+                val queue = MidiIngress(nanoTime = System::nanoTime)
+                inbox = queue
+                lastDepthAt = 0L
                 val drain = object : Runnable {
                     override fun run() {
                         if (session !== active) return
                         repeat(48) {
-                            when (val entry = inbox.take()) {
-                                is MidiIngress.Entry.Chunk -> active.receive(entry.bytes, entry.receivedNanos)
+                            when (val entry = queue.take()) {
+                                is MidiIngress.Entry.Chunk -> active.receive(entry.bytes, entry.receivedNanos, entry.queuedNanos)
                                 is MidiIngress.Entry.Loss -> active.inputLost(entry.bytes)
-                                null -> return
+                                null -> {
+                                    schedulePresentation()
+                                    return
+                                }
                             }
                         }
+                        schedulePresentation()
                         worker.post(this)
                     }
                 }
                 output?.connect(object : MidiReceiver() {
                     override fun onSend(msg: ByteArray, offset: Int, count: Int, timestamp: Long) {
-                        if (inbox.offer(msg, offset, count, System.nanoTime())) worker.post(drain)
+                        val received = System.nanoTime()
+                        if (queue.offer(msg, offset, count, received)) worker.post(drain)
+                        performance.record(Stage.MIDI_CALLBACK, System.nanoTime() - received)
+                        if (timestamp > 0 && received - timestamp in 0..1_000_000_000L) {
+                            performance.record(Stage.MIDI_TIMESTAMP, received - timestamp)
+                        }
                     }
                 })
                 active.configure(choice, permitted, watch, remote, scope)
@@ -409,6 +471,9 @@ class MidiTransport(
         generation++
         opening = false
         worker.removeCallbacks(tick)
+        cancelPresentation()
+        inbox = null
+        performance.ingress = MidiIngress.Depth()
         session?.close()
         session = null
         runCatching { output?.close() }

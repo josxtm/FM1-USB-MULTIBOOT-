@@ -122,6 +122,12 @@ def verify(apk: str, out: Path, device: str, build: int):
     node("HEX")
     shot(out, "04-editor-colores", landscape)
     tap("Cerrar")
+    tap("Open controls, or swipe down")
+    tap("Vista")
+    node("BALANCED")
+    tap("ECO")
+    tap("ULTRA LOW LATENCY")
+    tap("Cerrar")
     silver = bytes.fromhex("C7CED3")
     assert has_panel_color(silver), "Silver preset did not recolor the visible panel"
     adb("shell", "am", "force-stop", PACKAGE)
@@ -134,6 +140,8 @@ def verify(apk: str, out: Path, device: str, build: int):
     tap("Diagnóstico")
     node("RX cerrado · TX cerrado · 0 reconexiones")
     node("Compartir diagnóstico")
+    node("Modo gráfico · ULTRA LOW LATENCY")
+    node("Latencia interna sin muestras de MIDI o LCD")
     tap("Clock F8")
     print("Installed the APK, checked layouts, color persistence and diagnostic filtering on the tablet.")
 

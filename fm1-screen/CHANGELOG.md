@@ -1,5 +1,12 @@
 # Cambios de FM1 SCREEN
 
+## v1.0 · compilación 018
+
+- Perfiles ULTRA LOW LATENCY, BALANCED y ECO persistentes en Android.
+- Presentación independiente del tick MIDI y traspaso acumulativo de regiones RGB565, con la GUI existente.
+- Diagnóstico exportable de tiempos y percentiles, cola, memoria, CPU y GC.
+- Comparativa reproducible y regresión de cadencia SysEx. La recepción física de la 017 fue confirmada por el propietario con Atlatl v1.2.5.
+
 ## v1.0 · compilación 017
 
 - Big Screen V1 para USB Felucca con inicio explícito, identificación SKIFF Atlatl y recuperación con reintentos acotados.

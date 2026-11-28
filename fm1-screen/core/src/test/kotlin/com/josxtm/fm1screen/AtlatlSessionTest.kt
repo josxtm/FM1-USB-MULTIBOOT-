@@ -1,5 +1,9 @@
 package com.josxtm.fm1screen
 
+import com.josxtm.fm1screen.performance.PresentationMode
+import com.josxtm.fm1screen.protocol.LatestFrame
+import com.josxtm.fm1screen.protocol.FrameBuffer
+import com.josxtm.fm1screen.protocol.FrameTiming
 import com.josxtm.fm1screen.protocol.MirrorPackets
 import com.josxtm.fm1screen.protocol.PanelState
 import com.josxtm.fm1screen.protocol.ScreenFrame
@@ -193,7 +197,8 @@ class AtlatlSessionTest {
     }
 
     private fun endurance(realSeconds: Int) {
-        val f = Fixture()
+        val f = Fixture(useHandoff = true)
+        f.session.presentationMode = PresentationMode.ULTRA
         val started = System.nanoTime()
         f.watch()
         f.advance(100)
@@ -201,6 +206,7 @@ class AtlatlSessionTest {
         var seenWrites = 0
         val inputQueue = MidiIngress()
         val step = 20L
+        val expected = ShortArray(240 * 240) { 0xF800.toShort() }
         repeat(600_000 / step.toInt()) { tick ->
             f.advance(step)
             var heartbeat = false
@@ -209,7 +215,10 @@ class AtlatlSessionTest {
             }
             if (heartbeat) f.rx(sound())
             if (tick % 2 == 0) {
-                val row = row(tick % 240)
+                val y = tick % 240
+                val color = tick and 65535
+                val row = row(y, color)
+                expected.fill(color.toShort(), y * 240, (y + 1) * 240)
                 inputQueue.offer(row, 0, 5, f.nanoTime())
                 inputQueue.offer(bytes(0xf8), 0, 1, f.nanoTime())
                 inputQueue.offer(row, 5, row.size - 5, f.nanoTime())
@@ -221,6 +230,8 @@ class AtlatlSessionTest {
                     null -> break
                 }
             }
+            f.session.publishDueFrame()
+            f.handoff.consume(f.latestPixels)
             if (realSeconds > 0) {
                 val sleepMs = ((started + (tick + 1L) * step * 1_000_000L) - System.nanoTime()) / 1_000_000
                 if (sleepMs > 0) Thread.sleep(sleepMs)
@@ -239,9 +250,12 @@ class AtlatlSessionTest {
         assertTrue(f.stats.blocks >= 15_000)
         assertTrue(f.stats.clockMessages >= 29_900)
         assertTrue(f.stats.requests >= 650)
+        assertArrayEquals(expected, f.latestPixels)
     }
 
-    private class Fixture : SessionClock, MirrorListener {
+    private class Fixture(private val useHandoff: Boolean = false) : SessionClock, MirrorListener {
+        val handoff = LatestFrame()
+        val latestPixels = ShortArray(240 * 240)
         private var time = 1000L
         val writes = mutableListOf<ByteArray>()
         val fullRequests get() = writes.count { isV1Request(it) && it[4] == 1.toByte() }
@@ -254,7 +268,11 @@ class AtlatlSessionTest {
         fun fullPicture() { for (y in 0 until 240) rx(row(y)) }
         override fun elapsedMillis() = time
         override fun nanoTime() = time * 1_000_000L
-        override fun frame(pixels: ScreenFrame?, receivedNanos: Long) { frame = pixels }
+        override fun frameBuffer(source: FrameBuffer?, timing: FrameTiming?) {
+            if (!useHandoff) frame = source?.freeze()
+            else if (source != null && timing != null) handoff.offer(source, timing)
+            else handoff.clear()
+        }
         override fun panel(state: PanelState?) = Unit
         override fun stats(stats: MirrorStats) { this.stats = stats }
         override fun log(line: String) = Unit

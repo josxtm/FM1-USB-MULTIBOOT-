@@ -1,6 +1,8 @@
 package com.josxtm.fm1screen
 
 import com.josxtm.fm1screen.protocol.ControlOrigin
+import com.josxtm.fm1screen.protocol.FrameBuffer
+import com.josxtm.fm1screen.protocol.FrameTiming
 import com.josxtm.fm1screen.protocol.MirrorPackets
 import com.josxtm.fm1screen.protocol.PanelState
 import com.josxtm.fm1screen.protocol.SIDE
@@ -144,7 +146,7 @@ class MirrorSessionTest {
         val session = MirrorSession(this, { writes.add(it) }, this)
         override fun elapsedMillis() = time
         override fun nanoTime() = time * 1_000_000L
-        override fun frame(pixels: ScreenFrame?, receivedNanos: Long) { frame = pixels }
+        override fun frameBuffer(source: FrameBuffer?, timing: FrameTiming?) { frame = source?.freeze() }
         override fun panel(state: PanelState?) { panel = state }
         override fun stats(stats: MirrorStats) { this.stats = stats }
         override fun log(line: String) = Unit

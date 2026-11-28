@@ -1,4 +1,4 @@
-# FM1 SCREEN v1.0 · compilación 017
+# FM1 SCREEN v1.0 · compilación 018
 
 Visor Android para el sintetizador físico M-VAVE FM-1. El FM-1 ejecuta el firmware y produce el sonido. La tablet recibe la pantalla de los firmwares que ofrecen mirroring.
 
@@ -15,6 +15,7 @@ La app funciona sin Internet desde Android 10. Guarda las preferencias, los perf
 - [GUI RemoteFM1](docs/GUI-REMOTE-FM1.md)
 - [Arquitectura](ARCHITECTURE.md)
 - [Historial de cambios](CHANGELOG.md)
+- [Fase 4 · rendimiento y latencia](docs/FASE-4-LATENCIA.md)
 - [Protocolos](PROTOCOLS.md)
 - [Fase 3 · diagnóstico y corrección USB MIDI](docs/FASE-3-COMUNICACIONES.md)
 - [Compatibilidad de firmwares](FIRMWARE-COMPATIBILITY.md)
