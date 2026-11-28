@@ -76,7 +76,6 @@ import com.josxtm.fm1screen.ui.theme.color
 
 private enum class Category(val title: String, val glyph: Glyph) {
     CONNECTION("Conexión", Glyph.USB),
-    FIRMWARE("Firmware", Glyph.CHIP),
     SCREEN("Pantalla", Glyph.SCREEN),
     PERFORMANCE("Rendimiento", Glyph.BOLT),
     APPEARANCE("Apariencia", Glyph.PALETTE),
@@ -165,8 +164,10 @@ internal fun Settings(app: MainActivity, theme: Theme, visible: Boolean, close: 
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 when (category) {
-                                    Category.CONNECTION -> ConnectionSettings(app)
-                                    Category.FIRMWARE -> FirmwareSettings(app)
+                                    Category.CONNECTION -> {
+                                        ConnectionSettings(app)
+                                        Disclosure("Perfiles de firmware") { FirmwareSettings(app) }
+                                    }
                                     Category.SCREEN -> ScreenSettings(app, close)
                                     Category.PERFORMANCE -> PerformanceSettings(app)
                                     Category.APPEARANCE -> AppearanceSettings(app)
