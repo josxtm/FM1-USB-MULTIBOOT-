@@ -64,6 +64,22 @@ def tap(text: str, wait=0.28):
     time.sleep(wait)
 
 
+def reveal_and_tap(label):
+    for _ in range(4):
+        tree = hierarchy()
+        item = find(tree, label)
+        if item is not None and bounds(item)[3] - bounds(item)[1] > 38:
+            press(center(item))
+            time.sleep(.28)
+            return
+        scroll = next(n for n in tree.iter("node") if n.get("class") == "android.widget.ScrollView")
+        x1, y1, x2, y2 = bounds(scroll)
+        x = (x1 + x2) // 2
+        adb("shell", "input", "swipe", *map(str, (x, y2 - 45, x, y1 + 65, 280)))
+        time.sleep(.25)
+    raise AssertionError(f"Could not reach {label} within the drawer")
+
+
 def screen_at_size(expected_size: tuple[int, int]) -> bytes:
     for _ in range(6):
         png = adb("exec-out", "screencap", "-p", binary=True)
@@ -178,22 +194,30 @@ def measure(gear, close):
     return timings()
 
 
+def wait_pixel(point, expected, message):
+    deadline = time.monotonic() + 1.8
+    while time.monotonic() < deadline:
+        observed = sample_pixel(point)
+        if observed == expected:
+            return
+        time.sleep(.035)
+    raise AssertionError(f"{message}: pixel {point} was {observed.hex()}, expected {expected.hex()}")
+
+
 def cycle_checks(gear, close, point, count):
+    node(GEAR)
     closed = sample_pixel(point)
     press(gear)
-    time.sleep(.23)
+    node(CLOSE)
     opened = sample_pixel(point)
     assert opened != closed, "Drawer did not cover its expected region"
     press(close)
-    time.sleep(.23)
-    assert sample_pixel(point) == closed, "Drawer did not close"
+    wait_pixel(point, closed, "Drawer did not close")
     for i in range(count):
         press(gear)
-        time.sleep(.19)
-        assert sample_pixel(point) == opened, f"Failed to open in cycle {i + 1}"
+        wait_pixel(point, opened, f"Failed to open in cycle {i + 1}")
         press(close)
-        time.sleep(.19)
-        assert sample_pixel(point) == closed, f"Failed to close in cycle {i + 1}"
+        wait_pixel(point, closed, f"Failed to close in cycle {i + 1}")
 
 
 def configuration_categories(out, size):
@@ -377,8 +401,8 @@ def verify(apk, out, device, build, original=None):
                 shot(out, "theme-dark-portrait", portrait)
                 tap("Colores personalizados")
                 tap("Fondo principal")
-                tap("Muestras")
-                tap("#4FCDBF")
+                reveal_and_tap("Muestras")
+                reveal_and_tap("#4FCDBF")
                 assert has_panel_color(bytes.fromhex("4FCDBF"), tolerance=18)
                 shot(out, "theme-custom-portrait", portrait)
             tap(CLOSE)
