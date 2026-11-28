@@ -29,3 +29,8 @@ Se derivan las superficies, los controles, los iconos y los menús de los colore
 El workflow descarga el artefacto original de la 018 y comprueba su huella. Cada emulador de Android 16 prueba la 018 y la 019 con la misma resolución y densidad. Compara los límites del LCD, guarda capturas de las tres vistas y de la configuración y mide el coste de los fotogramas de apertura y cierre con `dumpsys gfxinfo`. El dato es tiempo de fotograma de la interfaz en emulador con DEMO. La latencia física extremo a extremo requiere el FM-1.
 
 La prueba de tablet completa 100 ciclos y comprueba apertura y cierre en las tres vistas. En teléfono también se comprueba la rotación. Las acciones rápidas, arrastres que empiezan en el engranaje, swipes de fondo y toques dentro del panel verifican la separación de gestos. La suite comprueba cambios de paleta con la configuración abierta y la persistencia del tema y del modo de rendimiento. El ensayo Atlatl sintético de diez minutos vuelve a ejecutarse para la entrega.
+
+
+## Revalidación de cierre
+
+La ejecución 46144583618 generó la APK 019 y superó el ensayo prolongado, pero las pruebas visuales fallaron. El registro de tablet muestra una aserción sobre el atributo checked de Modo demostración. El script posterior usa switch_checked y espera la restauración del tema. Se solicita una ejecución completa de CI sobre la rama actual, sin reutilizar una APK anterior. No se considera cerrada la fase hasta verificar ambos dispositivos y los artefactos. No se modifican comunicaciones ni motor LCD en esta revalidación.
