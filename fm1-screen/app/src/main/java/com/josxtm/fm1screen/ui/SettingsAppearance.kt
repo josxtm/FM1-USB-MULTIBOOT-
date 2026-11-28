@@ -76,7 +76,11 @@ internal fun AppearanceSettings(app: MainActivity) {
                         .selectable(role == option, role = Role.Button) { role = option }
                         .semantics { contentDescription = option.label },
                         contentAlignment = Alignment.Center) {
-                        Sample(option.get(theme), 23.dp)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            SettingsIcon(option.glyph(), if (role == option) colors.onSelection.color else colors.text.color, 21.dp)
+                            Sample(option.get(theme), 10.dp)
+                        }
                     }
                 }
             }
@@ -148,6 +152,24 @@ internal fun AppearanceSettings(app: MainActivity) {
             confirmButton = { Action("Eliminar tema") { remove = false; app.removeTheme(theme) } },
             dismissButton = { Action("Cancelar") { remove = false } })
     }
+}
+
+private fun ColorRole.glyph(): Glyph = when (this) {
+    ColorRole.BODY -> Glyph.BODY
+    ColorRole.PANEL -> Glyph.PANEL
+    ColorRole.PAD -> Glyph.PAD
+    ColorRole.BUTTON -> Glyph.BUTTON
+    ColorRole.KNOB -> Glyph.KNOB
+    ColorRole.MARK -> Glyph.MARK
+    ColorRole.TEXT -> Glyph.TEXT
+    ColorRole.LABEL -> Glyph.LABEL
+    ColorRole.ACCENT -> Glyph.PALETTE
+    ColorRole.NAVIGATION -> Glyph.NAVIGATION
+    ColorRole.BEZEL -> Glyph.BEZEL
+    ColorRole.ACTIVE -> Glyph.ACTIVE
+    ColorRole.PAD_ACTIVE -> Glyph.PAD_ACTIVE
+    ColorRole.PAD_TEXT -> Glyph.PAD_TEXT
+    ColorRole.BUTTON_ACTIVE -> Glyph.BUTTON_ACTIVE
 }
 
 @Composable
