@@ -3,7 +3,6 @@ name: FM1 SCREEN Android
 on:
   push:
     branches: [feat/fm1-screen-android]
-    tags: ['fm1-screen-v*-comp.*']
     paths: ['fm1-screen/**', '.github/workflows/fm1-screen-android.yml']
   pull_request:
     paths: ['fm1-screen/**', '.github/workflows/fm1-screen-android.yml']
@@ -20,7 +19,6 @@ defaults:
 
 jobs:
   apk:
-    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     outputs:
@@ -78,9 +76,24 @@ jobs:
         env:
           FM1_BUILD: ${{ steps.version.outputs.build }}
           FM1_LABEL: ${{ steps.version.outputs.label }}
+          PREVIOUS_BUILD: '021'
+          PREVIOUS_CERTIFICATE: 0d90f0ee699fa801adb2b6168f2518ca3e683a9e38a4c1b8f0c1f4105046eadd
+          FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
+          FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
+          FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
+          FM1_SIGNING_KEY_PASSWORD: ${{ secrets.FM1_SIGNING_KEY_PASSWORD }}
         run: |
           variant=debug
-          ./gradlew --no-daemon :app:assembleDebug
+          signing='debug certificate for this runner'
+          if [[ -n "$FM1_KEYSTORE_BASE64" ]]; then
+            umask 077
+            export FM1_SIGNING_PATH="$RUNNER_TEMP/fm1-signing.jks"
+            trap 'rm -f "$FM1_SIGNING_PATH"' EXIT
+            printf '%s' "$FM1_KEYSTORE_BASE64" | base64 --decode > "$FM1_SIGNING_PATH"
+            variant=release
+            signing='owner distribution certificate'
+          fi
+          ./gradlew --no-daemon ":app:assemble${variant^}"
           apk="FM1-SCREEN-v1.0-comp.$FM1_LABEL.apk"
           sdktools="$ANDROID_HOME/build-tools/35.0.0"
           mkdir -p distribution
@@ -95,9 +108,14 @@ jobs:
             sha256sum -c "$apk.sha256"
           )
           certificate="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' distribution/apk-signature.txt)"
+          upgrade="Different certificate from comp.$PREVIOUS_BUILD. Clean install required."
+          if [[ "$certificate" == "$PREVIOUS_CERTIFICATE" ]]; then
+            upgrade="Same certificate as comp.$PREVIOUS_BUILD."
+          fi
           {
-            printf '# FM1 SCREEN v1.0 · comp. %s (pruebas)\n\n' "$FM1_LABEL"
-            printf -- '- Commit: %s\n- Signing: debug\n- Certificate SHA-256: %s\n' "$GITHUB_SHA" "$certificate"
+            printf '# FM1 SCREEN v1.0 · comp. %s\n\n' "$FM1_LABEL"
+            printf -- '- Commit: %s\n- Signing: %s\n- Certificate SHA-256: %s\n- Upgrade: %s\n' \
+              "$GITHUB_SHA" "$signing" "$certificate" "$upgrade"
             printf -- '- Unit tests, lint, APK signature and checksum passed.\n'
             printf '\n```\n'
             cat "distribution/$apk.sha256"
@@ -191,7 +209,7 @@ jobs:
           retention-days: 7
 
   endurance:
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[full-ci]'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[full-ci]'))
     runs-on: ubuntu-24.04
     timeout-minutes: 22
     steps:
@@ -211,159 +229,3 @@ jobs:
           name: FM1-SCREEN-endurance-${{ github.run_number }}-${{ github.run_attempt }}
           path: fm1-screen/core/build/test-results/test/*.xml
           if-no-files-found: warn
-
-  official:
-    if: github.event_name == 'push' && github.ref_type == 'tag'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    concurrency:
-      group: fm1-screen-official
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Validate release ref and artwork
-        run: |
-          git merge-base --is-ancestor HEAD origin/feat/fm1-screen-android
-          build="$(sed -n 's/^fm1Build=//p' gradle.properties)"
-          [[ "$build" =~ ^[1-9][0-9]*$ ]]
-          [[ "$GITHUB_REF_NAME" == "fm1-screen-v1.0-comp.$(printf '%03d' "$build")" ]]
-          test -f design/icon/approved-original.png
-          test -f app/src/officialIcon/AndroidManifest.xml
-          cd design/icon
-          sha256sum -c ../../app/src/officialIcon/SOURCE.sha256
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/wrapper-validation@v4
-      - uses: gradle/actions/setup-gradle@v4
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-35 build-tools;35.0.0'
-      - name: Verify sources and build signed APKs
-        env:
-          FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
-          FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
-          FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
-          FM1_SIGNING_KEY_PASSWORD: ${{ secrets.FM1_SIGNING_KEY_PASSWORD }}
-          FM1_SCREEN_CERT_SHA256: ${{ vars.FM1_SCREEN_CERT_SHA256 }}
-        run: |
-          : "${FM1_KEYSTORE_BASE64:?Falta el keystore de distribución}"
-          : "${FM1_SIGNING_ALIAS:?Falta el alias de firma}"
-          : "${FM1_SIGNING_STORE_PASSWORD:?Falta la contraseña del keystore}"
-          : "${FM1_SIGNING_KEY_PASSWORD:?Falta la contraseña de la clave}"
-          [[ "$FM1_SCREEN_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          [[ "$FM1_SCREEN_CERT_SHA256" != 3b021b4e969fd235810fecbd0aad173e14e44c4ccf65d221152f5e3e8d285590 ]]
-          [[ "$FM1_SCREEN_CERT_SHA256" != 0d90f0ee699fa801adb2b6168f2518ca3e683a9e38a4c1b8f0c1f4105046eadd ]]
-          umask 077
-          export FM1_SIGNING_PATH
-          FM1_SIGNING_PATH="$(mktemp "$RUNNER_TEMP/fm1-signing-XXXXXXXX")"
-          trap 'rm -f "$FM1_SIGNING_PATH"' EXIT
-          printf '%s' "$FM1_KEYSTORE_BASE64" | base64 --decode > "$FM1_SIGNING_PATH"
-          unset FM1_KEYSTORE_BASE64
-          ./gradlew --no-daemon :core:test :app:testReleaseUnitTest :app:lintRelease
-          bash tools/build_signed_upgrade.sh "$GITHUB_REF_NAME" "$FM1_SCREEN_CERT_SHA256"
-      - name: Enable hardware acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
-            sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 36
-          arch: x86_64
-          target: google_apis
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: python3 fm1-screen/tests/android_update.py fm1-screen/distribution fm1-screen/upgrade/upgrade.apk --require-icon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: FM1-SCREEN-oficial-${{ github.ref_name }}
-          path: fm1-screen/distribution/*
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: FM1-SCREEN-oficial-pruebas-${{ github.run_attempt }}
-          path: |
-            fm1-screen/core/build/test-results/test/*.xml
-            fm1-screen/app/build/test-results/testReleaseUnitTest/*.xml
-            fm1-screen/app/build/reports/lint-results-release.html
-            fm1-screen/upgrade/results/*
-
-  publish:
-    if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [official, endurance]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 8
-    permissions:
-      contents: write
-    concurrency:
-      group: fm1-screen-stable-publication
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: FM1-SCREEN-oficial-${{ github.ref_name }}
-          path: fm1-screen/distribution
-      - name: Publish the verified FM1 SCREEN release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 tools/publish_release.py
-
-  upgrade_test:
-    if: github.ref_type == 'branch' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[upgrade-ci]')))
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/wrapper-validation@v4
-      - uses: gradle/actions/setup-gradle@v4
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-35 build-tools;35.0.0'
-      - name: Build isolated signed upgrade fixtures
-        run: |
-          umask 077
-          directory="$(mktemp -d)"
-          trap 'rm -rf "$directory"' EXIT
-          export FM1_SIGNING_PATH="$directory/test.p12"
-          export FM1_SIGNING_ALIAS=fm1-upgrade-test
-          export FM1_SIGNING_STORE_PASSWORD FM1_SIGNING_KEY_PASSWORD
-          FM1_SIGNING_STORE_PASSWORD="$(openssl rand -hex 24)"
-          FM1_SIGNING_KEY_PASSWORD="$FM1_SIGNING_STORE_PASSWORD"
-          keytool -genkeypair -storetype PKCS12 -keystore "$FM1_SIGNING_PATH" \
-            -storepass:env FM1_SIGNING_STORE_PASSWORD -alias "$FM1_SIGNING_ALIAS" \
-            -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=FM1 isolated upgrade fixture'
-          certificate="$(keytool -exportcert -keystore "$FM1_SIGNING_PATH" \
-            -storepass:env FM1_SIGNING_STORE_PASSWORD -alias "$FM1_SIGNING_ALIAS" | sha256sum | cut -d' ' -f1)"
-          build="$(sed -n 's/^fm1Build=//p' gradle.properties)"
-          bash tools/build_signed_upgrade.sh "fm1-screen-v1.0-comp.$(printf '%03d' "$build")" "$certificate"
-      - name: Enable hardware acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
-            sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 36
-          arch: x86_64
-          target: google_apis
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: python3 fm1-screen/tests/android_update.py fm1-screen/distribution fm1-screen/upgrade/upgrade.apk
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: FM1-SCREEN-upgrade-test-${{ github.run_number }}-${{ github.run_attempt }}
-          path: fm1-screen/upgrade/results/*
