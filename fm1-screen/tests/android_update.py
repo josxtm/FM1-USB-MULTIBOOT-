@@ -54,7 +54,7 @@ def main():
     wait_for_text("FM-1 display")
     adb("shell", "input", "keyevent", "KEYCODE_HOME")
     adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN", "-c",
-        "android.intent.category.LAUNCHER", PACKAGE)
+        "android.intent.category.LAUNCHER", "-p", PACKAGE)
     wait_for_text("FM-1 display")
     for source, name in (
         (upgrade, "upgrade.apk"), (test, "wrong-id.apk"),
