@@ -27,10 +27,15 @@ def complete(step):
 def wait_for_text(text, seconds=35):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        result = find(hierarchy(), text)
+        try:
+            result = find(hierarchy(), text)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            print(f"UIAutomator transient failure: {error}", flush=True)
+            time.sleep(2)
+            continue
         if result is not None:
             return result
-        time.sleep(0.5)
+        time.sleep(1)
     raise AssertionError(f"Android UI did not show {text!r}")
 
 
