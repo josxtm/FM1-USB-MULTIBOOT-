@@ -24,9 +24,11 @@ def complete(step):
     return result
 
 
-def wait_for_text(text, seconds=35):
+def wait_for_text(text, seconds=35, process=None):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
+        if process is not None and process.poll() is not None:
+            raise AssertionError(f"Installer instrumentation exited early: {process.returncode}")
         try:
             result = find(hierarchy(), text)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
@@ -92,7 +94,7 @@ def main():
             "-e", "requireIcon", str(require_icon).lower(), RUNNER,
         ], stdout=log, stderr=subprocess.STDOUT)
         try:
-            button = wait_for_text("Update", 60)
+            button = wait_for_text("Update", 60, process)
             assert "packageinstaller" in button.get("package", ""), button.attrib
             coords = list(map(int, re.findall(r"\d+", button.get("bounds", ""))))
             adb("shell", "input", "tap", str((coords[0] + coords[2]) // 2), str((coords[1] + coords[3]) // 2))
@@ -104,6 +106,17 @@ def main():
                 time.sleep(0.5)
             else:
                 raise AssertionError("Android did not install the higher version")
+        except Exception:
+            for name, args in (("crash", ("logcat", "-b", "crash", "-d")), ("logcat", ("logcat", "-d", "-t", "2000")), ("activities", ("shell", "dumpsys", "activity", "activities")), ("windows", ("shell", "dumpsys", "window"))):
+                try:
+                    (results / f"installer-{name}.txt").write_text(adb(*args))
+                except Exception as error:
+                    print(f"Diagnostic {name}: {error}", flush=True)
+            try:
+                (results / "installer-failure.png").write_bytes(adb("exec-out", "screencap", "-p", binary=True))
+            except Exception as error:
+                print(f"Screenshot diagnostic: {error}", flush=True)
+            raise
         finally:
             process.terminate()
             process.wait(timeout=10)
