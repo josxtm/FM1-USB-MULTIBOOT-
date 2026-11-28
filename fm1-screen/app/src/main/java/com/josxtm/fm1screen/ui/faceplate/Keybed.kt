@@ -111,7 +111,7 @@ fun KeybedView(theme: Theme, feed: PanelFeed, w: Float, h: Float, layout: Keybed
                         val spacing = r.h * 0.055f
                         val availableWidth = r.w * d * 0.90f
                         val availableHeight = max(1f, (r.h - k.ledH - spacing - 5f) * d)
-                        val style = stepStyle.copy(fontFamily = RfmFonts.ui, fontWeight = androidx.compose.ui.text.font.FontWeight.Normal, color = theme.padLegend(fill).color, fontSize = (font * d).toSp())
+                        val style = stepStyle.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif, fontWeight = androidx.compose.ui.text.font.FontWeight.Normal, color = theme.padLegend(fill).color, fontSize = (font * d).toSp())
                         var displayed = label
                         var text = measurer.measure(displayed, style, softWrap = false, maxLines = 2)
                         if (text.size.width > availableWidth && label.length > 6) {
