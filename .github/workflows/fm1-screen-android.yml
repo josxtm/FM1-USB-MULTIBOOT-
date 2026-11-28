@@ -74,8 +74,8 @@ jobs:
         if: github.event_name != 'pull_request' && steps.version.outputs.validation_run == ''
         env:
           FM1_BUILD: ${{ steps.version.outputs.build }}
-          PREVIOUS_BUILD: 14
-          PREVIOUS_CERTIFICATE: 81a13f28b6001915086e4c7a7ebd99577c86f62cbe133e568a2a99e4591af0d5
+          PREVIOUS_BUILD: 15
+          PREVIOUS_CERTIFICATE: d3ce917b938950b62b6e0e1ef26d0444a3f37fc466990f8b7437ee8f30128b9a
           FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
           FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
           FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}

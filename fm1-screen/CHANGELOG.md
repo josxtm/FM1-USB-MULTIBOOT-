@@ -1,8 +1,13 @@
 # Cambios de FM1 SCREEN
 
+## v1.0 · compilación 16
+
+- FULL CONTROL en teléfono horizontal reserva una franja propia para los indicadores de navegación. La prueba Android comprueba que su zona táctil quede fuera de los pads.
+
 ## v1.0 · compilación 15
 
 - El interruptor de demostración aparece en la primera fila del panel Vista. La prueba en teléfono lo activa en vertical y verifica la orientación física del emulador antes de capturar las vistas horizontales.
+- La misma APK pasó las pruebas de teléfono y tablet tras ajustar el emulador a su resolución observada.
 - La compilación 14 publicó la APK Android y superó las pruebas JVM y Lint. La prueba de teléfono se detuvo al buscar DEMO en horizontal. Se conserva el artefacto 14 como antecedente.
 
 ## v1.0 · compilación 14

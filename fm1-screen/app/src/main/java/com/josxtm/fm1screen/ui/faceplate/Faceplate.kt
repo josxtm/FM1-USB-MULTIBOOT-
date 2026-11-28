@@ -219,7 +219,9 @@ private fun FullView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: Panel
                      kind: FaceplateLayout.Kind, w: Float, h: Float, chrome: Boolean, onWord: (() -> Unit)?,
                      openSheet: () -> Unit) {
     val L = FaceplateLayout.full(kind)
-    val m = FaceplateLayout.Mapper(kind.ref, PSize(w, h))
+    val compactNavigation = chrome && kind == FaceplateLayout.Kind.PHONE_LANDSCAPE
+    val panelHeight = if (compactNavigation) (h - 44f).coerceAtLeast(1f) else h
+    val m = FaceplateLayout.Mapper(kind.ref, PSize(w, panelHeight))
     val s = m.s
     val status = L.status
     val grabber = L.grabber
@@ -231,7 +233,7 @@ private fun FullView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: Panel
             Grabber(theme, gr.w * s, 40 * s, gr.h * s, openSheet,
                     Modifier.centredAt(w / 2, max(22f, m.y(gr.midY)), max(gr.w * s, 88f), max(gr.h * s, 44f)))
         }
-        if (chrome && kind == FaceplateLayout.Kind.PHONE_LANDSCAPE) {
+        if (compactNavigation) {
             Box(Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 4.dp)) {
                 Chip(theme, chip, 18f, 5f, 7f)
             }
@@ -254,7 +256,10 @@ private fun FullView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: Panel
         KeybedView(theme, feed, kr.w, kr.h,
                    L.keyWidth?.let { KeybedGeometry.Layout.Scroll(it * m.sx) } ?: KeybedGeometry.Layout.Row,
                    ui.stepNumbers, ui.fullOffset, { ui.fullOffset = it }, Modifier.place(kr))
-        if (chrome) PageDots(theme, ui, s, w / 2, h - 18 * m.sy - 12)
+        if (chrome) {
+            val navigationY = if (compactNavigation) panelHeight + 22f else h - 18 * m.sy - 12
+            PageDots(theme, ui, s, w / 2, navigationY)
+        }
         // the screen protector: its film over the display, its red tab beside the screen (the wide layouts only)
         if (kind.landscape) {
             val geo = remember(dr) { FilmGeometry(dr, max(10f, Math.round(ds * 0.09f).toFloat()), FilmGeometry.tab(dr)) }

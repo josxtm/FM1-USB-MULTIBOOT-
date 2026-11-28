@@ -32,8 +32,12 @@ def node(text: str):
     raise AssertionError(f"Visible control missing: {text}")
 
 
+def bounds(item: ET.Element):
+    return tuple(map(int, re.findall(r"-?\d+", item.get("bounds", ""))))
+
+
 def tap(text: str):
-    x1, y1, x2, y2 = map(int, re.findall(r"-?\d+", node(text).get("bounds", "")))
+    x1, y1, x2, y2 = bounds(node(text))
     adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
     time.sleep(0.6)
 
@@ -88,7 +92,11 @@ def verify(apk: str, out: Path, device: str, build: int):
         adb("shell", "cmd", "window", "user-rotation", "lock", "1")
         screen_at_size(landscape)
     node("DEMO")
-    node("Keyboard, F3 to G5")
+    keyboard = node("Keyboard, F3 to G5")
+    if device == "phone":
+        _, _, _, keybed_bottom = bounds(keyboard)
+        _, navigation_top, _, _ = bounds(node("Controls view"))
+        assert keybed_bottom <= navigation_top, "Phone FULL CONTROL navigation covers the pads"
     shot(out, "01-full-control", landscape)
     tap("Controls view")
     node("BUTTONS")
