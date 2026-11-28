@@ -53,8 +53,13 @@ def main():
     adb("shell", "am", "start", "-W", "-n", f"{PACKAGE}/.MainActivity")
     wait_for_text("FM-1 display")
     adb("shell", "input", "keyevent", "KEYCODE_HOME")
+    launcher = adb("shell", "cmd", "package", "resolve-activity", "--brief", "-a",
+                   "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", PACKAGE)
+    (results / "launcher-resolution.txt").write_text(launcher)
+    component = launcher.strip().splitlines()[-1]
+    assert component in (f"{PACKAGE}/.MainActivity", f"{PACKAGE}/{PACKAGE}.MainActivity"), launcher
     adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN", "-c",
-        "android.intent.category.LAUNCHER", "-p", PACKAGE)
+        "android.intent.category.LAUNCHER", "-n", component)
     wait_for_text("FM-1 display")
     for source, name in (
         (upgrade, "upgrade.apk"), (test, "wrong-id.apk"),
