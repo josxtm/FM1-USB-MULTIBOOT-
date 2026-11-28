@@ -76,8 +76,6 @@ import com.josxtm.fm1screen.transport.Target
 import com.josxtm.fm1screen.transport.TransportListener
 import com.josxtm.fm1screen.ui.Settings
 import com.josxtm.fm1screen.ui.SettingsGear
-import com.josxtm.fm1screen.ui.UpdateNotice
-import com.josxtm.fm1screen.update.Updates
 import com.josxtm.fm1screen.ui.QuickCapture
 import com.josxtm.fm1screen.ui.faceplate.FaceplateUi
 import com.josxtm.fm1screen.ui.faceplate.FaceplateView
@@ -96,22 +94,6 @@ import java.util.concurrent.Executors
 data class MidiLogEntry(val category: MidiCategory, val line: String)
 
 class MainActivity : ComponentActivity(), TransportListener {
-    internal val updates by lazy { Updates(this) }
-    internal var updateSettingsRequest by mutableStateOf(0)
-        private set
-    private val updateInstaller = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        updates.activityResult()
-    }
-
-    internal fun openUpdateSettings() {
-        updateSettingsRequest++
-        faceplate.sheetOpen = true
-    }
-
-    internal fun installUpdate() {
-        updates.download({ foreground && !streaming }, updateInstaller::launch)
-    }
-
     private val prefs by lazy { getSharedPreferences("preferences", MODE_PRIVATE) }
     private val main = Handler(Looper.getMainLooper())
     private val disk = Executors.newSingleThreadExecutor()
@@ -300,8 +282,6 @@ class MainActivity : ComponentActivity(), TransportListener {
                         clearMessage()
                     }
                     if (!faceplate.displayAlone && !faceplate.sheetOpen) {
-                        UpdateNotice(this@MainActivity, active,
-                            Modifier.align(Alignment.BottomEnd).then(safeArea).padding(8.dp))
                         Box(Modifier.align(Alignment.TopEnd).then(safeArea).padding(end = 4.dp)) {
                             androidx.compose.foundation.layout.Row {
                                 QuickCapture(this@MainActivity, active)
@@ -316,7 +296,6 @@ class MainActivity : ComponentActivity(), TransportListener {
                 }
             }
         }
-        updates.check(automaticRequest = true)
         main.postDelayed(metrics, 1000)
     }
 
@@ -379,7 +358,6 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     override fun onDestroy() {
         dead = true
-        updates.close()
         main.removeCallbacks(metrics)
         main.removeCallbacks(showPanel)
         diagnosticsWorker.shutdown()
