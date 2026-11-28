@@ -80,6 +80,8 @@ internal fun ScreenSettings(app: MainActivity, close: () -> Unit) {
             }
         }
     }
+    Toggle("Panel dinámico", app.dynamicPanel, change = app::selectDynamicPanel)
+    Note(if (app.dynamicPanel) "Estados reales cuando el firmware los transmite" else "Estático · prioridad LCD")
     Toggle("Modo demostración", app.demo, change = app::changeDemo)
     ChoiceMenu("Escalado", app.scaling.title, Scaling.entries, Scaling::title) { scaling ->
         app.selectScaling(scaling)
