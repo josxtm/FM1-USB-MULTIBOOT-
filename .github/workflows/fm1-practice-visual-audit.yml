@@ -1,0 +1,49 @@
+name: FM1 Practice - visual source audit
+on:
+  push:
+    branches: [docs/fm1-practice-visual-v083]
+    paths: ['.github/workflows/fm1-practice-visual-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify original screenshots without redistributing them
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, urllib.request, pathlib, concurrent.futures
+          rows = [["SLOOP","fuleo/fm1-guide","main","assets/sloop/panel.png","6ac57d57fedfb475407fdcdae9bc26838ca4b8d7"],["SLOOP","fuleo/fm1-guide","main","assets/sloop/steps-empty.png","b646c14865c6eeaba357c09f127d9ab073cca01b"],["SLOOP","fuleo/fm1-guide","main","assets/sloop/mix.png","7f1a37f6027102e2ded484fe87d3bf2884fee7ac"],["FELUCCA","fuleo/fm1-guide","main","assets/felucca/panel.png","f2008cf5015e4a8f034f18c37142f05671e6f9cc"],["FELUCCA","fuleo/fm1-guide","main","assets/felucca/home.png","9b2aef7764d55907616bd0ec77a27d191d14357d"],["FELUCCA","fuleo/fm1-guide","main","assets/felucca/edit-layer.png","d6faddc4ebf9c3fff76c0f1c4acbd8103f8dec04"],["FELUCCA","fuleo/fm1-guide","main","assets/felucca/mixer.png","a86b56eff6a151e020017071e47f1884603dbb89"],["STOCK","fuleo/fm1-guide","main","assets/stock/panel-seq.png","eea2b6c49f3effdfc5daf6b7d4b66c6e9f13f103"],["X0X","charlesvestal/fm1-x0x","gh-pages","manual/img/screen-909.png","4cdd5b75c5f8d3215bed326d2d8c4fb31f713fca"],["X0X","charlesvestal/fm1-x0x","gh-pages","manual/img/screen-303.png","eaf048c505685ec56fd3a5721ab59dfe34463ae3"],["MELODEE","keremimo/melodee","gh-pages","webapp/manual/drum.png","cb29d5c88ff97abe0a7e9c50fca4f06d166923ab"],["MELODEE","keremimo/melodee","gh-pages","webapp/manual/mixer.png","78b98d14b669cab345265ef62bdbae0b7b610666"],["LOOM-8","charlesvestal/fm1-loom","gh-pages","img/screen-beat-playing.png","0e6a8c3a0aaae44ae07f18a2d0979ced13b619a3"],["LOOM-8","charlesvestal/fm1-loom","gh-pages","img/screen-seq-held.png","9cf27e601dbd3e38edc588aa139db4953820cf1b"],["LOOM-8","charlesvestal/fm1-loom","gh-pages","img/screen-chords.png","affd6e61c46b2a30ae787cfad601597868d63e0d"],["AMB-1","charlesvestal/fm1-amb","gh-pages","manual/img/screen-pad.png","dedbad7cb1cb0d8256270126441ef2e6bf08b953"],["AMB-1","charlesvestal/fm1-amb","gh-pages","manual/img/screen-pulse.png","235d8e4c0e823316318828dc23157cb670ba816a"],["NACHTFAHRT","fartypants/fm1-nachtfahrt","gh-pages","manual/img/screen-main.png","ef9aeda90085f44246a0ad0136ec48dac010cf3f"],["NACHTFAHRT","fartypants/fm1-nachtfahrt","gh-pages","manual/img/screen-seqsound.png","10ac83ccb1c35094f3605c6cfc1672c65c9b89f9"],["NACHTFAHRT","fartypants/fm1-nachtfahrt","gh-pages","manual/img/screen-perform.png","55123a9c38f9ffc3847427b7496989389f6e1192"]]
+          def fetch(url, api=False):
+              request = urllib.request.Request(url, headers={"User-Agent":"FM1-Practice-Visual-Verification","Accept":"application/vnd.github+json" if api else "image/png,*/*"})
+              with urllib.request.urlopen(request, timeout=25) as r:
+                  body=r.read(24000001 if api else 12000001)
+              return base64.b64decode(json.loads(body)["content"]) if api else body
+          def check(row):
+              firmware,repo,branch,path,sha=row
+              errors=[]
+              for url,api in [(f"https://raw.githubusercontent.com/{repo}/{branch}/{path}",False),(f"https://api.github.com/repos/{repo}/git/blobs/{sha}",True)]:
+                  try:
+                      b=fetch(url,api)
+                      if len(b)>12000000 or not b.startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError("not PNG")
+                      actual=hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()
+                      if actual!=sha: raise ValueError("hash mismatch: "+actual)
+                      return dict(firmware=firmware,repo=repo,path=path,sha=sha,bytes=len(b),width=int.from_bytes(b[16:20],'big'),height=int.from_bytes(b[20:24],'big'),status="VERIFIED",source=url)
+                  except Exception as e: errors.append(str(e))
+              return dict(firmware=firmware,repo=repo,path=path,sha=sha,status="PENDING",errors=errors)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool: result=list(pool.map(check,rows))
+          out=pathlib.Path("visual-audit");out.mkdir(exist_ok=True)
+          (out/"RESULTADO-ORIGINALES.json").write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          print("Verified",sum(x["status"]=="VERIFIED" for x in result),"/",len(result))
+          raise SystemExit(0 if all(x["status"]=="VERIFIED" for x in result) else 2)
+          PY
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FM1-PRACTICE-visual-audit-v083
+          path: visual-audit/RESULTADO-ORIGINALES.json
+          retention-days: 7
