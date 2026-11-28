@@ -164,6 +164,7 @@ private fun LinkSettings(app: MainActivity) {
 @Composable
 private fun DisplaySettings(app: MainActivity, close: () -> Unit) {
     Section("Vista")
+    Toggle("Modo demostración", app.demo, change = app::changeDemo)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("FULL CONTROL", "SCREEN + CONTROL", "BIG SCREEN").forEachIndexed { i, name ->
             val page = FaceplateUi.Page.entries[i]
@@ -184,7 +185,6 @@ private fun DisplaySettings(app: MainActivity, close: () -> Unit) {
         }
     }
     Toggle("Mantener pantalla encendida", app.stayAwake, change = app::keepScreen)
-    Toggle("Modo demostración", app.demo, change = app::changeDemo)
     Section("Captura de pantalla")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Action("Guardar PNG", enabled = app.hasImage) { app.png() }

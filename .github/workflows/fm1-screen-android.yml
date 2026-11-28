@@ -52,8 +52,8 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           FM1_BUILD: ${{ steps.version.outputs.build }}
-          PREVIOUS_BUILD: 13
-          PREVIOUS_CERTIFICATE: 104c06cbdc66e123fcd2741c61e38ff426d97ef406b493af0e370220a6d8a2d5
+          PREVIOUS_BUILD: 14
+          PREVIOUS_CERTIFICATE: 81a13f28b6001915086e4c7a7ebd99577c86f62cbe133e568a2a99e4591af0d5
           FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
           FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
           FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
@@ -155,3 +155,10 @@ jobs:
           path: fm1-screen/distribution/screenshots/*.png
           if-no-files-found: warn
           retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: FM1-SCREEN-emulator-diagnostics-${{ github.run_number }}-${{ matrix.device }}
+          path: fm1-screen/distribution/screenshots/diagnostics
+          if-no-files-found: ignore
+          retention-days: 7

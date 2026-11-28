@@ -16,8 +16,8 @@ def adb(*args: str, binary: bool = False):
     return subprocess.check_output(["adb", *args], timeout=30, text=not binary)
 
 
-def visible_node(text: str, attempts: int):
-    for _ in range(attempts):
+def node(text: str):
+    for _ in range(5):
         if "ERROR" in adb("shell", "uiautomator", "dump", "/sdcard/fm1-ui.xml"):
             time.sleep(1)
             continue
@@ -29,14 +29,7 @@ def visible_node(text: str, attempts: int):
                 if item.get(attribute) == text:
                     return item
         time.sleep(1)
-    return None
-
-
-def node(text: str):
-    found = visible_node(text, 5)
-    if found is None:
-        raise AssertionError(f"Visible control missing: {text}")
-    return found
+    raise AssertionError(f"Visible control missing: {text}")
 
 
 def tap(text: str):
@@ -45,21 +38,18 @@ def tap(text: str):
     time.sleep(0.6)
 
 
-def scroll_settings_to(text: str, viewport: tuple[int, int]):
-    width, height = viewport
-    x = str(int(width * 0.9))
-    for _ in range(3):
-        if visible_node(text, 1) is not None:
-            return
-        adb("shell", "input", "swipe", x, str(int(height * 0.80)), x, str(int(height * 0.46)), "400")
+def screen_at_size(expected_size: tuple[int, int]) -> bytes:
+    for _ in range(6):
+        png = adb("exec-out", "screencap", "-p", binary=True)
+        assert png.startswith(b"\x89PNG\r\n\x1a\n") and len(png) > 8_000
+        if struct.unpack_from(">II", png, 16) == expected_size:
+            return png
         time.sleep(0.5)
+    raise AssertionError(f"Expected display {expected_size}, got {struct.unpack_from('>II', png, 16)}")
 
 
 def shot(out: Path, name: str, expected_size: tuple[int, int]):
-    png = adb("exec-out", "screencap", "-p", binary=True)
-    assert png.startswith(b"\x89PNG\r\n\x1a\n") and len(png) > 8_000
-    assert struct.unpack_from(">II", png, 16) == expected_size, f"Unexpected screen size for {name}"
-    (out / f"{name}.png").write_bytes(png)
+    (out / f"{name}.png").write_bytes(screen_at_size(expected_size))
 
 
 def has_panel_color(rgb: bytes):
@@ -85,16 +75,18 @@ def verify(apk: str, out: Path, device: str, build: int):
     landscape = portrait[::-1]
     adb("shell", "wm", "size", f"{portrait[0]}x{portrait[1]}")
     adb("shell", "wm", "density", str(density))
-    adb("shell", "cmd", "window", "user-rotation", "lock", "1")
+    adb("shell", "cmd", "window", "user-rotation", "lock", "0" if device == "phone" else "1")
     adb("shell", "am", "start", "-W", "-n", ACTIVITY)
+    screen_at_size(portrait if device == "phone" else landscape)
     tap("Open controls, or swipe down")
     node(f"FM1 SCREEN v1.0 · comp. {build:03}")
     tap("Vista")
-    if device == "phone":
-        scroll_settings_to("Modo demostración", landscape)
     tap("Modo demostración")
     assert node("Modo demostración").get("checked") == "true"
     tap("Cerrar")
+    if device == "phone":
+        adb("shell", "cmd", "window", "user-rotation", "lock", "1")
+        screen_at_size(landscape)
     node("DEMO")
     node("Keyboard, F3 to G5")
     shot(out, "01-full-control", landscape)
@@ -134,4 +126,16 @@ def verify(apk: str, out: Path, device: str, build: int):
 
 
 if __name__ == "__main__":
-    verify(sys.argv[1], Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))
+    output = Path(sys.argv[2])
+    try:
+        verify(sys.argv[1], output, sys.argv[3], int(sys.argv[4]))
+    except (AssertionError, subprocess.SubprocessError):
+        try:
+            diagnostic = output / "diagnostics"
+            diagnostic.mkdir(parents=True, exist_ok=True)
+            (diagnostic / "last-screen.png").write_bytes(adb("exec-out", "screencap", "-p", binary=True))
+            adb("shell", "uiautomator", "dump", "/sdcard/fm1-ui.xml")
+            (diagnostic / "last-tree.xml").write_text(adb("shell", "cat", "/sdcard/fm1-ui.xml"), encoding="utf-8")
+        except subprocess.SubprocessError as error:
+            print(f"Could not collect the last emulator screen: {error}", file=sys.stderr)
+        raise

@@ -1,6 +1,6 @@
 # Validación física en español
 
-**Preparación**. Instala la APK del artefacto de Actions. Confirma `FM1 SCREEN v1.0 · comp. 014` en el panel de ajustes. Si la compilación instalada lleva otro certificado, exporta temas y perfiles antes de desinstalarla, instala la nueva e importa esos archivos. Usa un cable USB-C de datos con la tablet como host. Arranca el instrumento de forma normal con su firmware instalado. Desactiva DEMO y deja activado **Solo visualización**.
+**Preparación**. Instala la APK del artefacto de Actions. Confirma `FM1 SCREEN v1.0 · comp. 015` en el panel de ajustes. Si la compilación instalada lleva otro certificado, exporta temas y perfiles antes de desinstalarla, instala la nueva e importa esos archivos. Usa un cable USB-C de datos con la tablet como host. Arranca el instrumento de forma normal con su firmware instalado. Desactiva DEMO y deja activado **Solo visualización**.
 
 1. Conecta el FM-1 y concede permisos si Android los solicita. Abre **Conexión**, selecciona su puerto y anota el nombre que Android enumera. Escribe el firmware y la versión que indica el instrumento. Un perfil sugerido por el USB no certifica la versión.
 2. Confirma que el audio sale del FM-1 por su salida habitual. Haz una prueba tocando pads físicos con el volumen de la tablet silenciado. Conserva el audio del instrumento durante las pruebas siguientes.
