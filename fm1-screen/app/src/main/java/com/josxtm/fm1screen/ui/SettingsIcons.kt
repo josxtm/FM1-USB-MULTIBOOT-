@@ -16,6 +16,20 @@ import androidx.compose.ui.unit.dp
 
 /** Original outline artwork. All paths share a 24-unit viewport and stroke. */
 internal enum class Glyph(pathData: String) {
+    BODY("M3 4h18v16H3z"),
+    PANEL("M3 4h18v16H3z M7 8h10v8H7z"),
+    PAD("M4 4h6v7H4z M14 4h6v7h-6z M4 14h6v6H4z M14 14h6v6h-6z"),
+    BUTTON("M3 8h18v8H3z M7 11h10"),
+    KNOB("M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 12l4-5"),
+    MARK("M4 16a8 8 0 1 1 16 0 M12 12l5-6 M12 12v5"),
+    TEXT("M4 5h16 M12 5v14 M8 19h8"),
+    LABEL("M3 5h18v8H3z M6 9h12 M6 17h12"),
+    NAVIGATION("M4 12h.1 M12 12h.1 M20 12h.1 M3 7l-2 5 2 5 M21 7l2 5-2 5"),
+    BEZEL("M3 3h18v18H3z M6 6h12v12H6z"),
+    ACTIVE("M12 3v4 M5 6l3 3 M19 6l-3 3 M8 14v-3a2 2 0 0 1 4 0v3h5v4l-3 3H9l-5-6z"),
+    PAD_ACTIVE("M3 3h8v8H3z M14 3h7v8h-7z M3 14h8v7H3z M14 17l2 3 5-6"),
+    PAD_TEXT("M3 3h18v18H3z M7 7h10 M12 7v10"),
+    BUTTON_ACTIVE("M3 7h18v10H3z M8 12l3 3 5-6"),
     GEAR("M10 3h4l.8 2.7 2 .9 2.6-1.2 2 3.5-2 1.9v2.4l2 1.9-2 3.5-2.6-1.2-2 .9L14 21h-4l-.8-2.7-2-.9-2.6 1.2-2-3.5 2-1.9v-2.4l-2-1.9 2-3.5 2.6 1.2 2-.9L10 3z M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"),
     CLOSE("M6 6l12 12M18 6L6 18"),
     USB("M12 3v15m-3-12 3-3 3 3M12 16l-5-3V9m5 5 5-3V8m-2-2h4v4h-4z M12 18a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"),
