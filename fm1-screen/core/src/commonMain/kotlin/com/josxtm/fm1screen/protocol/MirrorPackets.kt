@@ -16,6 +16,15 @@ data class PanelState(
     val dimButtons: Int, val dimKeys: Int,
 )
 
+enum class ControlOrigin { DEVICE, LOCAL, DERIVED, UNKNOWN }
+
+fun controlOrigin(deviceHeld: Boolean, localHeld: Boolean, hasTelemetry: Boolean): ControlOrigin = when {
+    deviceHeld -> ControlOrigin.DEVICE
+    localHeld -> ControlOrigin.LOCAL
+    hasTelemetry -> ControlOrigin.DEVICE
+    else -> ControlOrigin.UNKNOWN
+}
+
 sealed interface MirrorEvent {
     data class Hello(val version: Int, val enabled: Boolean) : MirrorEvent
     data class Pixels(val patch: Patch, val sequence: Int? = null) : MirrorEvent
@@ -25,30 +34,74 @@ sealed interface MirrorEvent {
     data object Invalid : MirrorEvent
 }
 
+/** Reassembles bounded SysEx across callbacks and counts complete MIDI 1.0 messages. */
 class SysExFramer(private val receive: (ByteArray) -> Unit) {
     private val buffer = ByteArray(MAX_SYSEX)
     private var length = 0
+    private var runningSize = 0
+    private var remaining = 0
+    var messages = 0L
+        private set
+    var discarded = 0L
+        private set
+
+    fun reset() {
+        length = 0
+        runningSize = 0
+        remaining = 0
+    }
 
     fun feed(bytes: ByteArray, offset: Int, count: Int) {
         require(offset >= 0 && count in 0..bytes.size && offset <= bytes.size - count)
         for (index in offset until offset + count) {
             val value = bytes[index].toInt() and 255
+            if (value >= 0xF8) {
+                if (value != 0xF9 && value != 0xFD) messages++
+                continue
+            }
+            if (length != 0) {
+                when {
+                    value == 0xF7 && length < buffer.size -> {
+                        buffer[length++] = bytes[index]
+                        val message = buffer.copyOf(length)
+                        length = 0
+                        messages++
+                        receive(message)
+                        continue
+                    }
+                    value < 128 && length < buffer.size -> {
+                        buffer[length++] = bytes[index]
+                        continue
+                    }
+                    else -> {
+                        discarded++
+                        length = 0
+                    }
+                }
+            }
             when {
-                value >= 0xF8 -> Unit
                 value == 0xF0 -> {
+                    runningSize = 0
+                    remaining = 0
                     buffer[0] = bytes[index]
                     length = 1
                 }
-                length == 0 -> Unit
-                length == buffer.size -> length = 0
-                value == 0xF7 -> {
-                    buffer[length++] = bytes[index]
-                    val message = buffer.copyOf(length)
-                    length = 0
-                    receive(message)
+                value in 0x80..0xEF -> {
+                    runningSize = if (value in 0xC0..0xDF) 1 else 2
+                    remaining = runningSize
                 }
-                value >= 0x80 -> length = 0
-                else -> buffer[length++] = bytes[index]
+                value >= 0xF0 -> {
+                    runningSize = 0
+                    remaining = when (value) { 0xF1, 0xF3 -> 1; 0xF2 -> 2; else -> 0 }
+                    if (value == 0xF6) messages++
+                }
+                remaining > 0 -> {
+                    remaining--
+                    if (remaining == 0) {
+                        messages++
+                        remaining = runningSize
+                    }
+                }
             }
         }
     }
@@ -76,13 +129,16 @@ object MirrorPackets {
 
     fun decode(wire: Wire, message: ByteArray): MirrorEvent? {
         if (identify(message) != wire) return null
-        return when (wire) {
+        return decodeIdentified(wire, message)
+    }
+
+    internal fun decodeIdentified(wire: Wire, message: ByteArray): MirrorEvent? =
+        when (wire) {
             Wire.BIG1 -> decodeBig1(message)
             Wire.BIG2 -> decodeBig2(message)
             Wire.BASE -> decodeBase(message)
             Wire.AUTO -> null
         }
-    }
 
     fun request(wire: Wire, refresh: Boolean): ByteArray = when (wire) {
         Wire.BASE -> basePacket(0x50, intArrayOf(if (refresh) 2 else 1))
@@ -95,7 +151,7 @@ object MirrorPackets {
 
     // Public entry points only expose documented panel operations.
     fun button(sequence: Int, index: Int, down: Boolean): ByteArray {
-        require(index in 0..13)
+        require(index in 0..13 && index != 7) { "SAVE requires a local physical action" }
         return panel(sequence, 1, index, if (down) 1 else 0)
     }
 

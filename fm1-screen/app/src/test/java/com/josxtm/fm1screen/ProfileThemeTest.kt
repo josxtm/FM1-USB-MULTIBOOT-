@@ -2,6 +2,7 @@ package com.josxtm.fm1screen
 
 import com.josxtm.fm1screen.data.ColorRole
 import com.josxtm.fm1screen.data.FirmwareProfile
+import com.josxtm.fm1screen.data.ProfileJson
 import com.josxtm.fm1screen.data.ThemeLibrary
 import com.josxtm.fm1screen.protocol.Wire
 import com.josxtm.fm1screen.transport.DeviceIdentity
@@ -20,27 +21,27 @@ import org.junit.Test
 import java.io.File
 
 class ProfileThemeTest {
-    private val assets = File("src/main/assets")
+    private val assets = File("../assets")
 
     @Test fun bundledProfilesValidateAndRoundTrip() {
         val files = File(assets, "profiles").listFiles().orEmpty()
         assertTrue(files.isNotEmpty())
         files.forEach {
-            val p = FirmwareProfile.decode(JSONObject(it.readText()))
+            val p = ProfileJson.decode(JSONObject(it.readText()))
             assertEquals(27, p.pads.size)
-            assertEquals(p, FirmwareProfile.decode(p.encode()))
+            assertEquals(p, ProfileJson.decode(ProfileJson.encode(p)))
         }
-        val frasil = FirmwareProfile.decode(JSONObject(File(assets, "profiles/frasil.json").readText()))
+        val frasil = ProfileJson.decode(JSONObject(File(assets, "profiles/frasil.json").readText()))
         assertEquals(Wire.BASE, frasil.wire)
     }
 
     @Test fun invalidProfilesRejectBadSizeAndLabels() {
         val json = JSONObject(File(assets, "profiles/frasil.json").readText())
         assertThrows(IllegalArgumentException::class.java) {
-            FirmwareProfile.decode(JSONObject(json.toString()).put("pads", JSONArray()))
+            ProfileJson.decode(JSONObject(json.toString()).put("pads", JSONArray()))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            FirmwareProfile.decode(JSONObject(json.toString()).put("resolution", JSONArray(listOf(240, 241))))
+            ProfileJson.decode(JSONObject(json.toString()).put("resolution", JSONArray(listOf(240, 241))))
         }
     }
 
@@ -64,6 +65,23 @@ class ProfileThemeTest {
         assertEquals(theme, ThemeLibrary.decode(ThemeLibrary.encode(theme)))
     }
 
+    @Test fun legacyThemeMigratesAndKeepsIndependentActiveColors() {
+        val file = File(assets, "themes/silver-turquoise.json")
+        val fields = JSONObject(file.readText())
+        val stored = fields.getJSONObject("colors")
+        for (role in listOf(ColorRole.PAD_ACTIVE, ColorRole.PAD_TEXT, ColorRole.BUTTON_ACTIVE)) stored.remove(role.name)
+        val legacy = ThemeLibrary.decode(fields)
+        assertEquals(legacy.hi, legacy.padActive)
+        assertEquals(legacy.buttonHi, legacy.buttonActive)
+        val newColor = Rgb.hex("#1982C4")!!
+        for (role in listOf(ColorRole.PAD_ACTIVE, ColorRole.PAD_TEXT, ColorRole.BUTTON_ACTIVE)) {
+            val edited = role.set(legacy, newColor)
+            assertEquals(newColor, role.get(edited))
+            assertEquals(legacy, role.reset(edited, legacy))
+            assertEquals(edited, ThemeLibrary.decode(ThemeLibrary.encode(edited)))
+        }
+    }
+
     @Test fun physicalLayoutHasEveryVerifiedControl() {
         val panel = FaceplateLayout.full(FaceplateLayout.Kind.PAD_LANDSCAPE)
         assertTrue(panel.displaySize < panel.keybed.w)
@@ -78,6 +96,8 @@ class ProfileThemeTest {
         assertTrue(DeviceIdentity.allowsRequests("FM-1_47030401"))
         assertTrue(DeviceIdentity.allowsRequests("FM-1 MIDI"))
         assertTrue(DeviceIdentity.allowsRequests("FRASIL FM-1"))
+        assertTrue(DeviceIdentity.allowsRequests("Polly FM-1"))
+        assertTrue(DeviceIdentity.allowsRequests("LOOM-8 FM-1"))
         assertFalse(DeviceIdentity.allowsRequests("FM-1 Update"))
         assertFalse(DeviceIdentity.allowsRequests("Generic USB MIDI"))
         assertTrue(DeviceIdentity.isLoader("WL80UBOOT"))

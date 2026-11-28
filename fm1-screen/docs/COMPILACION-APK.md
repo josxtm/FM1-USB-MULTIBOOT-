@@ -3,10 +3,10 @@
 Desde fm1-screen, con JDK 17, Android SDK 35 y Build Tools 35.0.0, ejecuta:
 
 ```bash
-./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug -Pfm1Build=1
+./gradlew :core:jvmTest :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-El [workflow FM1 SCREEN Android](../../.github/workflows/fm1-screen-android.yml) usa el número de ejecución como versionCode. Sube FM1-SCREEN_v1.0-comp.X.apk, SHA-256, firma, metadatos y resultados. La retención de artefactos es de 30 días.
+El [workflow FM1 SCREEN Android](../../.github/workflows/fm1-screen-android.yml) usa `fm1Build` en `gradle.properties` como versionCode. Sube FM1-SCREEN-v1.0-comp.X.apk, SHA-256, firma, metadatos y resultados. La retención de artefactos es de 30 días.
 
 ## Certificado de distribución
 

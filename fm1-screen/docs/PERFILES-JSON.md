@@ -1,6 +1,6 @@
 # Perfiles de firmware JSON
 
-Importa o exporta desde **Conexión › Firmware**. Los ejemplos viven en app/src/main/assets/profiles. Importar el mismo ID actualiza el registro local. El límite por documento es 64 KiB.
+Importa o exporta desde **Conexión › Firmware**. Los ejemplos viven en assets/profiles. Importar el mismo ID actualiza el registro local. El límite por documento es 64 KiB.
 
 | Campo | Formato |
 |---|---|

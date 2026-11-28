@@ -14,7 +14,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import com.josxtm.fm1screen.data.FirmwareProfile
 import com.josxtm.fm1screen.protocol.PanelState
 import com.josxtm.fm1screen.protocol.SIDE
-import com.josxtm.fm1screen.transport.MidiTransport
+import com.josxtm.fm1screen.protocol.ScreenFrame
+import java.nio.ShortBuffer
+import com.josxtm.fm1screen.transport.PanelOutput
+import com.josxtm.fm1screen.protocol.ControlOrigin
+import com.josxtm.fm1screen.protocol.controlOrigin
 
 enum class Scaling(val title: String) { AUTO("Automático"), PIXEL("Píxel perfecto"), SMOOTH("Suavizado"), ZOOM("Zoom manual") }
 
@@ -37,11 +41,14 @@ class PanelLights {
     var heldLabels = 0
     var screenKeys = 0
     var screenButtons = 0
+    var hasTelemetry = false
 
     fun keyDown(index: Int) = (heldKeys or screenKeys) and (1 shl index) != 0
     fun labelDown(index: Int) = (heldLabels or screenButtons) and (1 shl index) != 0
-    fun localKey(index: Int) = screenKeys and (1 shl index) != 0 && heldKeys and (1 shl index) == 0
-    fun localButton(index: Int) = screenButtons and (1 shl index) != 0 && heldLabels and (1 shl index) == 0
+    fun keyOrigin(index: Int) = controlOrigin(heldKeys and (1 shl index) != 0,
+        screenKeys and (1 shl index) != 0, hasTelemetry)
+    fun buttonOrigin(index: Int) = controlOrigin(heldLabels and (1 shl index) != 0,
+        screenButtons and (1 shl index) != 0, hasTelemetry)
 }
 
 class KnobFeed {
@@ -52,7 +59,7 @@ class KnobFeed {
 }
 
 class PanelFeed {
-    lateinit var transport: MidiTransport
+    lateinit var transport: PanelOutput
     var bitmap = Bitmap.createBitmap(SIDE, SIDE, Bitmap.Config.ARGB_8888)
         private set
     var image by mutableStateOf(bitmap.asImageBitmap())
@@ -72,6 +79,8 @@ class PanelFeed {
         private set
     private var profile by mutableStateOf<FirmwareProfile?>(null)
     private val fingers = IntArray(27)
+    private val framePixels = ShortArray(SIDE * SIDE)
+    private val frameBuffer = ShortBuffer.wrap(framePixels)
     private var lastDrawn = -1
     var draws = 0
         private set
@@ -84,14 +93,24 @@ class PanelFeed {
     fun padLabel(index: Int): String = profile?.pads?.get(index) ?: NOTE_NAMES[index]
     fun knobLabel(knob: PanelKnob): String = profile?.knobs?.get(knob.ordinal) ?: knob.label
 
+    fun knobOrigin(knob: PanelKnob): ControlOrigin = when {
+        !knobs.known -> ControlOrigin.UNKNOWN
+        knob == PanelKnob.MASTER -> ControlOrigin.DEVICE
+        else -> ControlOrigin.DERIVED
+    }
+
     fun setControls(enabled: Boolean) {
         if (canControl && !enabled) releaseAll()
         canControl = enabled
     }
 
-    fun paint(pixels: IntArray?) {
-        val next = if (pixels != null) Bitmap.createBitmap(pixels, SIDE, SIDE, Bitmap.Config.ARGB_8888)
-            else Bitmap.createBitmap(SIDE, SIDE, Bitmap.Config.ARGB_8888)
+    fun paint(pixels: ScreenFrame?) {
+        val next = Bitmap.createBitmap(SIDE, SIDE, Bitmap.Config.RGB_565)
+        if (pixels != null) {
+            pixels.copyRgb565To(framePixels)
+            frameBuffer.rewind()
+            next.copyPixelsFromBuffer(frameBuffer)
+        }
         show(next, pixels != null)
     }
 
@@ -125,10 +144,14 @@ class PanelFeed {
     fun panel(state: PanelState?) {
         val previousKeys = lights.heldKeys
         val previousButtons = lights.heldLabels
+        val previousGreen = lights.playGreen
+        val hadTelemetry = lights.hasTelemetry
+        lights.hasTelemetry = state != null
         lights.heldKeys = state?.heldKeys ?: 0
         lights.heldLabels = state?.heldButtons ?: 0
         lights.playGreen = if (state != null && !state.playRed && state.litButtons and (1 shl PanelLabel.PLAY.ordinal) != 0) 255 else 0
-        var changed = previousKeys != lights.heldKeys || previousButtons != lights.heldLabels
+        var changed = previousKeys != lights.heldKeys || previousButtons != lights.heldLabels ||
+            previousGreen != lights.playGreen || hadTelemetry != lights.hasTelemetry
         fun level(lit: Int, dim: Int, index: Int) = when {
             lit and (1 shl index) != 0 -> 255
             dim and (1 shl index) != 0 -> 40

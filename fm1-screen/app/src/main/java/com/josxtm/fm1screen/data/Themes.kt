@@ -8,49 +8,6 @@ import com.josxtm.fm1screen.ui.theme.Theme
 import com.josxtm.fm1screen.ui.theme.ThemeTokens
 import org.json.JSONObject
 
-enum class ColorRole(val label: String) {
-    BODY("Fondo principal"), PANEL("Paneles"), PAD("Pads"), BUTTON("Botones"),
-    KNOB("Potenciómetros"), MARK("Indicadores de potenciómetro"), TEXT("Texto de controles"),
-    LABEL("Etiquetas exteriores"), ACCENT("Acento"), NAVIGATION("Navegación"),
-    BEZEL("Marco de pantalla"), ACTIVE("Control pulsado");
-
-    fun get(t: Theme) = when (this) {
-        BODY -> t.body
-        PANEL -> t.bed
-        PAD -> t.key
-        BUTTON -> t.button
-        KNOB -> t.knob
-        MARK -> t.mark
-        TEXT -> t.keyText
-        LABEL -> t.label
-        ACCENT -> t.accent
-        NAVIGATION -> t.navigation
-        BEZEL -> t.bezel
-        ACTIVE -> t.pressed
-    }
-
-    fun set(t: Theme, c: Rgb): Theme = when (this) {
-        BODY -> t.copy(body = c)
-        PANEL -> t.copy(bed = c)
-        PAD -> t.copy(key = c, hi = c.lightness(8.0), lo = c.lightness(-18.0))
-        BUTTON -> t.copy(button = c, buttonHi = c.lightness(8.0), buttonLo = c.lightness(-18.0))
-        KNOB -> t.copy(knob = c)
-        MARK -> t.copy(mark = c)
-        TEXT -> t.copy(keyText = c)
-        LABEL -> t.copy(label = c)
-        ACCENT -> t.copy(accent = c)
-        NAVIGATION -> t.copy(navigation = c)
-        BEZEL -> t.copy(bezel = c)
-        ACTIVE -> t.copy(pressed = c)
-    }
-
-    fun reset(t: Theme, mint: Theme): Theme = when (this) {
-        PAD -> t.copy(key = mint.key, hi = mint.hi, lo = mint.lo)
-        BUTTON -> t.copy(button = mint.button, buttonHi = mint.buttonHi, buttonLo = mint.buttonLo)
-        else -> set(t, get(mint))
-    }
-}
-
 class ThemeLibrary(context: Context) {
     private val prefs = context.getSharedPreferences("themes", Context.MODE_PRIVATE)
     private val tokens = ThemeTokens(context.assets.open("tokens.json").bufferedReader().use { it.readText() })
@@ -96,7 +53,9 @@ class ThemeLibrary(context: Context) {
     }
 
     companion object {
-        fun encode(theme: Theme): JSONObject = theme.toJson().apply {
+        fun encode(theme: Theme): JSONObject = JSONObject().apply {
+            put("name", theme.name)
+            Theme.ROLES.forEach { put(it, checkNotNull(theme[it]).hex) }
             put("schema", 1)
             put("colors", JSONObject().apply {
                 ColorRole.entries.forEach { put(it.name, it.get(theme).hex) }
@@ -110,14 +69,23 @@ class ThemeLibrary(context: Context) {
             val name = json.getString("name").trim()
             require(name.length in 1..40 && name.none(Char::isISOControl))
             val colors = json.getJSONObject("colors")
-            val base = requireNotNull(Theme.fromJson(json))
+            val base = requireNotNull(Theme.of(name) { json.optString(it, "").ifEmpty { null } })
             var result = base
-            ColorRole.entries.forEach {
-                result = it.set(result, requireNotNull(Rgb.hex(colors.getString(it.name))))
+            val buttonHi = requireNotNull(Rgb.hex(json.getString("buttonHi")))
+            val buttonLo = requireNotNull(Rgb.hex(json.getString("buttonLo")))
+            ColorRole.entries.forEach { role ->
+                val fallback = when (role) {
+                    ColorRole.PAD_ACTIVE -> base.hi
+                    ColorRole.PAD_TEXT -> result.keyText
+                    ColorRole.BUTTON_ACTIVE -> buttonHi
+                    else -> null
+                }
+                val value = if (fallback != null && !colors.has(role.name)) fallback
+                    else requireNotNull(Rgb.hex(colors.getString(role.name)))
+                result = role.set(result, value)
             }
             return result.copy(name = name, hi = base.hi, lo = base.lo,
-                buttonHi = requireNotNull(Rgb.hex(json.getString("buttonHi"))),
-                buttonLo = requireNotNull(Rgb.hex(json.getString("buttonLo"))))
+                buttonHi = buttonHi, buttonLo = buttonLo)
         }
     }
 }

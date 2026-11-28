@@ -137,7 +137,7 @@ private fun LinkSettings(app: MainActivity) {
         }
     }
     Toggle("Solicitar duplicación", app.streaming, app.connected && app.recognized && !app.demo, app::setWatching)
-    Toggle("Solo visualización", app.viewOnly, !app.demo, app::changeViewOnly)
+    Toggle("Solo visualización", app.viewOnly, !app.viewOnly || app.canAuthorizeControl, app::changeViewOnly)
     Label(if (app.mirrorStats.wire == Wire.BASE && app.mirrorStats.protocolVersion >= 2)
         "Panel fm1-base disponible · SAVE reservado al FM-1"
         else "Controles remotos indisponibles hasta detectar un panel compatible", Palette.sheetMuted)
@@ -244,7 +244,7 @@ private fun ThemeSettings(app: MainActivity) {
             app.previewTheme(original)
         }
     }
-    if (minOf(theme.body.contrast(theme.label), theme.key.contrast(theme.keyText), theme.button.contrast(theme.keyText)) < 4.5) {
+    if (minOf(theme.body.contrast(theme.label), theme.key.contrast(theme.padText), theme.padActive.contrast(theme.padText), theme.button.contrast(theme.keyText)) < 4.5) {
         Label("Contraste bajo en alguna etiqueta", Palette.sheetAccent)
     }
     OutlinedTextField(name, { name = it.take(40) }, label = { Text("Nombre del tema") },
@@ -312,7 +312,15 @@ private fun Diagnostics(app: MainActivity) {
     Label("${stats.wire?.title ?: "Sin protocolo"} · $coverage % de píxeles recibidos")
     Label("${stats.patchesPerSecond} bloques/s · ${app.rendersPerSecond} imágenes dibujadas/s")
     if (stats.wire == Wire.BIG2) Label("${stats.syncsPerSecond} fotogramas SYNC/s")
-    Label("${stats.bad} paquetes inválidos · ${stats.gaps} saltos de secuencia", Palette.sheetMuted)
+    val identity = app.profile?.let { if (app.autoProfile) "${it.name} por nombre de producto" else "${it.name} (perfil manual)" }
+        ?: "Firmware sin identificar"
+    Label("${app.link.title} · $identity")
+    Label("${stats.bytesPerSecond} B/s · ${stats.midiMessages} mensajes MIDI desde la conexión")
+    Label("${stats.bad} paquetes inválidos · ${stats.gaps} saltos de secuencia · ${stats.discardedPackets} paquetes descartados",
+        Palette.sheetMuted)
+    Label("${app.uiDiscardedFrames} publicaciones agrupadas por Android", Palette.sheetMuted)
+    Label(stats.decodingMs?.let { "Último mensaje decodificado en ${String.format(Locale.ROOT, "%.3f", it)} ms" }
+        ?: "Decodificación sin muestra", Palette.sheetMuted)
     Label(stats.processingMs?.let { "Recepción → framebuffer ${String.format(Locale.ROOT, "%.2f", it)} ms" } ?: "Procesamiento local sin muestra",
         Palette.sheetMuted)
     Action("Exportar registros") { app.exportLogs() }

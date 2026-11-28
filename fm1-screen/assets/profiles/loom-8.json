@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "id": "loom-8",
+  "name": "LOOM-8",
+  "version": "Consultar versión instalada",
+  "protocol": "AUTO",
+  "resolution": [
+    240,
+    240
+  ],
+  "pixels": "RGB565",
+  "deviceNames": [
+    "LOOM-8 FM-1"
+  ],
+  "pads": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "buttons": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "knobs": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "evidence": "SOPORTADO SEGÚN CÓDIGO FUENTE",
+  "source": "https://github.com/charlesvestal/fm1-loom/blob/30032b41317b4175fbd431b748f75dca2d23af06/app/fm1.toml",
+  "limits": "Duplicación habilitada en las referencias 0.13 y 0.18.2. Desactivada en la versión estándar 0.19. El nombre USB no confirma la versión."
+}

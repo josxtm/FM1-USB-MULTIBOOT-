@@ -8,13 +8,14 @@
 // above them). Shared by the drawing and the touch tracking, so a touch lands on the key that is drawn.
 package com.josxtm.fm1screen.ui.faceplate
 
+import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
-private fun rnd(v: Float) = Math.round(v).toFloat()
+private fun rnd(v: Float) = v.roundToInt().toFloat()
 
 class KeybedGeometry(val size: PSize, val layout: Layout, stepMode: Boolean = false) {
     sealed class Layout {

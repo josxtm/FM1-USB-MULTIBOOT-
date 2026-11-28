@@ -221,13 +221,20 @@ private fun FullView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: Panel
     val L = FaceplateLayout.full(kind)
     val m = FaceplateLayout.Mapper(kind.ref, PSize(w, h))
     val s = m.s
+    val status = L.status
+    val grabber = L.grabber
     Box(Modifier.fillMaxSize()) {
-        if (chrome && L.status != null) {
-            StatusRow(theme, chip, L.status, m, ui.word, onWord, openSheet)
-        } else if (chrome && L.grabber != null) {
-            val gr = L.grabber
+        if (chrome && status != null) {
+            StatusRow(theme, chip, status, m, ui.word, onWord, openSheet)
+        } else if (chrome && grabber != null) {
+            val gr = grabber
             Grabber(theme, gr.w * s, 40 * s, gr.h * s, openSheet,
                     Modifier.centredAt(w / 2, max(22f, m.y(gr.midY)), max(gr.w * s, 88f), max(gr.h * s, 44f)))
+        }
+        if (chrome && kind == FaceplateLayout.Kind.PHONE_LANDSCAPE) {
+            Box(Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 4.dp)) {
+                Chip(theme, chip, 18f, 5f, 7f)
+            }
         }
         KnobGrid(PanelKnob.MAIN, L.main, m, theme, feed)
         val o = L.oct
@@ -297,11 +304,13 @@ private fun ControlsView(feed: PanelFeed, ui: FaceplateUi, theme: Theme, chip: P
     val m = FaceplateLayout.Mapper(L.ref, PSize(w, h), uniform = w > 600)
     val s = m.s
     fun toggleSet() { ui.knobSet = if (ui.knobSet == FaceplateUi.KnobSet.MAIN) FaceplateUi.KnobSet.KN else FaceplateUi.KnobSet.MAIN }
+    val status = L.status
+    val grabber = L.grabber
     Box(Modifier.fillMaxSize()) {
-        if (chrome && L.status != null) {
-            StatusRow(theme, chip, L.status, m, ui.word, onWord, openSheet)
-        } else if (chrome && L.grabber != null) {
-            val gr = L.grabber
+        if (chrome && status != null) {
+            StatusRow(theme, chip, status, m, ui.word, onWord, openSheet)
+        } else if (chrome && grabber != null) {
+            val gr = grabber
             Grabber(theme, gr.w * s, 40 * s, gr.h * s, openSheet,
                     Modifier.centredAt(w / 2, max(22f, m.y(gr.midY)), max(gr.w * s, 88f), max(gr.h * s, 44f)))
         }

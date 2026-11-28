@@ -8,6 +8,7 @@
 // lot from the reference, the layout scales uniformly and is centred instead. Pure Kotlin: tested on the JVM.
 package com.josxtm.fm1screen.ui.faceplate
 
+import kotlin.math.roundToInt
 import kotlin.math.max
 import kotlin.math.min
 
@@ -158,7 +159,7 @@ object FaceplateLayout {
 
     /** the knob's cell: label above, the knob, room for its shadow (Knob.dc.html: size + 28 wide) */
     fun knobCell(size: Float): PSize {
-        val lf = max(9f, Math.round(size * 0.17f).toFloat())
+        val lf = max(9f, (size * 0.17f).roundToInt().toFloat())
         return PSize(size + 28, lf + 6 + size + 6)
     }
 }

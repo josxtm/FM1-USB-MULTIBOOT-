@@ -38,9 +38,10 @@ def tap(text: str):
     time.sleep(0.6)
 
 
-def shot(out: Path, name: str):
+def shot(out: Path, name: str, expected_size: tuple[int, int]):
     png = adb("exec-out", "screencap", "-p", binary=True)
     assert png.startswith(b"\x89PNG\r\n\x1a\n") and len(png) > 8_000
+    assert struct.unpack_from(">II", png, 16) == expected_size, f"Unexpected screen size for {name}"
     (out / f"{name}.png").write_bytes(png)
 
 
@@ -58,30 +59,41 @@ def has_panel_color(rgb: bytes):
     return False
 
 
-def verify(apk: str, out: Path):
+def verify(apk: str, out: Path, device: str, build: int):
     out.mkdir(parents=True, exist_ok=True)
-    adb("install", "-r", apk)
-    adb("shell", "pm", "clear", PACKAGE)
-    adb("shell", "wm", "size", "1200x1920")
-    adb("shell", "wm", "density", "160")
+    prior = subprocess.run(["adb", "shell", "pm", "path", PACKAGE], capture_output=True, text=True, timeout=15)
+    assert "package:" not in prior.stdout, "The test requires a clean emulator"
+    adb("install", apk)
+    portrait, density = {"tablet": ((1200, 1920), 160), "phone": ((1080, 2400), 440)}[device]
+    landscape = portrait[::-1]
+    adb("shell", "wm", "size", f"{portrait[0]}x{portrait[1]}")
+    adb("shell", "wm", "density", str(density))
     adb("shell", "cmd", "window", "user-rotation", "lock", "1")
     adb("shell", "am", "start", "-W", "-n", ACTIVITY)
     tap("Open controls, or swipe down")
+    node(f"FM1 SCREEN v1.0 · comp. {build:03}")
     tap("Vista")
     tap("Modo demostración")
     assert node("Modo demostración").get("checked") == "true"
     tap("Cerrar")
     node("DEMO")
     node("Keyboard, F3 to G5")
-    shot(out, "01-full-control")
+    shot(out, "01-full-control", landscape)
     tap("Controls view")
     node("BUTTONS")
-    shot(out, "02-screen-control")
+    shot(out, "02-screen-control", landscape)
     tap("KEYS")
     node("Keyboard, F3 to G5")
     tap("Screen view")
     node("FM-1 display")
-    shot(out, "03-big-screen")
+    shot(out, "03-big-screen", landscape)
+    if device == "phone":
+        adb("shell", "cmd", "window", "user-rotation", "lock", "0")
+        time.sleep(1.5)
+        node("FM-1 display")
+        shot(out, "04-big-screen-portrait", portrait)
+        print("Clean phone install, three landscape views and BIG SCREEN in portrait verified.")
+        return
     tap("Full view")
     tap("Open controls, or swipe down")
     tap("Colores")
@@ -89,7 +101,7 @@ def verify(apk: str, out: Path):
     tap("SILVER")
     tap("Pads")
     node("HEX")
-    shot(out, "04-editor-colores")
+    shot(out, "04-editor-colores", landscape)
     tap("Cerrar")
     silver = bytes.fromhex("C7CED3")
     assert has_panel_color(silver), "Silver preset did not recolor the visible panel"
@@ -103,4 +115,4 @@ def verify(apk: str, out: Path):
 
 
 if __name__ == "__main__":
-    verify(sys.argv[1], Path(sys.argv[2]))
+    verify(sys.argv[1], Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))

@@ -66,6 +66,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import com.josxtm.fm1screen.protocol.ControlOrigin
+import androidx.compose.ui.semantics.stateDescription
 import com.josxtm.fm1screen.ui.theme.Palette
 import com.josxtm.fm1screen.ui.theme.RfmFonts
 import com.josxtm.fm1screen.ui.theme.Theme
@@ -228,9 +230,12 @@ fun KnobView(knob: PanelKnob, size: Float, theme: Theme, feed: PanelFeed, modifi
             },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        feed.knobs.version
         val lw = max(size, min(size + 28, labelWidth ?: (size + 28)) - 2)
         BasicText(
-            feed.knobLabel(knob).uppercase(),
+            if (knob == PanelKnob.MASTER && feed.knobOrigin(knob) == ControlOrigin.DEVICE) {
+                "${feed.knobLabel(knob).uppercase()} ${feed.knobs.master * 100 / 1023}%"
+            } else feed.knobLabel(knob).uppercase(),
             Modifier.width(lw.dp).height(lf.dp).wrapContentHeight(Alignment.CenterVertically, unbounded = true),
             style = TextStyle(fontFamily = RfmFonts.hardware, fontSize = dsp(lf), letterSpacing = dsp(lf * 0.08f),
                               color = theme.label.color, textAlign = TextAlign.Center),
@@ -283,6 +288,12 @@ fun PanelButton(label: PanelLabel, theme: Theme, feed: PanelFeed, w: Float, h: F
             .testTag("button-${label.legend}")
             .semantics {
                 contentDescription = label.spoken
+                feed.lights.version
+                stateDescription = when (feed.lights.buttonOrigin(label.ordinal)) {
+                    ControlOrigin.LOCAL -> "Pulsación local"
+                    ControlOrigin.DEVICE -> if (feed.lights.labelDown(label.ordinal)) "Pulsado por el instrumento" else "Liberado"
+                    else -> "Estado sin confirmar"
+                }
                 if (!feed.canControl || label == PanelLabel.SAVE) disabled()
             }
             .pointerInput(label) {
@@ -309,7 +320,7 @@ fun PanelButton(label: PanelLabel, theme: Theme, feed: PanelFeed, w: Float, h: F
             val level = feed.lights.buttons[label.ordinal]
             val lit = LedLevel.lit(level)
             val down = feed.lights.labelDown(label.ordinal)
-            capFace(if (feed.lights.localButton(label.ordinal)) theme.pressed.color else if (lit || down) theme.buttonHi.color else theme.button.color, theme.buttonHi.color, theme.buttonLo.color,
+            capFace(if (feed.lights.buttonOrigin(label.ordinal) == ControlOrigin.LOCAL) theme.pressed.color else if (lit || down) theme.buttonActive.color else theme.button.color, theme.buttonHi.color, theme.buttonLo.color,
                     radius * density, drop * density, if (down) density else 0f)
         }
         ButtonLegend(label, theme, feed, ic, font)

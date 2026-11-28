@@ -6,6 +6,7 @@
 // red tab, and the film folded back from the tab by a travel t (dp along the peel's direction). Pure Kotlin.
 package com.josxtm.fm1screen.ui.faceplate
 
+import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
@@ -34,7 +35,7 @@ class FilmGeometry(val display: PRect, val radius: Float, val tab: PRect) {
                              Triple(display.minX + r, display.minY + r, 180.0), Triple(display.maxX - r, display.minY + r, 270.0))
         for ((x, y, a0) in corners) {
             for (i in 0..6) {
-                val a = (a0 + i * 15) * Math.PI / 180
+                val a = (a0 + i * 15) * kotlin.math.PI / 180
                 sq.add(FPoint(x + r * cos(a).toFloat(), y + r * sin(a).toFloat()))
             }
         }
@@ -69,8 +70,8 @@ class FilmGeometry(val display: PRect, val radius: Float, val tab: PRect) {
     companion object {
         /** the tab's square beside a display, as on the FM-1: right of it, level with its top, overlapping a little */
         fun tab(display: PRect): PRect {
-            val t = Math.round(display.w * 0.13f).toFloat()
-            val o = Math.round(t * 0.15f).toFloat()
+            val t = (display.w * 0.13f).roundToInt().toFloat()
+            val o = (t * 0.15f).roundToInt().toFloat()
             return PRect(display.maxX - o, display.minY + o, t, t)
         }
 

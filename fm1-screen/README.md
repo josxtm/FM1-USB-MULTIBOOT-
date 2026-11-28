@@ -1,4 +1,4 @@
-# FM1 SCREEN v1.0
+# FM1 SCREEN v1.0 · compilación 13
 
 Visor Android para el sintetizador físico M-VAVE FM-1. El FM-1 ejecuta el firmware y produce el sonido. La tablet recibe la pantalla de los firmwares que ofrecen mirroring.
 
@@ -13,13 +13,16 @@ Visor Android para el sintetizador físico M-VAVE FM-1. El FM-1 ejecuta el firmw
 La app funciona sin Internet desde Android 10. Guarda las preferencias, los perfiles y los temas en almacenamiento privado.
 
 - [GUI RemoteFM1](docs/GUI-REMOTE-FM1.md)
-- [Arquitectura](docs/ARQUITECTURA.md)
-- [Protocolos](docs/PROTOCOLOS.md)
-- [Compatibilidad de firmwares](docs/COMPATIBILIDAD-FIRMWARES.md)
+- [Arquitectura](ARCHITECTURE.md)
+- [Hoja de ruta multiplataforma](MULTIPLATFORM-ROADMAP.md)
+- [Viabilidad Raspberry Pi ARMv6](RPI-ARMV6-FEASIBILITY.md)
+- [Historial de cambios](CHANGELOG.md)
+- [Protocolos](PROTOCOLS.md)
+- [Compatibilidad de firmwares](FIRMWARE-COMPATIBILITY.md)
 - [Perfiles JSON](docs/PERFILES-JSON.md)
 - [Temas](docs/TEMAS-PERSONALIZADOS.md)
-- [Seguridad](docs/SEGURIDAD-FM1.md)
-- [Pruebas físicas](docs/PRUEBAS-FISICAS.md)
+- [Seguridad](SECURITY.md)
+- [Pruebas físicas](PHYSICAL-TEST-PLAN.md)
 - [Investigación TFT](docs/INVESTIGACION-TFT.md)
 - [Compilación y descarga](docs/COMPILACION-APK.md)
 - [Licencias](docs/LICENCIAS-Y-ATRIBUCIONES.md)

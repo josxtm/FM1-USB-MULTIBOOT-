@@ -1,4 +1,11 @@
 pluginManagement {
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "org.jetbrains.kotlin.multiplatform") {
+                useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
+            }
+        }
+    }
     repositories {
         google()
         mavenCentral()
@@ -13,4 +20,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "FM1 SCREEN"
-include(":app")
+include(":app", ":core")

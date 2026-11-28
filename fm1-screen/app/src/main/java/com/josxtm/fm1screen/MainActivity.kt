@@ -28,9 +28,11 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.josxtm.fm1screen.capture.Recording
 import com.josxtm.fm1screen.data.FirmwareProfile
+import com.josxtm.fm1screen.data.ProfileJson
 import com.josxtm.fm1screen.data.ProfileLibrary
 import com.josxtm.fm1screen.data.ThemeLibrary
 import com.josxtm.fm1screen.protocol.PanelState
+import com.josxtm.fm1screen.protocol.ScreenFrame
 import com.josxtm.fm1screen.protocol.Wire
 import com.josxtm.fm1screen.transport.DeviceIdentity
 import com.josxtm.fm1screen.transport.LinkKind
@@ -62,8 +64,11 @@ class MainActivity : ComponentActivity(), TransportListener {
     private lateinit var profileLibrary: ProfileLibrary
     private lateinit var protector: ScreenProtector
     private val incomingLock = Any()
-    private var pendingFrame: IntArray? = null
+    private var pendingFrame: ScreenFrame? = null
     private var framePosted = false
+    private var overwrittenFrames = 0L
+    var uiDiscardedFrames by mutableStateOf(0L)
+        private set
     private var watch = false
     private var foreground = false
     private var dead = false
@@ -160,7 +165,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         faceplate.page = FaceplateUi.Page.of(prefs.getString("page", null)) ?: FaceplateUi.Page.FULL
         faceplate.deck = FaceplateUi.Deck.of(prefs.getString("deck", null)) ?: FaceplateUi.Deck.BUTTONS
         faceplate.knobSet = FaceplateUi.KnobSet.of(prefs.getString("knobs", null)) ?: FaceplateUi.KnobSet.MAIN
-        updateProfile(profiles.firstOrNull { it.id == prefs.getString("profile", "") })
+        if (!autoProfile) updateProfile(profiles.firstOrNull { it.id == prefs.getString("profile", "") })
         stayAwake = prefs.getBoolean("stayAwake", true)
         applyScreenFlag()
         transport = MidiTransport(this, this, prefs.getString("usbDevice", null))
@@ -189,6 +194,7 @@ class MainActivity : ComponentActivity(), TransportListener {
     private val metrics = object : Runnable {
         private var last = 0
         override fun run() {
+            uiDiscardedFrames = synchronized(incomingLock) { overwrittenFrames }
             rendersPerSecond = feed.draws - last
             last = feed.draws
             if (!dead) main.postDelayed(this, 1000)
@@ -244,6 +250,7 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     fun selectLink(kind: LinkKind) {
         if (link == kind) return
+        setWatching(false)
         link = kind
         deviceList = emptyList()
         prefs.edit().putString("link", kind.name).apply()
@@ -266,6 +273,7 @@ class MainActivity : ComponentActivity(), TransportListener {
     }
 
     fun selectTarget(target: Target) {
+        setWatching(false)
         if (link == LinkKind.USB) prefs.edit().putString("usbDevice", target.id).apply()
         else prefs.edit().putString("bleDevice", target.id).putString("bleName", target.name).apply()
         updateProfileForDevice(target.name)
@@ -300,10 +308,15 @@ class MainActivity : ComponentActivity(), TransportListener {
     fun setWatching(value: Boolean) {
         watch = value
         streaming = value
+        if (!value) viewOnly = true
         configure()
     }
 
+    val canAuthorizeControl get() = connected && recognized && watch && !demo && foreground &&
+        mirrorStats.wire == Wire.BASE && mirrorStats.protocolVersion >= 2
+
     fun changeViewOnly(value: Boolean) {
+        if (!value && !canAuthorizeControl) return
         viewOnly = value
         configure()
     }
@@ -312,6 +325,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         demo = value
         recording?.stop()
         if (value) {
+            viewOnly = true
             feed.panel(null)
             feed.demo()
         } else {
@@ -327,8 +341,9 @@ class MainActivity : ComponentActivity(), TransportListener {
         transport.configure(protocol, watch && !demo && foreground, !viewOnly && !demo && foreground)
     }
 
-    override fun frame(pixels: IntArray?, receivedNanos: Long) {
+    override fun frame(pixels: ScreenFrame?, receivedNanos: Long) {
         val post = synchronized(incomingLock) {
+            if (framePosted && pendingFrame != null) overwrittenFrames++
             pendingFrame = pixels
             if (framePosted) false else {
                 framePosted = true
@@ -339,7 +354,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         main.post {
             val latest = synchronized(incomingLock) {
                 framePosted = false
-                pendingFrame
+                pendingFrame.also { pendingFrame = null }
             }
             if (!demo && !dead) {
                 feed.paint(latest)
@@ -374,7 +389,21 @@ class MainActivity : ComponentActivity(), TransportListener {
             this.connected = connected
             this.recognized = recognized
             if (connected) updateProfileForDevice(details.substringBefore(" · "))
-            if (!connected) feed.setControls(false)
+            if (!connected) {
+                viewOnly = true
+                feed.setControls(false)
+                if (autoProfile) updateProfile(null)
+                configure()
+            }
+        }
+    }
+
+    override fun controlSuspended(reason: String) {
+        main.post {
+            if (!dead) {
+                changeViewOnly(true)
+                message = reason
+            }
         }
     }
 
@@ -392,8 +421,16 @@ class MainActivity : ComponentActivity(), TransportListener {
     }
 
     fun exportLogs() {
+        val summary = buildString {
+            appendLine("FM1 SCREEN v1.0 · comp. ${BuildConfig.COMPILATION}")
+            appendLine("Transporte: ${link.title} | Conexión: $connectionText")
+            appendLine("Perfil: ${profile?.name ?: "desconocido"} | Automático: $autoProfile | DEMO: $demo")
+            appendLine("Diagnóstico: $mirrorStats | Dibujados/s: $rendersPerSecond | Agrupados en Android: $uiDiscardedFrames")
+            appendLine()
+        }
         val current = logs.joinToString("\n")
         uriWriter = { stream ->
+            stream.write(summary.toByteArray())
             val previous = File(filesDir, "diagnostico-previo.txt")
             if (previous.exists()) previous.inputStream().use { it.copyTo(stream) }
             else stream.write(current.toByteArray())
@@ -438,7 +475,7 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     fun importProfile() {
         uriReader = {
-            val imported = FirmwareProfile.decode(JSONObject(it))
+            val imported = ProfileJson.decode(JSONObject(it))
             profileLibrary.save(imported)
             profiles = profileLibrary.list()
             selectProfile(imported)
@@ -446,7 +483,7 @@ class MainActivity : ComponentActivity(), TransportListener {
         openJson.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
     }
 
-    fun exportProfile() { profile?.let { exportJson("FM1-SCREEN-${it.id}.json", it.encode()) } }
+    fun exportProfile() { profile?.let { exportJson("FM1-SCREEN-${it.id}.json", ProfileJson.encode(it)) } }
 
     private fun exportJson(name: String, json: JSONObject) {
         val content = json.toString(2).toByteArray()

@@ -15,5 +15,7 @@ FM1 SCREEN y el panel adaptado se distribuyen bajo [GNU GPL v3](../LICENSE). Las
 | [DARK-1](https://github.com/sparky480v/Dark-1/tree/6c0cc34677c4188575158c9ea5f53c95200be4a0) | main, 6c0cc34 | GPL-3.0 | firmware/src/lcd.c y salida USB. |
 | [SKIFF](https://github.com/illuminus5/skiff/tree/392c1dfab4d8d2700e0d24f1ef61cc071d2529ab) | main, 392c1df | GPL-3.0-only | Cast/editor, alcance de la pestaña Screen. |
 | [FRASIL](https://github.com/styvesgoupil/frasil/tree/dd3cd7d11ce16b1cf345daf6b8d06a9cc7d31697) | main, dd3cd7d | MPL-2.0 | app/fm1.toml y manual. Prueba prioritaria. |
+| [LOOM-8](https://github.com/charlesvestal/fm1-loom/tree/30032b41317b4175fbd431b748f75dca2d23af06) | v0.19, 30032b4 | MPL-2.0 | Configuración y metadatos de compatibilidad. |
+| [POLLY](https://github.com/charlesvestal/fm1-polly/tree/fecf93ed5a08d294b6ee2f2bdabf37c30882930e) | v0.6.4, fecf93e | GPL-3.0 | Configuración y metadatos de compatibilidad. |
 
 Gradle Wrapper y AndroidX mantienen sus licencias. Los nombres de los firmwares corresponden a sus autores.

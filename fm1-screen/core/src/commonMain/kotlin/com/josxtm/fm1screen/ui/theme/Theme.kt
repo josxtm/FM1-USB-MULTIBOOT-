@@ -3,10 +3,9 @@
 // Ported from RemoteFM1IOS edf2039 RFMKit/Sources/RFMKit/Faceplate/Theme.swift
 // The faceplate's colours (design/README.md section 6, design/tokens.json): the five presets read from the bundled
 // tokens.json (assets/tokens.json), the fixed colours, and the rules that derive a custom theme from its five chosen
-// colours. Pure Kotlin (org.json only): tested on the JVM. ThemeStore keeps the choice.
+// colours. Platform adapters handle JSON and persisted theme selection.
 package com.josxtm.fm1screen.ui.theme
 
-import org.json.JSONObject
 import kotlin.math.cbrt
 import kotlin.math.max
 import kotlin.math.min
@@ -20,7 +19,7 @@ data class Rgb(val r: Double, val g: Double, val b: Double) {
     }
 
     val hex: String
-        get() = "#%02X%02X%02X".format((r * 255).roundToInt(), (g * 255).roundToInt(), (b * 255).roundToInt())
+        get() = "#" + (argb and 0xFFFFFF).toString(16).padStart(6, '0').uppercase()
 
     override fun toString() = hex
 
@@ -98,7 +97,10 @@ data class Theme(
     val knob: Rgb, val mark: Rgb, val bezel: Rgb, val lcd: Rgb, val ink: Rgb, val led: Rgb, val ledOff: Rgb,
     val button: Rgb = key, val buttonHi: Rgb = hi, val buttonLo: Rgb = lo,
     val accent: Rgb = label, val navigation: Rgb = label, val pressed: Rgb = hi,
+    val padActive: Rgb = hi, val padText: Rgb = keyText, val buttonActive: Rgb = buttonHi,
 ) {
+    fun padLegend(background: Rgb): Rgb = if (padText.contrast(background) >= 4.5) padText else text(background)
+
     /** the five colours a user picks (Faceplate, Keys and buttons, Knobs, LEDs, Display bezel) */
     data class Choice(val body: Rgb, val key: Rgb, val knob: Rgb, val led: Rgb, val bezel: Rgb)
 
@@ -108,12 +110,6 @@ data class Theme(
         "body" -> body; "label" -> label; "bed" -> bed; "key" -> key; "hi" -> hi; "lo" -> lo; "keyText" -> keyText
         "knob" -> knob; "mark" -> mark; "bezel" -> bezel; "lcd" -> lcd; "ink" -> ink; "led" -> led; "ledOff" -> ledOff
         else -> null
-    }
-
-    /** iOS's Codable form: {"name": .., "body": "#RRGGBB", ...} (the custom theme as stored) */
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("name", name)
-        for (r in ROLES) put(r, this@Theme[r]!!.hex)
     }
 
     companion object {
@@ -130,7 +126,6 @@ data class Theme(
                          c["knob"]!!, c["mark"]!!, c["bezel"]!!, c["lcd"]!!, c["ink"]!!, c["led"]!!, c["ledOff"]!!)
         }
 
-        fun fromJson(o: JSONObject): Theme? = of(o.optString("name", CUSTOM_NAME)) { o.optString(it, "").ifEmpty { null } }
 
         /** the text colour, near-white or near-black, with the better contrast on [bg] */
         fun text(bg: Rgb): Rgb = if (bg.contrast(NEAR_WHITE) >= bg.contrast(NEAR_BLACK)) NEAR_WHITE else NEAR_BLACK
@@ -144,42 +139,5 @@ data class Theme(
                          lcd = base?.lcd ?: Rgb.hex("#C9D6EA")!!, ink = base?.ink ?: Rgb.hex("#13203A")!!, led = c.led,
                          ledOff = Rgb.fromLab(min(bed.lab.l + 20, 100.0), 0.0, 0.0))
         }
-    }
-}
-
-/** tokens.json: the presets in the design's order, the default, the fixed colours */
-class ThemeTokens(json: String) {
-    val presets: List<Theme>
-    val defaultName: String
-    val fixed: Map<String, Rgb>             // indicatorLed, playGlyph, recGlyph, linkedDot
-    val sheet: Map<String, Rgb>             // fixedColors.sheet
-
-    init {
-        val root = JSONObject(json)
-        val themes = root.getJSONObject("themes")
-        val keys = themes.keys().asSequence().toList()
-        val names = ORDER.filter { it in keys } + keys.filter { it !in ORDER }.sorted()
-        presets = names.mapNotNull { n -> themes.optJSONObject(n)?.let { o -> Theme.of(n) { o.optString(it, "").ifEmpty { null } } } }
-        require(presets.isNotEmpty()) { "no themes" }
-        defaultName = root.optString("defaultTheme", presets[0].name)
-        val f = mutableMapOf<String, Rgb>()
-        val s = mutableMapOf<String, Rgb>()
-        root.optJSONObject("fixedColors")?.let { fc ->
-            for (k in fc.keys()) {
-                val v = fc.get(k)
-                if (v is String) Rgb.hex(v)?.let { f[k] = it }
-                if (k == "sheet" && v is JSONObject) for (sk in v.keys()) Rgb.hex(v.optString(sk))?.let { s[sk] = it }
-            }
-        }
-        fixed = f
-        sheet = s
-    }
-
-    companion object {
-        /** the design's order of the presets (JSON objects have none) */
-        val ORDER = listOf("Tangerine", "Midnight", "Mint", "Lilac", "Cream")
-
-        /** (only if the asset were missing: Tangerine alone) */
-        const val FALLBACK = """{"defaultTheme":"Tangerine","themes":{"Tangerine":{"body":"#EE7A3C","label":"#3A1606","bed":"#874332","key":"#924E3A","hi":"#A9614B","lo":"#64301F","keyText":"#FBEDE3","knob":"#1B1715","mark":"#F4EDE6","bezel":"#141210","lcd":"#C9D6EA","ink":"#13203A","led":"#FFE6A8","ledOff":"#6F6668"}}}"""
     }
 }

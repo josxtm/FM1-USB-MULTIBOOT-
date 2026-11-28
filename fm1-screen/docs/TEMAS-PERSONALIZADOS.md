@@ -6,4 +6,4 @@ Los grupos independientes son fondo principal, fondo de paneles, pads, botones, 
 
 Los relieves se derivan de su propia superficie. El LCD usa los mismos píxeles con cualquier tema. Las luces reales conservan los tonos funcionales. El editor avisa si alguna combinación de etiqueta baja de 4,5 a 1 de contraste.
 
-El JSON usa schema 1, name, 12 grupos en colors y tonos de relieve. app/src/main/assets/themes/silver-turquoise.json combina fondo plata, pads turquesa, botones verde petróleo, mandos oscuros e indicadores blancos.
+El JSON usa schema 1, name, 15 grupos en colors (12 en exportaciones anteriores) y tonos de relieve. assets/themes/silver-turquoise.json combina fondo plata, pads turquesa, botones verde petróleo, mandos oscuros e indicadores blancos.

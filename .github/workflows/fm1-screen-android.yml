@@ -20,6 +20,8 @@ jobs:
   apk:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    outputs:
+      build: ${{ steps.version.outputs.build }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -31,18 +33,27 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-35 build-tools;35.0.0'
+      - name: Read versionCode
+        id: version
+        run: |
+          build="$(sed -n 's/^fm1Build=//p' gradle.properties)"
+          [[ "$build" =~ ^[1-9][0-9]*$ ]]
+          printf 'build=%s\n' "$build" >> "$GITHUB_OUTPUT"
       - name: Validate profiles and theme tokens
         run: |
           python3 - <<'PY'
           import json, pathlib
-          for file in pathlib.Path('app/src/main/assets').rglob('*.json'):
+          for file in pathlib.Path('assets').rglob('*.json'):
               json.loads(file.read_text())
           PY
       - name: Unit tests and lint
-        run: ./gradlew --no-daemon -Pfm1Build="$GITHUB_RUN_NUMBER" :app:testDebugUnitTest :app:lintDebug
+        run: ./gradlew --no-daemon :core:jvmTest :app:testDebugUnitTest :app:lintDebug
       - name: Build and verify APK
+        if: github.event_name != 'pull_request'
         env:
-          FM1_KEYSTORE_BASE64: ${{ github.event_name == 'push' && secrets.FM1_KEYSTORE_BASE64 || '' }}
+          FM1_BUILD: ${{ steps.version.outputs.build }}
+          PREVIOUS_CERTIFICATE: 9ea24384e7ad4b2af999466a26bf372293803361896b188c73e9f193c04c043f
+          FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
           FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
           FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
           FM1_SIGNING_KEY_PASSWORD: ${{ secrets.FM1_SIGNING_KEY_PASSWORD }}
@@ -57,38 +68,47 @@ jobs:
             variant=release
             signing='owner distribution certificate'
           fi
-          ./gradlew --no-daemon -Pfm1Build="$GITHUB_RUN_NUMBER" ":app:assemble${variant^}"
-          apk="FM1-SCREEN_v1.0-comp.$GITHUB_RUN_NUMBER.apk"
+          ./gradlew --no-daemon ":app:assemble${variant^}"
+          apk="FM1-SCREEN-v1.0-comp.$FM1_BUILD.apk"
           sdktools="$ANDROID_HOME/build-tools/35.0.0"
           mkdir -p distribution
           cp "app/build/outputs/apk/$variant/app-$variant.apk" "distribution/$apk"
           git -C .. archive --format=zip --output="$PWD/distribution/corresponding-source.zip" HEAD fm1-screen .github/workflows/fm1-screen-android.yml
           "$sdktools/apksigner" verify --verbose --print-certs "distribution/$apk" > distribution/apk-signature.txt
           "$sdktools/aapt" dump badging "distribution/$apk" > distribution/apk-metadata.txt
-          grep -F "name='com.josxtm.fm1screen' versionCode='$GITHUB_RUN_NUMBER' versionName='1.0'" distribution/apk-metadata.txt
+          grep -F "name='com.josxtm.fm1screen' versionCode='$FM1_BUILD' versionName='1.0'" distribution/apk-metadata.txt
           (
             cd distribution
             sha256sum "$apk" > "$apk.sha256"
             sha256sum -c "$apk.sha256"
           )
+          certificate="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' distribution/apk-signature.txt)"
+          upgrade='Different certificate from comp.12. Clean install required.'
+          if [[ "$certificate" == "$PREVIOUS_CERTIFICATE" ]]; then
+            upgrade='Same certificate as comp.12.'
+          fi
           {
-            printf '# FM1 SCREEN v1.0 · comp. %s\n\n' "$GITHUB_RUN_NUMBER"
-            printf -- '- Commit: %s\n- Certificate: %s\n' "$GITHUB_SHA" "$signing"
+            printf '# FM1 SCREEN v1.0 · comp. %s\n\n' "$FM1_BUILD"
+            printf -- '- Commit: %s\n- Signing: %s\n- Certificate SHA-256: %s\n- Upgrade: %s\n' \
+              "$GITHUB_SHA" "$signing" "$certificate" "$upgrade"
             printf -- '- Unit tests, lint, APK signature and checksum passed.\n'
             printf '\n```\n'
             cat "distribution/$apk.sha256"
             printf '```\n'
-          } | tee distribution/build-report.md >> "$GITHUB_STEP_SUMMARY"
+          } | tee distribution/build-report.md
+          cat distribution/build-report.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: FM1-SCREEN-tests-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
+            fm1-screen/core/build/test-results/jvmTest/*.xml
             fm1-screen/app/build/test-results/testDebugUnitTest/*.xml
             fm1-screen/app/build/reports/lint-results-debug.html
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
-          name: FM1-SCREEN_v1.0-comp.${{ github.run_number }}
+          name: FM1-SCREEN-v1.0-comp.${{ steps.version.outputs.build }}
           path: fm1-screen/distribution/*
           if-no-files-found: error
           overwrite: true
@@ -97,13 +117,17 @@ jobs:
   visual:
     if: github.event_name != 'pull_request'
     needs: apk
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [tablet, phone]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: FM1-SCREEN_v1.0-comp.${{ github.run_number }}
+          name: FM1-SCREEN-v1.0-comp.${{ needs.apk.outputs.build }}
           path: fm1-screen/distribution
       - name: Enable hardware acceleration
         run: |
@@ -118,11 +142,15 @@ jobs:
           target: google_apis
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: python3 fm1-screen/tests/android_smoke.py "fm1-screen/distribution/FM1-SCREEN_v1.0-comp.$GITHUB_RUN_NUMBER.apk" fm1-screen/distribution/screenshots
+          script: >-
+            python3 fm1-screen/tests/android_smoke.py
+            "fm1-screen/distribution/FM1-SCREEN-v1.0-comp.${{ needs.apk.outputs.build }}.apk"
+            fm1-screen/distribution/screenshots
+            "${{ matrix.device }}" "${{ needs.apk.outputs.build }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: FM1-SCREEN-GUI-comp.${{ github.run_number }}
+          name: FM1-SCREEN-GUI-comp.${{ needs.apk.outputs.build }}-${{ matrix.device }}
           path: fm1-screen/distribution/screenshots/*.png
           if-no-files-found: warn
           retention-days: 30

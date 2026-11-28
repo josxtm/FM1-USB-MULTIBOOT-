@@ -2,7 +2,7 @@
 package com.josxtm.fm1screen.protocol
 
 class FrameBuffer {
-    private val pixels = IntArray(SIDE * SIDE) { OPAQUE }
+    private val pixels = ShortArray(SIDE * SIDE)
     private val known = BooleanArray(SIDE * SIDE)
     var covered = 0
         private set
@@ -15,7 +15,7 @@ class FrameBuffer {
             val start = (patch.y + row) * SIDE + patch.x
             for (column in 0 until patch.width) {
                 val index = start + column
-                pixels[index] = argb(patch.rgb565[row * patch.width + column].toInt() and 65535)
+                pixels[index] = patch.rgb565[row * patch.width + column]
                 if (!known[index]) {
                     known[index] = true
                     covered++
@@ -24,10 +24,12 @@ class FrameBuffer {
         }
     }
 
-    fun snapshot(): IntArray = pixels.copyOf()
+    fun freeze() = ScreenFrame(pixels.copyOf())
+
+    fun snapshot(): IntArray = IntArray(pixels.size) { argb(pixels[it].toInt() and 0xFFFF) }
 
     fun reset() {
-        pixels.fill(OPAQUE)
+        pixels.fill(0)
         known.fill(false)
         covered = 0
     }
@@ -42,5 +44,13 @@ class FrameBuffer {
             return OPAQUE or (((r shl 3) or (r ushr 2)) shl 16) or
                 (((g shl 2) or (g ushr 4)) shl 8) or ((b shl 3) or (b ushr 2))
         }
+    }
+}
+
+/** Immutable RGB565 snapshot. Adapters can reuse their own rendering buffer. */
+class ScreenFrame internal constructor(private val pixels: ShortArray) {
+    fun copyRgb565To(destination: ShortArray) {
+        require(destination.size == pixels.size)
+        pixels.copyInto(destination)
     }
 }

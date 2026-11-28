@@ -39,6 +39,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import com.josxtm.fm1screen.protocol.ControlOrigin
 import com.josxtm.fm1screen.ui.theme.RfmFonts
 import com.josxtm.fm1screen.ui.theme.Theme
 import com.josxtm.fm1screen.ui.theme.color
@@ -56,7 +57,7 @@ fun KeybedView(theme: Theme, feed: PanelFeed, w: Float, h: Float, layout: Keybed
     val measurer = rememberTextMeasurer()
     val scope = rememberCoroutineScope()
     val anim = remember { Animatable(0f) }
-    val stepStyle = TextStyle(fontFamily = RfmFonts.hardware, color = theme.keyText.color)
+    val stepStyle = TextStyle(fontFamily = RfmFonts.hardware, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     Box(modifier.size(w.dp, h.dp).semantics {
         if (!feed.canControl) disabled()
         contentDescription = if (stepNumbers) "Keyboard as 16-step sequencer" else "Keyboard, F3 to G5"
@@ -96,15 +97,37 @@ fun KeybedView(theme: Theme, feed: PanelFeed, w: Float, h: Float, layout: Keybed
                         val r = k.rect
                         val down = L.keyDown(k.index)
                         val dy = if (down) 1.5f * d else 0f
-                        capFace(if (L.localKey(k.index)) theme.pressed.color else if (down) theme.hi.color else theme.key.color, theme.hi.color, theme.lo.color, k.radius * d,
-                                4 * d, dy, x = r.x * d, y = r.y * d, w = r.w * d, h = r.h * d)
                         val level = L.keys[k.index]
+                        val fill = when {
+                            L.keyOrigin(k.index) == ControlOrigin.LOCAL -> theme.pressed
+                            down || LedLevel.lit(level) -> theme.padActive
+                            else -> theme.key
+                        }
+                        capFace(fill.color, theme.hi.color, theme.lo.color, k.radius * d,
+                                4 * d, dy, x = r.x * d, y = r.y * d, w = r.w * d, h = r.h * d)
                         val a = LedLevel.alpha(level)
                         val label = if (stepNumbers && k.natural) (k.step + 1).toString() else feed.padLabel(k.index)
-                        val nf = min(14f, min(r.h * 0.25f, r.w / max(2f, label.length * 0.72f)))
-                        val spacing = Math.round(r.h * 0.08f).toFloat()
-                        val textH = nf * 1.3f
-                        val groupH = k.ledH + spacing + textH
+                        val font = min(21f, min(r.h * 0.26f, r.w * 0.55f))
+                        val spacing = r.h * 0.055f
+                        val availableWidth = r.w * d * 0.90f
+                        val availableHeight = max(1f, (r.h - k.ledH - spacing - 5f) * d)
+                        val style = stepStyle.copy(color = theme.padLegend(fill).color, fontSize = (font * d).toSp())
+                        var displayed = label
+                        var text = measurer.measure(displayed, style, softWrap = false, maxLines = 2)
+                        if (text.size.width > availableWidth && label.length > 6) {
+                            val midpoint = label.length / 2
+                            val breakAt = label.indices.filter { label[it].isWhitespace() }
+                                .minByOrNull { abs(it - midpoint) } ?: midpoint
+                            displayed = label.take(breakAt).trimEnd() + "\n" + label.drop(breakAt).trimStart()
+                            text = measurer.measure(displayed, style, softWrap = false, maxLines = 2)
+                        }
+                        val factor = min(1f, min(availableWidth / max(1, text.size.width),
+                            availableHeight / max(1, text.size.height)))
+                        if (factor < 1f) {
+                            text = measurer.measure(displayed, style.copy(fontSize = (font * d * factor).toSp()),
+                                softWrap = false, maxLines = 2)
+                        }
+                        val groupH = k.ledH + spacing + text.size.height / d
                         val lx = r.x + (r.w - k.ledW) / 2
                         val ly = r.y + (r.h - groupH) / 2
                         if (LedLevel.lit(level)) {
@@ -113,11 +136,8 @@ fun KeybedView(theme: Theme, feed: PanelFeed, w: Float, h: Float, layout: Keybed
                             drawRoundRect(ledOff, Offset(lx * d, ly * d + dy), Size(k.ledW * d, k.ledH * d), CornerRadius(3 * d))
                             if (a > 0) drawRoundRect(led.copy(alpha = a), Offset(lx * d, ly * d + dy), Size(k.ledW * d, k.ledH * d), CornerRadius(3 * d))
                         }
-                        run {
-                            val t = measurer.measure(label, stepStyle.copy(fontSize = (nf * d).toSp()))
-                            drawText(t, topLeft = Offset((r.x + r.w / 2) * d - t.size.width / 2f,
-                                                         (ly + k.ledH + spacing) * d + dy + (textH * d - t.size.height) / 2))
-                        }
+                        drawText(text, topLeft = Offset((r.x + r.w / 2) * d - text.size.width / 2f,
+                            (ly + k.ledH + spacing) * d + dy))
                     }
                 }
             }

@@ -31,7 +31,9 @@ data class Target(val id: String, val name: String, val recognized: Boolean, val
 
 object DeviceIdentity {
     private val fm1 = Regex("""^FM[- ]?1(?:_[0-9A-F]{2,12}|[ ._-]+MIDI)?$""", RegexOption.IGNORE_CASE)
-    private val verifiedProducts = setOf("FRASIL FM-1", "FM1 COMMUNITY", "M-VAVE FM-1", "FM-1 BIG SCREEN")
+    private val verifiedProducts = setOf(
+        "FRASIL FM-1", "FM1 COMMUNITY", "M-VAVE FM-1", "FM-1 BIG SCREEN", "LOOM-8 FM-1", "POLLY FM-1",
+    )
     fun allowsRequests(name: String): Boolean =
         !isLoader(name) && (fm1.matches(name.trim()) || name.trim().uppercase(java.util.Locale.ROOT) in verifiedProducts)
     fun isLoader(name: String): Boolean = listOf("update", "download", "boot", "loader", "rescue").any {
@@ -50,7 +52,7 @@ class MidiTransport(
     context: Context,
     private val listener: TransportListener,
     preferredUsb: String?,
-) {
+) : PanelOutput {
     private val app = context.applicationContext
     private val midi = app.getSystemService(MidiManager::class.java)
     private val usb = app.getSystemService(UsbManager::class.java)
@@ -74,6 +76,17 @@ class MidiTransport(
     private var output: MidiOutputPort? = null
     private var input: MidiInputPort? = null
     private var session: MirrorSession? = null
+    private val sessionClock = object : SessionClock {
+        override fun elapsedMillis() = SystemClock.elapsedRealtime()
+        override fun nanoTime() = System.nanoTime()
+    }
+    private val tick = object : Runnable {
+        override fun run() {
+            val active = session ?: return
+            active.tick()
+            worker.postDelayed(this, 16)
+        }
+    }
     private var healthy = true
     private var permitted = false
     private var disposed = false
@@ -187,11 +200,11 @@ class MidiTransport(
         }
     }
 
-    fun key(index: Int, down: Boolean) { worker.post { session?.key(index, down) } }
-    fun button(index: Int, down: Boolean) { worker.post { session?.button(index, down) } }
-    fun turn(index: Int, delta: Int) { worker.post { session?.turn(index, delta) } }
-    fun master(position: Int) { worker.post { session?.master(position) } }
-    fun releaseControls() { worker.post { session?.clearControls() } }
+    override fun key(index: Int, down: Boolean) { worker.post { session?.key(index, down) } }
+    override fun button(index: Int, down: Boolean) { worker.post { session?.button(index, down) } }
+    override fun turn(index: Int, delta: Int) { worker.post { session?.turn(index, delta) } }
+    override fun master(position: Int) { worker.post { session?.master(position) } }
+    override fun releaseControls() { worker.post { session?.clearControls() } }
 
     fun pause() {
         worker.post {
@@ -322,8 +335,9 @@ class MidiTransport(
                     runCatching { opened.openInputPort(0) }.getOrNull() else null
                 permitted = target.recognized && input != null
                 healthy = true
-                val active = MirrorSession(worker, ::write, listener)
+                val active = MirrorSession(sessionClock, ::write, listener)
                 session = active
+                worker.post(tick)
                 output?.connect(object : MidiReceiver() {
                     override fun onSend(msg: ByteArray, offset: Int, count: Int, timestamp: Long) {
                         if (count <= 0 || count > 16_384) return
@@ -354,8 +368,10 @@ class MidiTransport(
     }
 
     private fun drop(reason: String) {
+        remote = false
         generation++
         opening = false
+        worker.removeCallbacks(tick)
         session?.close()
         session = null
         runCatching { output?.close() }
