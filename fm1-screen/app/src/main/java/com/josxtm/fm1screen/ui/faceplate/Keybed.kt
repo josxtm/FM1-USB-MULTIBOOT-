@@ -107,11 +107,11 @@ fun KeybedView(theme: Theme, feed: PanelFeed, w: Float, h: Float, layout: Keybed
                                 4 * d, dy, x = r.x * d, y = r.y * d, w = r.w * d, h = r.h * d)
                         val a = LedLevel.alpha(level)
                         val label = if (stepNumbers && k.natural) (k.step + 1).toString() else feed.padLabel(k.index)
-                        val font = min(21f, min(r.h * 0.26f, r.w * 0.55f))
+                        val font = min(15f, min(r.h * 0.18f, r.w * 0.42f))
                         val spacing = r.h * 0.055f
                         val availableWidth = r.w * d * 0.90f
                         val availableHeight = max(1f, (r.h - k.ledH - spacing - 5f) * d)
-                        val style = stepStyle.copy(color = theme.padLegend(fill).color, fontSize = (font * d).toSp())
+                        val style = stepStyle.copy(fontFamily = RfmFonts.ui, fontWeight = androidx.compose.ui.text.font.FontWeight.Normal, color = theme.padLegend(fill).color, fontSize = (font * d).toSp())
                         var displayed = label
                         var text = measurer.measure(displayed, style, softWrap = false, maxLines = 2)
                         if (text.size.width > availableWidth && label.length > 6) {
