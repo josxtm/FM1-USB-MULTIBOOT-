@@ -47,7 +47,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -149,15 +148,6 @@ internal fun Settings(app: MainActivity, theme: Theme, visible: Boolean, close: 
                             .testTag("settings").padding(horizontal = 12.dp),
                     ) {
                         var page by rememberSaveable { mutableStateOf(Category.CONNECTION) }
-                        var seenUpdateRequest by rememberSaveable { mutableStateOf(0) }
-                        val updateRequest = app.updateSettingsRequest
-                        val revealUpdates = updateRequest != seenUpdateRequest
-                        LaunchedEffect(updateRequest) {
-                            if (revealUpdates) {
-                                page = Category.ADVANCED
-                                seenUpdateRequest = updateRequest
-                            }
-                        }
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("Configuración", color = colors.text.color, fontFamily = RfmFonts.hardware,
                                 fontSize = 17.sp, modifier = Modifier.weight(1f))
@@ -181,7 +171,6 @@ internal fun Settings(app: MainActivity, theme: Theme, visible: Boolean, close: 
                                     Category.VIEW -> ScreenSettings(app, close)
                                     Category.COLORS -> AppearanceSettings(app)
                                     Category.ADVANCED -> {
-                                        Disclosure("Actualizaciones", initial = updateRequest > 0) { UpdateSettings(app) }
                                         Disclosure("Diagnóstico") { DiagnosticsSettings(app) }
                                         Disclosure("Información y licencias") { AboutSettings() }
                                     }
