@@ -3,6 +3,8 @@ package com.josxtm.fm1screen
 
 import android.app.Activity
 import android.app.Instrumentation
+import android.app.UiAutomation
+import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.AdaptiveIconDrawable
@@ -23,6 +25,8 @@ import java.util.concurrent.TimeUnit
 
 class UpdateInstrumentation : Instrumentation() {
     private lateinit var options: Bundle
+    // Shell commands do not need an accessibility service; avoid competing with adb uiautomator dump.
+    private val shellAutomation by lazy { getUiAutomation(UiAutomation.FLAG_DONT_USE_ACCESSIBILITY) }
     private val prefs get() = targetContext.getSharedPreferences("preferences", 0)
     private val updatePrefs get() = targetContext.getSharedPreferences("updates", 0)
     private val values = mapOf("link" to "BLE", "wire" to "AUTO", "presentation" to "BALANCED",
@@ -45,6 +49,8 @@ class UpdateInstrumentation : Instrumentation() {
             }
             finish(Activity.RESULT_OK, Bundle().apply { putString("result", "FM1_UPDATE_PASS") })
         } catch (error: Throwable) {
+            Log.e("FM1UpgradeTest", "Instrumentation step failed: ${options.getString("step")}", error)
+            sendStatus(0, Bundle().apply { putString("error", error.stackTraceToString()) })
             finish(Activity.RESULT_CANCELED, Bundle().apply { putString("error", error.stackTraceToString()) })
         }
     }
@@ -128,7 +134,7 @@ class UpdateInstrumentation : Instrumentation() {
             }
         }
         check(launched.await(45, TimeUnit.SECONDS)) { app.updates.status }
-        ParcelFileDescriptor.AutoCloseInputStream(uiAutomation.executeShellCommand(
+        ParcelFileDescriptor.AutoCloseInputStream(shellAutomation.executeShellCommand(
             "appops set ${app.packageName} REQUEST_INSTALL_PACKAGES allow",
         )).use { it.readBytes() }
         check(app.packageManager.canRequestPackageInstalls())
@@ -144,7 +150,7 @@ class UpdateInstrumentation : Instrumentation() {
 
     private fun shellRead(name: String, receive: (java.io.InputStream) -> Unit) {
         ParcelFileDescriptor.AutoCloseInputStream(
-            uiAutomation.executeShellCommand("cat /data/local/tmp/fm1-$name"),
+            shellAutomation.executeShellCommand("cat /data/local/tmp/fm1-$name"),
         ).use(receive)
     }
 }
