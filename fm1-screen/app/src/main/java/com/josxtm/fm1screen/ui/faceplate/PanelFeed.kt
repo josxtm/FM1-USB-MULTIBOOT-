@@ -46,7 +46,7 @@ class PanelLights {
     var heldLabels = 0
     var screenKeys = 0
     var screenButtons = 0
-    var hasTelemetry = false
+    var hasTelemetry by mutableStateOf(false)
 
     fun keyDown(index: Int) = (heldKeys or screenKeys) and (1 shl index) != 0
     fun labelDown(index: Int) = (heldLabels or screenButtons) and (1 shl index) != 0

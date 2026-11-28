@@ -55,6 +55,16 @@ class MirrorSessionTest {
         assertArrayEquals(MirrorPackets.key(0, 1, true), static.writes.last())
     }
 
+    @Test fun panelEventsRequireAnAdvertisedVersionTwo() {
+        val f = Fixture()
+        f.input(base(0x50, 1, 1, 239, 239))
+        f.input(panel())
+        assertNull(f.panel)
+        f.input(hello())
+        f.input(panel())
+        assertEquals(3, f.panel?.heldKeys)
+    }
+
     @Test fun telemetryCoalescingRetainsRelativeStepsAndLatestAbsoluteState() {
         val updates = com.josxtm.fm1screen.protocol.PanelUpdates()
         val first = PanelState(1, 2, listOf(1, -1, 0, 0, 0, 0, 0), 10, 5, 0, false, 0, 0)

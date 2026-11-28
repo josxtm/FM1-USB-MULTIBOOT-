@@ -242,6 +242,13 @@ def wait_panel_color(rgb, tolerance=0):
     raise AssertionError(f"Expected the panel color {rgb.hex()}")
 
 
+def expect_selected(label):
+    label_node = node(label)
+    tree = hierarchy()
+    assert any(item.get("selected") == "true" and bounds(item) == bounds(label_node)
+        for item in tree.iter("node")), f"{label} is not selected"
+
+
 def test_media(out):
     tap("Capturas")
     tap("Guardar Interfaz completa")
@@ -309,6 +316,7 @@ def validate_tablet(out, size, build):
     tap("DINÁMICO")
     node("Telemetría física sin confirmar")
     tap("Vista avanzada")
+    expect_selected("ULTRA LOW LATENCY")
     tap("ECO")
     open_category("Colores")
     tap("SILVER")
@@ -336,10 +344,7 @@ def validate_tablet(out, size, build):
     open_category("Vista")
     node("Telemetría física sin confirmar")
     tap("Vista avanzada")
-    eco = node("ECO")
-    tree = hierarchy()
-    assert any(item.get("selected") == "true" and bounds(item) == bounds(eco)
-        for item in tree.iter("node")), "ECO was not restored"
+    expect_selected("ECO")
     open_category("Avanzado")
     tap("Información y licencias")
     node(f"FM1 SCREEN v1.0 · comp. {build:03}")

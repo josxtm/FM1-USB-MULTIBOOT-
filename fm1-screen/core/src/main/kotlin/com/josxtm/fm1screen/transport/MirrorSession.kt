@@ -497,7 +497,7 @@ class MirrorSession(
                     waitingForFull = false
                 }
             }
-            is MirrorEvent.Panel -> observer.panel(event.state)
+            is MirrorEvent.Panel -> if (version >= 2) observer.panel(event.state)
             MirrorEvent.Sync -> {
                 completed++
                 if (framebuffer.covered == SIDE * SIDE) completeFrames++
@@ -689,7 +689,7 @@ class MirrorSession(
             lastPixels.takeIf { it >= 0 }?.let { now - it }, lastMessage.takeIf { it >= 0 }?.let { now - it },
             blocks, completeFrames, retries, lostBytes,
             clockCount, identity, sound, watchStarted?.let { now - it },
-            lastHello.takeIf { watching && it >= 0 }?.let { now - it }, manualResync,
+            lastHello.takeIf { watchStarted?.let { started -> it >= started } == true }?.let { now - it }, manualResync,
         ))
     }
 
