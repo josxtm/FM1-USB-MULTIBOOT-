@@ -522,7 +522,7 @@ def verify(apk, out, device, build, original=None):
             tap(CLOSE)
             expect_page(index)
 
-    print(f"{device}: clean install, LCD geometry, gestures, seven categories and settings verified.")
+    print(f"{device}: clean install, LCD geometry, gestures, four categories and settings verified.")
 
 
 if __name__ == "__main__":

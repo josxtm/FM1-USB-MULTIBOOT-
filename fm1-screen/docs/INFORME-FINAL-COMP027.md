@@ -24,7 +24,7 @@ Referencia de trabajo en `feat/fm1-screen-android` desde `2ddfcfc`, compilación
 | Archivos multimedia | `MediaExport.kt`, `Recording.kt`, `diagnostic_paths.xml`, `MainActivity.kt` |
 | Validación y publicación | `gradle.properties`, `android_smoke.py`, pruebas JVM y `.github/workflows/fm1-screen-android.yml` |
 
-Android MIDI recibe fragmentos en una cola acotada. Su hilo decodifica y aplica parches RGB565 en orden. La entrega del estado acumulado del LCD continúa usando Choreographer. La telemetría activada tiene su propia entrega agrupada. Las capturas, la compresión, el almacenamiento, la codificación de vídeo y el cálculo de métricas usan trabajo fuera del hilo de dibujo. La latencia interna termina al registrar el dibujo Android.
+Android MIDI recibe fragmentos en una cola acotada. Su hilo decodifica y aplica parches RGB565 en orden. La entrega del estado acumulado del LCD continúa usando Choreographer. La telemetría activada tiene su propia entrega agrupada. PixelCopy obtiene la ventana de forma asíncrona. La compresión, el almacenamiento, la codificación de vídeo y el cálculo de métricas se ejecutan fuera del hilo de dibujo. Cambiar un tema solo actualiza estado de Compose y preferencias. La auditoría de código verificó que esa ruta carece de llamadas de reconexión MIDI. La latencia interna termina al registrar el dibujo Android.
 
 ## Compatibilidad y restricciones
 
@@ -43,3 +43,34 @@ Atlatl usa `FS 01` para inicio y repintado, `FS 00` para renovar, `FS 02` para c
 La validación se registra a partir de los artefactos del workflow, incluida la comprobación del binario instalado. El modo DEMO sólo está disponible mediante el extra interno de arranque de una APK debug. La GUI de producción carece de dicho interruptor.
 
 Pruebas físicas pendientes en 027. Duplicación real y duración con Atlatl 1.2.5, BLE con firmware compatible, latencia óptica, energía, control físico simultáneo, captura durante tráfico USB y selector de compartir con una aplicación externa. [Guía física](../PHYSICAL-TEST-PLAN.md)
+
+### APK y ejecución
+
+- Commit empaquetado y verificado `697cdfd30dcecfbd80a747aaa1ca46409ef80d16`. Identificador Android `com.josxtm.fm1screen`, `versionCode 27`, `versionName 1.0`, Android 10 o posterior.
+- GitHub Actions `46167288809`, artefacto `15271339637`. El ZIP se descargó y su APK se verificó antes de instalarla en emuladores. [Distribución](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/46167288809/artifacts/15271339637)
+- SHA-256 de la APK `00542138a9f4f16e8cdbc1ee75b75bbd14ed5a14f8299707f84345b47114e9aa`.
+- SHA-256 del ZIP `8ae3f385547bfd67b315d9142b947f1b2ac92d68e0ef4a0796cbab69cecaea6a`.
+- Certificado SHA-256 `3b021b4e969fd235810fecbd0aad173e14e44c4ccf65d221152f5e3e8d285590`. El certificado difiere del de la 021 de referencia. Exporta los temas y perfiles antes de una instalación limpia.
+
+### Pruebas observadas
+
+- **51 pruebas JVM superadas**. Android Lint terminó con 0 errores, 34 avisos y 5 sugerencias. La suite incluye filtros de envío, HYP-1 pasivo, ACK, decodificación, sincronización, telemetría, contraste y preservación del LCD. [Pruebas y Lint](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/46167288809/artifacts/15271599091)
+- El ensayo Atlatl permaneció activo **600,026 s de reloj real**. Comprobó más de 15.000 bloques, Clock F8 intercalado, la cadencia de renovación, cobertura completa, pérdida nula en la entrada sintética y los 57.600 píxeles finales. [Ensayo de estabilidad](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/46167288809/artifacts/15272571094)
+- Android 16 instaló la misma APK en dos emuladores. La tablet completó 100 ciclos y el móvil 12 ciclos horizontales más la comprobación en vertical. Se verificaron las tres vistas, los cuatro apartados, los gestos con el panel abierto, la persistencia, el diagnóstico y los temas. [Tablet](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/46168111397/artifacts/15272434403) · [Teléfono](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/46168111397/artifacts/15271884309)
+- El emulador de tablet guardó los PNG de 240 × 240, 960 × 960 y de la ventana (1920 × 1200). El PNG ampliado coincide píxel a píxel con la ampliación del original. FFprobe verificó una única pista H.264 de 240 × 240 en el MP4. La grabación conserva el límite de 20 minutos. Los archivos provienen de DEMO. Compartir con una aplicación externa queda para comprobación física. [Archivos y capturas de tablet](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/46168111397/artifacts/15272434403)
+
+La primera comprobación de capturas agotó su plazo de lectura ADB. La ejecución visual de repetición verificó el estado de almacenamiento y leyó los archivos con acceso del propietario cuando fue necesario. Instaló el mismo binario y comprobó su huella. [Validación visual 46168111397](https://github.com/josxtm/FM1-USB-MULTIBOOT-/actions/runs/46168111397)
+
+### Comparativa de rendimiento
+
+La reproducción JVM usó los mismos 9.232 bloques Atlatl sintéticos por perfil en 021 y 027. El hash final `81531C59` y todos los píxeles coincidieron. Los tiempos de la tabla usan el reloj virtual hasta presentación.
+
+| Perfil | P50 / P95 / P99 en 021 | P50 / P95 / P99 en 027 |
+|---|---:|---:|
+| ULTRA LOW LATENCY | 8 / 15 / 15 ms | 8 / 15 / 15 ms |
+| BALANCED | 17 / 28 / 30 ms | 17 / 28 / 30 ms |
+| ECO | 40 / 71 / 77 ms | 40 / 71 / 77 ms |
+
+En una segunda reproducción fm1-base se enviaron 12.000 parches y 12.000 estados de panel por ensayo. En ambos modos se mantuvieron 12.000 publicaciones y el mismo raster `AE885801`. Los callbacks del panel fueron 0 en estático y 12.000 en dinámico, antes de la agrupación de la interfaz. Las medianas de CPU JVM sobre cinco ensayos fueron 20,953 ms y 22,653 ms para el flujo completo, respectivamente. Este resultado mide el decodificador y los buzones, sin medir composición de Android, USB real ni latencia óptica.
+
+[Comparación completa de fuentes frente a la 021](https://github.com/josxtm/FM1-USB-MULTIBOOT-/compare/2ddfcfc9116c4d798c62edb5290d520b3f4900c6...697cdfd30dcecfbd80a747aaa1ca46409ef80d16)
