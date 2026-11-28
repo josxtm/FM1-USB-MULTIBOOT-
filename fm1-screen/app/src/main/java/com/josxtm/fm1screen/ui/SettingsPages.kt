@@ -77,7 +77,6 @@ internal fun ScreenSettings(app: MainActivity, close: () -> Unit) {
         FaceplateUi.Page.entries.forEachIndexed { index, page ->
             Tile(labels[index], glyphs[index], app.faceplate.page == page, Modifier.weight(1f)) {
                 app.faceplate.page = page
-                close()
             }
         }
     }
