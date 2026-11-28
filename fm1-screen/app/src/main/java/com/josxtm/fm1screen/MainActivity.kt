@@ -154,6 +154,13 @@ class MainActivity : ComponentActivity(), TransportListener {
         private set
     var viewOnly by mutableStateOf(true)
         private set
+    var dynamicPanel by mutableStateOf(false)
+        private set
+    fun selectDynamicPanel(value: Boolean) {
+        dynamicPanel = value
+        prefs.edit().putBoolean("dynamicPanel", value).apply()
+        feed.panel(null)
+    }
     var demo by mutableStateOf(false)
         private set
     var streaming by mutableStateOf(false)
@@ -199,6 +206,7 @@ class MainActivity : ComponentActivity(), TransportListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         displayClock = Choreographer.getInstance()
+        dynamicPanel = prefs.getBoolean("dynamicPanel", false)
         presentation = enumValue(prefs.getString("presentation", null), PresentationMode.BALANCED)
         feed.presentationMode = presentation
         enableEdgeToEdge()
@@ -281,6 +289,7 @@ class MainActivity : ComponentActivity(), TransportListener {
 
     override fun onPause() {
         foreground = false
+        feed.panel(null)
         feed.releaseAll()
         transport.pause()
         prefs.edit().putString("page", faceplate.page.raw).putString("deck", faceplate.deck.raw)
@@ -465,7 +474,7 @@ class MainActivity : ComponentActivity(), TransportListener {
     }
 
     override fun panel(state: PanelState?) {
-        main.post { if (!demo && !dead) feed.panel(state) }
+        main.post { if (!demo && !dead && dynamicPanel && foreground && connected) feed.panel(state) }
     }
 
     override fun stats(stats: MirrorStats) {
@@ -493,6 +502,7 @@ class MainActivity : ComponentActivity(), TransportListener {
             if (connected) updateProfileForDevice(details.substringBefore(" · "))
             if (!connected) {
                 viewOnly = true
+                feed.panel(null)
                 feed.setControls(false)
                 if (autoProfile) updateProfile(null)
                 configure()
