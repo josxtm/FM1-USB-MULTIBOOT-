@@ -1,4 +1,4 @@
-# Compatibilidad de firmware · compilación 13
+# Compatibilidad de firmware · Fase 2
 
 | Capacidad | fm1-base compatible | Big Screen V1 / V2 | MIDI estándar, Cast y sin emisor |
 |---|---|---|---|
@@ -8,7 +8,7 @@
 | Pantalla LCD | Parche, Fill y RGB565 verificados mediante test automatizado. | Decodificación y límites verificados mediante test automatizado. | Sin emisor de píxeles identificado en las ediciones de la tabla. |
 | Actualizaciones parciales | Verificadas mediante test automatizado. | Verificadas mediante test automatizado. | Pendientes. |
 | Estados de pads y botones | Recepción comprobada mediante prueba automatizada en v2. | Fuera de las tramas gráficas implementadas. | Pendientes. |
-| Valores de potenciómetros | MASTER absoluto cuando llega telemetría. Encoders relativos durante interacción local. Preset y modo sin estado genérico documentado. | Pendientes. | Pendientes. |
+| Valores de potenciómetros | MASTER absoluto cuando llega telemetría. Los detentes relativos recibidos permiten inferir un valor de encoder. Preset y modo sin estado genérico documentado. | Pendientes. | Pendientes. |
 | Control remoto | Verificado mediante test automatizado con autorización, ACK y filtro SAVE. | Pendiente de un protocolo de panel compatible. | Pendiente. |
 | Identificación de firmware | Identidad USB sugerida por nombre de producto. El Hello identifica protocolo y capacidades, no garantiza la versión del firmware. | La firma identifica el protocolo gráfico. | Depende del descriptor. |
 | Validación física | Pendiente. | Pendiente. | Pendiente. |

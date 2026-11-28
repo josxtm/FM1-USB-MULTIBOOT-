@@ -52,7 +52,8 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           FM1_BUILD: ${{ steps.version.outputs.build }}
-          PREVIOUS_CERTIFICATE: 9ea24384e7ad4b2af999466a26bf372293803361896b188c73e9f193c04c043f
+          PREVIOUS_BUILD: 13
+          PREVIOUS_CERTIFICATE: 104c06cbdc66e123fcd2741c61e38ff426d97ef406b493af0e370220a6d8a2d5
           FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
           FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
           FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
@@ -83,9 +84,9 @@ jobs:
             sha256sum -c "$apk.sha256"
           )
           certificate="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' distribution/apk-signature.txt)"
-          upgrade='Different certificate from comp.12. Clean install required.'
+          upgrade="Different certificate from comp.$PREVIOUS_BUILD. Clean install required."
           if [[ "$certificate" == "$PREVIOUS_CERTIFICATE" ]]; then
-            upgrade='Same certificate as comp.12.'
+            upgrade="Same certificate as comp.$PREVIOUS_BUILD."
           fi
           {
             printf '# FM1 SCREEN v1.0 · comp. %s\n\n' "$FM1_BUILD"

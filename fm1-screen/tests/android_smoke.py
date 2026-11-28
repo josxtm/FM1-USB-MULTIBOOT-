@@ -16,8 +16,8 @@ def adb(*args: str, binary: bool = False):
     return subprocess.check_output(["adb", *args], timeout=30, text=not binary)
 
 
-def node(text: str):
-    for _ in range(5):
+def visible_node(text: str, attempts: int):
+    for _ in range(attempts):
         if "ERROR" in adb("shell", "uiautomator", "dump", "/sdcard/fm1-ui.xml"):
             time.sleep(1)
             continue
@@ -29,13 +29,30 @@ def node(text: str):
                 if item.get(attribute) == text:
                     return item
         time.sleep(1)
-    raise AssertionError(f"Visible control missing: {text}")
+    return None
+
+
+def node(text: str):
+    found = visible_node(text, 5)
+    if found is None:
+        raise AssertionError(f"Visible control missing: {text}")
+    return found
 
 
 def tap(text: str):
     x1, y1, x2, y2 = map(int, re.findall(r"-?\d+", node(text).get("bounds", "")))
     adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
     time.sleep(0.6)
+
+
+def scroll_settings_to(text: str, viewport: tuple[int, int]):
+    width, height = viewport
+    x = str(int(width * 0.9))
+    for _ in range(3):
+        if visible_node(text, 1) is not None:
+            return
+        adb("shell", "input", "swipe", x, str(int(height * 0.80)), x, str(int(height * 0.46)), "400")
+        time.sleep(0.5)
 
 
 def shot(out: Path, name: str, expected_size: tuple[int, int]):
@@ -73,6 +90,8 @@ def verify(apk: str, out: Path, device: str, build: int):
     tap("Open controls, or swipe down")
     node(f"FM1 SCREEN v1.0 · comp. {build:03}")
     tap("Vista")
+    if device == "phone":
+        scroll_settings_to("Modo demostración", landscape)
     tap("Modo demostración")
     assert node("Modo demostración").get("checked") == "true"
     tap("Cerrar")
