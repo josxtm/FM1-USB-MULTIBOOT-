@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "id": "polly",
+  "name": "POLLY",
+  "version": "Referencia 0.6.4",
+  "protocol": "BASE",
+  "resolution": [
+    240,
+    240
+  ],
+  "pixels": "RGB565",
+  "deviceNames": [
+    "Polly FM-1"
+  ],
+  "pads": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "buttons": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "knobs": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "evidence": "SOPORTADO SEGÚN CÓDIGO FUENTE",
+  "source": "https://github.com/charlesvestal/fm1-polly/blob/fecf93ed5a08d294b6ee2f2bdabf37c30882930e/app/fm1.toml",
+  "limits": "Duplicación USB en 0.6.4 según el código. El nombre USB no confirma la versión instalada."
+}

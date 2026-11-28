@@ -1,0 +1,231 @@
+name: FM1 SCREEN Android
+
+on:
+  push:
+    branches: [feat/fm1-screen-android]
+    paths: ['fm1-screen/**', '.github/workflows/fm1-screen-android.yml']
+  pull_request:
+    paths: ['fm1-screen/**', '.github/workflows/fm1-screen-android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: fm1-screen
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      build: ${{ steps.version.outputs.build }}
+      label: ${{ steps.version.outputs.label }}
+      validation_run: ${{ steps.version.outputs.validation_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read versionCode and check reusable APK
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build="$(sed -n 's/^fm1Build=//p' gradle.properties)"
+          [[ "$build" =~ ^[1-9][0-9]*$ ]]
+          validation_run=''
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            validation_run="$(git log -1 --format=%B | git interpret-trailers --parse | sed -n 's/^FM1-Validate-Run: //p')"
+          fi
+          if [[ -n "$validation_run" ]]; then
+            [[ "$validation_run" =~ ^[1-9][0-9]*$ ]]
+            package_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$validation_run" --jq .head_sha)"
+            [[ "$package_sha" =~ ^[0-9a-f]{40}$ ]]
+            git fetch --no-tags --depth=1 origin "$package_sha"
+            git diff --exit-code "$package_sha" HEAD -- . ':(exclude)tests' ':(exclude,glob)**/*.md'
+            python3 -m py_compile tests/android_smoke.py
+          fi
+          printf 'build=%s\nlabel=%03d\nvalidation_run=%s\n' "$build" "$build" "$validation_run" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v4
+        if: steps.version.outputs.validation_run == ''
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/wrapper-validation@v4
+        if: steps.version.outputs.validation_run == ''
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.version.outputs.validation_run == ''
+      - uses: android-actions/setup-android@v3
+        if: steps.version.outputs.validation_run == ''
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+      - name: Validate profiles and theme tokens
+        if: steps.version.outputs.validation_run == ''
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          for file in pathlib.Path('assets').rglob('*.json'):
+              json.loads(file.read_text())
+          PY
+      - name: Unit tests and lint
+        if: steps.version.outputs.validation_run == ''
+        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug
+      - name: Build and verify APK
+        if: steps.version.outputs.validation_run == '' && (github.event_name != 'pull_request')
+        env:
+          FM1_BUILD: ${{ steps.version.outputs.build }}
+          FM1_LABEL: ${{ steps.version.outputs.label }}
+          PREVIOUS_BUILD: '021'
+          PREVIOUS_CERTIFICATE: 0d90f0ee699fa801adb2b6168f2518ca3e683a9e38a4c1b8f0c1f4105046eadd
+          FM1_KEYSTORE_BASE64: ${{ secrets.FM1_KEYSTORE_BASE64 }}
+          FM1_SIGNING_ALIAS: ${{ secrets.FM1_SIGNING_ALIAS }}
+          FM1_SIGNING_STORE_PASSWORD: ${{ secrets.FM1_SIGNING_STORE_PASSWORD }}
+          FM1_SIGNING_KEY_PASSWORD: ${{ secrets.FM1_SIGNING_KEY_PASSWORD }}
+        run: |
+          variant=debug
+          signing='debug certificate for this runner'
+          if [[ -n "$FM1_KEYSTORE_BASE64" ]]; then
+            umask 077
+            export FM1_SIGNING_PATH="$RUNNER_TEMP/fm1-signing.jks"
+            trap 'rm -f "$FM1_SIGNING_PATH"' EXIT
+            printf '%s' "$FM1_KEYSTORE_BASE64" | base64 --decode > "$FM1_SIGNING_PATH"
+            variant=release
+            signing='owner distribution certificate'
+          fi
+          ./gradlew --no-daemon ":app:assemble${variant^}"
+          apk="FM1-SCREEN-v1.0-comp.$FM1_LABEL.apk"
+          sdktools="$ANDROID_HOME/build-tools/35.0.0"
+          mkdir -p distribution
+          cp "app/build/outputs/apk/$variant/app-$variant.apk" "distribution/$apk"
+          git -C .. archive --format=zip --output="$PWD/distribution/corresponding-source.zip" HEAD fm1-screen .github/workflows/fm1-screen-android.yml
+          "$sdktools/apksigner" verify --verbose --print-certs "distribution/$apk" > distribution/apk-signature.txt
+          "$sdktools/aapt" dump badging "distribution/$apk" > distribution/apk-metadata.txt
+          grep -F "name='com.josxtm.fm1screen' versionCode='$FM1_BUILD' versionName='1.0'" distribution/apk-metadata.txt
+          (
+            cd distribution
+            sha256sum "$apk" > "$apk.sha256"
+            sha256sum -c "$apk.sha256"
+          )
+          certificate="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' distribution/apk-signature.txt)"
+          upgrade="Different certificate from comp.$PREVIOUS_BUILD. Clean install required."
+          if [[ "$certificate" == "$PREVIOUS_CERTIFICATE" ]]; then
+            upgrade="Same certificate as comp.$PREVIOUS_BUILD."
+          fi
+          {
+            printf '# FM1 SCREEN v1.0 · comp. %s\n\n' "$FM1_LABEL"
+            printf -- '- Commit: %s\n- Signing: %s\n- Certificate SHA-256: %s\n- Upgrade: %s\n' \
+              "$GITHUB_SHA" "$signing" "$certificate" "$upgrade"
+            printf -- '- Unit tests, lint, APK signature and checksum passed.\n'
+            printf '\n```\n'
+            cat "distribution/$apk.sha256"
+            printf '```\n'
+          } | tee distribution/build-report.md
+          cat distribution/build-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.version.outputs.validation_run == ''
+        with:
+          name: FM1-SCREEN-tests-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            fm1-screen/core/build/test-results/test/*.xml
+            fm1-screen/app/build/test-results/testDebugUnitTest/*.xml
+            fm1-screen/app/build/reports/lint-results-debug.html
+      - uses: actions/upload-artifact@v4
+        if: steps.version.outputs.validation_run == '' && (github.event_name != 'pull_request')
+        with:
+          name: FM1-SCREEN-v1.0-comp.${{ steps.version.outputs.label }}
+          path: fm1-screen/distribution/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  visual:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.message || '', '[full-ci]') || contains(github.event.head_commit.message || '', '[visual-ci]')))
+    needs: apk
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [tablet, phone]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: FM1-SCREEN-v1.0-comp.${{ needs.apk.outputs.label }}
+          path: fm1-screen/distribution
+          github-token: ${{ needs.apk.outputs.validation_run != '' && github.token || '' }}
+          run-id: ${{ needs.apk.outputs.validation_run || github.run_id }}
+      - name: Verify the published APK digest
+        working-directory: fm1-screen/distribution
+        run: sha256sum -c *.apk.sha256
+      - uses: actions/download-artifact@v4
+        if: needs.apk.outputs.build == '19'
+        with:
+          name: FM1-SCREEN-v1.0-comp.018
+          path: fm1-screen/distribution/baseline
+          github-token: ${{ github.token }}
+          run-id: '46140367587'
+      - name: Verify the reference APK
+        if: needs.apk.outputs.build == '19'
+        working-directory: fm1-screen/distribution/baseline
+        run: |
+          printf '%s  %s\n' 49a56204f41e0547cca54f2ed802dc225ee0c7da08ceed25c4542d6ffa6a3ac1 FM1-SCREEN-v1.0-comp.018.apk | sha256sum -c -
+      - name: Enable hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: >-
+            python3 fm1-screen/tests/android_smoke.py
+            "fm1-screen/distribution/FM1-SCREEN-v1.0-comp.${{ needs.apk.outputs.label }}.apk"
+            fm1-screen/distribution/screenshots
+            "${{ matrix.device }}" "${{ needs.apk.outputs.build }}"
+            ${{ needs.apk.outputs.build == '19' && 'fm1-screen/distribution/baseline/FM1-SCREEN-v1.0-comp.018.apk' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FM1-SCREEN-GUI-comp.${{ needs.apk.outputs.label }}-${{ matrix.device }}
+          path: |
+            fm1-screen/distribution/screenshots/*.png
+            fm1-screen/distribution/screenshots/*.mp4
+            fm1-screen/distribution/screenshots/validation.json
+          if-no-files-found: warn
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: FM1-SCREEN-emulator-diagnostics-${{ github.run_number }}-${{ matrix.device }}
+          path: fm1-screen/distribution/screenshots/diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+
+  endurance:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message || '', '[full-ci]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run the synthetic Atlatl session for ten wall-clock minutes
+        env:
+          FM1_WALL_CLOCK: '1'
+        run: ./gradlew --no-daemon :core:test --tests '*AtlatlSessionTest.tenMinuteWallClockRun' --rerun
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FM1-SCREEN-endurance-${{ github.run_number }}-${{ github.run_attempt }}
+          path: fm1-screen/core/build/test-results/test/*.xml
+          if-no-files-found: warn
