@@ -99,6 +99,25 @@ PAGES = ("Full view", "Controls view", "Screen view")
 VIEWS = ("01-full-control", "02-screen-control", "03-big-screen")
 
 
+def switch_checked(label):
+    tree = hierarchy()
+    label_node = find(tree, label)
+    assert label_node is not None, f"Switch label missing: {label}"
+    parents = {child: parent for parent in tree.iter("node") for child in parent}
+    while label_node is not None:
+        if label_node.get("checkable") == "true":
+            return label_node.get("checked") == "true"
+        label_node = parents.get(label_node)
+    raise AssertionError(f"No actionable switch for {label}")
+
+
+def rotate(rotation, size):
+    # Apply to the foreground activity. An emulator launcher may keep a portrait
+    # layout during a reinstall even when the requested user orientation changed.
+    adb("shell", "cmd", "window", "user-rotation", "lock", str(rotation))
+    return screen_at_size(size)
+
+
 def launch(apk, resolution, dpi, rotation):
     prior = subprocess.run(["adb", "shell", "pm", "path", PACKAGE], capture_output=True, text=True, timeout=15)
     assert "package:" not in prior.stdout, "The test requires a clean emulator"
@@ -253,8 +272,7 @@ def baseline(apk, out, device):
     result = measure(gear, close)
     expect_page(2)
     if device == "phone":
-        adb("shell", "cmd", "window", "user-rotation", "lock", "0")
-        screen_at_size(portrait)
+        rotate(0, portrait)
         tap("Open controls, or swipe down")
         shot(out, "baseline-settings-portrait", portrait)
     adb("uninstall", PACKAGE)
@@ -266,12 +284,13 @@ def verify(apk, out, device, build, original=None):
     before, pre_stats = baseline(original, out, device) if original else ({}, None)
     portrait, density = {"tablet": ((1200, 1920), 160), "phone": ((1080, 1920), 440)}[device]
     landscape = portrait[::-1]
-    launch(apk, portrait, density, 1)
-    screen_at_size(landscape)
+    launch(apk, portrait, density, 0 if device == "phone" else 1)
+    rotate(1, landscape)
     tap(GEAR)
+    shot(out, "settings", landscape)
     tap("Pantalla")
     tap("Modo demostración")
-    assert node("Modo demostración").get("checked") == "true"
+    assert switch_checked("Modo demostración")
     tap(CLOSE)
 
     all_bounds = {}
@@ -335,7 +354,7 @@ def verify(apk, out, device, build, original=None):
         validate_tablet(out, landscape, build)
     else:
         tap(CLOSE)
-        adb("shell", "cmd", "window", "user-rotation", "lock", "0")
+        rotate(0, portrait)
         shot(out, "04-big-screen-portrait", portrait)
         for index in (2, 1, 0):
             if index != 2:
@@ -348,6 +367,20 @@ def verify(apk, out, device, build, original=None):
                 shot(out, "settings-portrait", portrait)
                 tap("Información")
                 node(f"FM1 SCREEN v1.0 · comp. {build:03}")
+                tap("Apariencia")
+                tap("Tema")
+                tap("SILVER")
+                assert has_panel_color(bytes.fromhex("C7CED3"), tolerance=18)
+                shot(out, "theme-silver-portrait", portrait)
+                tap("Tema")
+                tap("DARK")
+                shot(out, "theme-dark-portrait", portrait)
+                tap("Colores personalizados")
+                tap("Fondo principal")
+                tap("Muestras")
+                tap("#4FCDBF")
+                assert has_panel_color(bytes.fromhex("4FCDBF"), tolerance=18)
+                shot(out, "theme-custom-portrait", portrait)
             tap(CLOSE)
             expect_page(index)
 
