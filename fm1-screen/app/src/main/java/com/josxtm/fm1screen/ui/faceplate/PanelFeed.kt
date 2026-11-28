@@ -194,7 +194,11 @@ class PanelFeed(private val performance: PerformanceMonitor) {
             changed = true
         }
         if (changed) lights.version++
+        val oldKnown = knobs.known
+        val oldMaster = knobs.master
+        var turnsChanged = false
         if (state == null) {
+            turnsChanged = knobs.turns.any { it != 0 }
             knobs.turns.fill(0)
             knobs.master = 0
             knobs.known = false
@@ -202,11 +206,13 @@ class PanelFeed(private val performance: PerformanceMonitor) {
             // fm1-base reports relative steps. The pointer starts at the session's origin.
             knobs.known = true
             state.encoderSteps.forEachIndexed { i, step ->
-                knobs.turns[i] = (knobs.turns[i] + step) % 20
+                val next = (knobs.turns[i] + step) % 20
+                if (next != knobs.turns[i]) turnsChanged = true
+                knobs.turns[i] = next
             }
             knobs.master = state.master * 1023 / 4096
         }
-        knobs.version++
+        if (turnsChanged || oldKnown != knobs.known || oldMaster != knobs.master) knobs.version++
     }
 
     fun keyDown(index: Int) {
